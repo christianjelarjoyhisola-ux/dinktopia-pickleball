@@ -122,6 +122,15 @@ test("server-renders the complete public Dinktopia booking experience", async ()
   assert.match(text, /Book a court/i);
   assert.match(text, /Manage booking/i);
   assert.match(text, /Good games live here\./i);
+  assert.match(html, /class="ticker-track"/i);
+  assert.equal(
+    (html.match(/class="ticker-sequence(?: ticker-sequence-copy)?"/g) ?? []).length,
+    2,
+  );
+  assert.match(
+    html,
+    /class="ticker-toggle"[^>]*aria-label="Pause moving phrase banner"[^>]*aria-pressed="false"/i,
+  );
   assert.doesNotMatch(html, starterMarkers);
 });
 
@@ -545,6 +554,31 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.text-link\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.mode-switch button\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.header-inner\s*\{[^}]*min-height:\s*68px/s);
+  assert.match(
+    publicCss,
+    /\.primary-nav\s*\{[^}]*top:\s*calc\(100% - 1px\)/s,
+  );
+  assert.match(
+    publicCss,
+    /\.ticker-track\s*\{[^}]*animation:\s*dinktopia-ticker 26s linear infinite[^}]*will-change:\s*transform/s,
+  );
+  assert.match(
+    publicCss,
+    /\.ticker-sequence\s*\{[^}]*min-width:\s*100vw[^}]*flex:\s*0 0 auto[^}]*justify-content:\s*space-around/s,
+  );
+  assert.match(
+    publicCss,
+    /\.ticker-sequence\s*\{[^}]*padding:\s*10px calc\(var\(--ticker-gap\) \/ 2\)/s,
+  );
+  assert.match(
+    publicCss,
+    /@keyframes\s+dinktopia-ticker\s*\{[\s\S]*?translate3d\(-50%,\s*0,\s*0\)/s,
+  );
+  assert.match(
+    publicCss,
+    /\.ticker-toggle\s*\{[^}]*width:\s*44px[^}]*min-height:\s*44px/s,
+  );
   assert.match(publicCss, /\.preview-ribbon\s*\{[^}]*position:\s*relative/s);
   assert.match(
     publicCss,
@@ -576,7 +610,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.menu-button\s*\{\s*display:\s*none[\s\S]*?\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-nav\)[^}]*line-height:\s*20px/s,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*72px[^}]*\}[\s\S]*?\.ticker-track\s*\{[^}]*animation-duration:\s*36s/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*1180px\)[\s\S]*?\.menu-button\s*\{\s*display:\s*none[\s\S]*?\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center[^}]*justify-content:\s*center[^}]*font-size:\s*var\(--text-nav\)[^}]*line-height:\s*1\.3/s,
   );
   assert.match(
     publicCss,
@@ -608,6 +646,14 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(publicCss, /@media\s*\(max-width:\s*390px\)/);
   assert.match(publicCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(
+    publicCss,
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.ticker-track\s*\{[^}]*animation:\s*none\s*!important[^}]*transform:\s*none\s*!important/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.ticker-sequence\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[\s\S]*?\.ticker-sequence\s*>\s*span:nth-of-type\(n\s*\+\s*2\)[\s\S]*?display:\s*none/s,
+  );
 
   assert.match(
     manageCss,
