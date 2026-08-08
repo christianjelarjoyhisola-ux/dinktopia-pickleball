@@ -385,6 +385,7 @@
 
 .text-link {
   display: inline-flex;
+  min-height: 44px;
   align-items: center;
   gap: 10px;
   border-bottom: 1px solid rgba(244, 247, 250, 0.42);
@@ -394,7 +395,7 @@
 
 .hero-proof {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: 590px;
   margin-top: 34px;
   list-style: none;
@@ -404,6 +405,7 @@
 
 .hero-proof li {
   display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 3px;
   padding-right: 10px;
@@ -418,6 +420,7 @@
 .hero-proof span {
   color: var(--on-dark-muted);
   font-size: var(--text-caption);
+  overflow-wrap: anywhere;
 }
 
 .hero-visual {
@@ -2932,6 +2935,42 @@
   .booking-summary { padding: 24px; }
 }
 
+@media (max-width: 979.98px) {
+  .hero-grid {
+    min-height: 0;
+    gap: 0;
+    padding-bottom: 56px;
+  }
+
+  .hero-visual {
+    position: absolute;
+    z-index: 1;
+    top: clamp(152px, 22vw, 215px);
+    right: clamp(-220px, -24vw, -90px);
+    bottom: -48px;
+    left: clamp(104px, 42%, 420px);
+    min-height: 0;
+    opacity: 0.2;
+    pointer-events: none;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.35) 32%, black 68%);
+    mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, 0.35) 32%, black 68%);
+  }
+
+  .court-art {
+    inset: 0;
+    box-shadow: none;
+  }
+
+  .hero-visual > .score-card,
+  .hero-visual > .floating-note {
+    display: none;
+  }
+}
+
+@media (max-width: 979.98px) and (prefers-contrast: more) {
+  .hero-visual { display: none; }
+}
+
 @media (max-width: 390px) {
   .wordmark { width: 138px; }
   .hero-proof { gap: 7px; }
@@ -2954,7 +2993,8 @@
 
 @media (prefers-contrast: more) {
   .dinktopia-site { --line: rgba(16, 42, 67, 0.48); }
-  .hero-lede,
+  .hero-lede { color: var(--on-dark); }
+
   .how-intro > p:last-child,
   .footer-grid a,
   .footer-grid button,

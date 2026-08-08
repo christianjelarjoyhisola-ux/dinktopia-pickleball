@@ -113,6 +113,7 @@ test("server-renders the complete public Dinktopia booking experience", async ()
   assert.equal(countTags(html, "nav"), 1);
   assert.equal(countTags(html, "footer"), 1);
   assert.match(html, /<main\b[^>]*id="main-content"/i);
+  assert.match(html, /class="hero-visual"[^>]*aria-hidden="true"/i);
   assert.match(text, /Dinktopia Pickleball Club/i);
   assert.match(text, /Your next rally starts here\./i);
   assert.match(text, /Same game\. Different energy\./i);
@@ -542,6 +543,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*48px/s);
   assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.text-link\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.mode-switch button\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.preview-ribbon\s*\{[^}]*position:\s*relative/s);
   assert.match(
@@ -579,6 +581,30 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   assert.match(
     publicCss,
     /@media\s*\(min-width:\s*980px\)[\s\S]*?\.booking-layout\s*\{[^}]*grid-template-columns:/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.hero-grid\s*\{[^}]*grid-template-columns:[^}]*min-height:\s*720px[^}]*\}[\s\S]*?\.hero-visual\s*\{[^}]*min-height:\s*560px/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(max-width:\s*979\.98px\)[\s\S]*?\.hero-grid\s*\{[^}]*min-height:\s*0[^}]*gap:\s*0[^}]*\}[\s\S]*?\.hero-visual\s*\{[^}]*position:\s*absolute[^}]*min-height:\s*0[^}]*opacity:\s*0\.2[^}]*pointer-events:\s*none[^}]*\}[\s\S]*?\.hero-visual\s*>\s*\.score-card,\s*\.hero-visual\s*>\s*\.floating-note\s*\{[^}]*display:\s*none/s,
+  );
+  assert.match(
+    publicCss,
+    /\.hero-proof\s*\{[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(max-width:\s*979\.98px\)\s*and\s*\(prefers-contrast:\s*more\)\s*\{\s*\.hero-visual\s*\{\s*display:\s*none/s,
+  );
+  assert.ok(
+    publicCss.indexOf("@media (max-width: 979.98px)") >
+      publicCss.indexOf("@media (min-width: 560px)"),
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(prefers-contrast:\s*more\)[\s\S]*?\.hero-lede\s*\{\s*color:\s*var\(--on-dark\)/s,
   );
   assert.match(publicCss, /@media\s*\(max-width:\s*390px\)/);
   assert.match(publicCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);

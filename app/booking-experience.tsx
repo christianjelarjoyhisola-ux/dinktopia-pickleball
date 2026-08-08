@@ -1526,7 +1526,7 @@ export function BookingExperience({
               </ul>
             </div>
 
-            <div className="hero-visual" aria-label="Court availability preview">
+            <div className="hero-visual" aria-hidden="true">
               <div className="court-art" aria-hidden="true">
                 <div className="court-net" />
                 <div className="court-service-line court-service-line-one" />
