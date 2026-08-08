@@ -52,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "Dinktopia Pickleball",
       title,
       description,
-      images: [{ url: socialImage, width: 1728, height: 912, alt: "Dinktopia — Find your hour. Own the rally." }],
+      images: [{ url: socialImage, width: 1729, height: 910, alt: "Dinktopia — Your next rally starts here." }],
     },
     twitter: {
       card: "summary_large_image",

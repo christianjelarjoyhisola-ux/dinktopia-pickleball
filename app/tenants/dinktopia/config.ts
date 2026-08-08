@@ -100,13 +100,13 @@ export const dinktopiaConfig = {
       "Confirmed bookings are rescheduled by an owner or administrator using the platform's atomic rescheduling flow.",
   },
   brand: {
-    direction: "Playful future court club",
+    direction: "Modern court club led by the official Dinktopia mark",
     tagline: "Find your hour. Own the rally.",
-    primary: "#10231D",
-    paper: "#F7F4EA",
-    electric: "#2457F5",
-    citrus: "#D7FF43",
-    coral: "#FF6B3D",
+    primary: "#163B5B",
+    paper: "#F5F8FC",
+    electric: "#244F89",
+    citrus: "#82F500",
+    coral: "#C13E2B",
   },
   previewCourts: [
     {

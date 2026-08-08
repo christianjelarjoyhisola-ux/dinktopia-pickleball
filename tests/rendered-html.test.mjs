@@ -14,6 +14,8 @@ const files = {
     import.meta.url,
   ),
   manageCss: new URL("../app/manage/manage.module.css", import.meta.url),
+  logo: new URL("../public/dinktopia-logo.png", import.meta.url),
+  og: new URL("../public/og.png", import.meta.url),
   packageJson: new URL("../package.json", import.meta.url),
   page: new URL("../app/page.tsx", import.meta.url),
   publicCss: new URL("../app/dinktopia.css", import.meta.url),
@@ -238,6 +240,45 @@ test("removes the disposable Codex starter preview and skeleton dependency", asy
   assert.equal(packageJson.dependencies?.["react-loading-skeleton"], undefined);
   assert.equal(packageJson.devDependencies?.["react-loading-skeleton"], undefined);
   await assert.rejects(access(new URL("../app/_sites-preview/", import.meta.url)));
+});
+
+test("uses the official transparent Dinktopia logo and extracted brand palette", async () => {
+  const [booking, config, globalsCss, layout, manage, publicCss, logo, og] =
+    await Promise.all([
+      readFile(files.booking, "utf8"),
+      readFile(files.config, "utf8"),
+      readFile(files.globalsCss, "utf8"),
+      readFile(files.layout, "utf8"),
+      readFile(files.manage, "utf8"),
+      readFile(files.publicCss, "utf8"),
+      readFile(files.logo),
+      readFile(files.og),
+    ]);
+
+  assert.deepEqual([...logo.subarray(0, 8)], [137, 80, 78, 71, 13, 10, 26, 10]);
+  assert.equal(logo.readUInt32BE(16), 2046);
+  assert.equal(logo.readUInt32BE(20), 769);
+  assert.equal(logo[25], 6, "expected the public logo PNG to retain RGBA transparency");
+  assert.ok(
+    (booking.match(/src="\/dinktopia-logo\.png"/g) ?? []).length >= 2,
+    "expected the official mark in both the customer header and footer",
+  );
+  assert.match(manage, /src="\/dinktopia-logo\.png"/);
+  assert.match(booking, /aria-label="Dinktopia home"/);
+
+  for (const source of [globalsCss, publicCss]) {
+    assert.match(source, /#163b5b/i);
+    assert.match(source, /#244f89/i);
+    assert.match(source, /#82f500/i);
+    assert.match(source, /#f5f8fc/i);
+  }
+  assert.match(config, /primary:\s*"#163B5B"/);
+  assert.match(config, /electric:\s*"#244F89"/);
+  assert.match(config, /citrus:\s*"#82F500"/);
+
+  assert.equal(og.readUInt32BE(16), 1729);
+  assert.equal(og.readUInt32BE(20), 910);
+  assert.match(layout, /width:\s*1729,\s*height:\s*910/);
 });
 
 test("pins Dinktopia to one fail-closed tenant registry and provisional config", async () => {

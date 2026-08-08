@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #10231d;
-  --paper: #f7f4ea;
-  --electric: #2457f5;
-  --citrus: #d7ff43;
-  --coral: #ff6b3d;
-  --mist: #e9eee8;
-  --white: #fffef8;
-  --muted: #5f6e67;
-  --line: rgba(16, 35, 29, 0.14);
-  --shadow-soft: 0 24px 80px rgba(16, 35, 29, 0.12);
+  --ink: #163b5b;
+  --paper: #f5f8fc;
+  --electric: #244f89;
+  --citrus: #82f500;
+  --coral: #c13e2b;
+  --mist: #e7eef7;
+  --white: #ffffff;
+  --muted: #5e6f7e;
+  --line: rgba(22, 59, 91, 0.16);
+  --shadow-soft: 0 24px 80px rgba(22, 59, 91, 0.14);
   --background: var(--paper);
   --foreground: var(--ink);
 }
@@ -79,8 +79,9 @@ img {
 }
 
 :focus-visible {
-  outline: 3px solid var(--electric);
+  outline: 3px solid var(--citrus);
   outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--ink);
 }
 
 .skip-link {

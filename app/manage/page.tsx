@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   useEffect,
   useMemo,
@@ -1314,8 +1315,19 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
     <main id="main-content" className={styles.signInShell} tabIndex={-1}>
       <section className={styles.signInCard} aria-labelledby="manager-sign-in-title">
         <div className={styles.signInBrand}>
-          <span className={styles.brandMark} aria-hidden="true"><i /></span>
-          <div><strong>DINKTOPIA</strong><span>Secure tenant workspace</span></div>
+          <span className={styles.logoPlate}>
+            <Image
+              className={styles.brandLogo}
+              src="/dinktopia-logo.png"
+              alt=""
+              width={2046}
+              height={769}
+              sizes="180px"
+              priority
+            />
+          </span>
+          <span className={styles.srOnly}>DINKTOPIA</span>
+          <span className={styles.signInContext}>Secure tenant workspace</span>
         </div>
         <span className={styles.liveTag}>Live connection</span>
         <p className={styles.eyebrow}>Management access</p>
@@ -1476,8 +1488,19 @@ export default function ManagePage() {
     <div className={styles.manageShell}>
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
-          <span className={styles.brandMark} aria-hidden="true"><i /></span>
-          <div><strong>DINKTOPIA</strong><span>Court operations</span></div>
+          <span className={styles.logoPlate}>
+            <Image
+              className={styles.brandLogo}
+              src="/dinktopia-logo.png"
+              alt=""
+              width={2046}
+              height={769}
+              sizes="180px"
+              priority
+            />
+          </span>
+          <span className={styles.srOnly}>DINKTOPIA</span>
+          <span className={styles.brandContext}>Court operations</span>
         </div>
         <div className={styles.tenantSwitcher}>
           <span>D</span><div><small>Current tenant</small><strong>Dinktopia</strong></div>
@@ -1529,7 +1552,21 @@ export default function ManagePage() {
 
       <div className={styles.workspace}>
         <header className={styles.mobileBrand}>
-          <div className={styles.brand}><span className={styles.brandMark} aria-hidden="true"><i /></span><div><strong>DINKTOPIA</strong><span>Manage</span></div></div>
+          <div className={styles.brand}>
+            <span className={styles.logoPlate}>
+              <Image
+                className={styles.brandLogo}
+                src="/dinktopia-logo.png"
+                alt=""
+                width={2046}
+                height={769}
+                sizes="136px"
+                priority
+              />
+            </span>
+            <span className={styles.srOnly}>DINKTOPIA</span>
+            <span className={styles.brandContext}>Manage</span>
+          </div>
           <span className={styles.previewTag}>{isPreview ? "Preview" : "Live"}</span>
           <button
             type="button"

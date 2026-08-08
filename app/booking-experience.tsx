@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import {
   FormEvent,
   useEffect,
@@ -1456,10 +1457,15 @@ export function BookingExperience({
       <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
         <div className="site-container header-inner">
           <a className="wordmark" href="#top" aria-label="Dinktopia home">
-            <span className="wordmark-ball" aria-hidden="true" />
-            <span>DINK</span>
-            <span className="wordmark-slash">/</span>
-            <span>TOPIA</span>
+            <Image
+              className="brand-logo"
+              src="/dinktopia-logo.png"
+              alt=""
+              width={2046}
+              height={769}
+              sizes="(max-width: 390px) 138px, (max-width: 779px) 142px, 188px"
+              priority
+            />
           </a>
           <button
             className="menu-button"
@@ -2119,7 +2125,7 @@ export function BookingExperience({
 
       <footer className="site-footer">
         <div className="site-container footer-grid">
-          <div><a className="wordmark wordmark-footer" href="#top"><span className="wordmark-ball" aria-hidden="true" /><span>DINK</span><span className="wordmark-slash">/</span><span>TOPIA</span></a><p>Good games live here.</p></div>
+          <div><a className="wordmark wordmark-footer" href="#top" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></a><p>Good games live here.</p></div>
           <div><h2>Play</h2><a href="#courts">Courts</a><button type="button" onClick={() => openBooking()}>Book a court</button><button type="button" onClick={openManage}>Manage booking</button></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
