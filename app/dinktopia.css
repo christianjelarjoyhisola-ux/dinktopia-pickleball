@@ -151,16 +151,22 @@
   display: inline-flex;
   align-items: center;
   width: 142px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  padding: 6px 8px;
-  box-shadow: 0 10px 30px rgba(5, 24, 41, 0.22);
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
 }
 
 .brand-logo {
   width: 100%;
   height: auto;
+}
+
+.site-header .brand-logo,
+.site-footer .brand-logo {
+  filter:
+    drop-shadow(0 0 1px rgba(245, 248, 252, 0.98))
+    drop-shadow(0 0 4px rgba(245, 248, 252, 0.7))
+    drop-shadow(0 8px 16px rgba(5, 24, 41, 0.28));
 }
 
 .menu-button {
@@ -2798,7 +2804,7 @@
 }
 
 @media (max-width: 390px) {
-  .wordmark { width: 138px; padding: 5px 7px; }
+  .wordmark { width: 138px; }
   .hero-proof { gap: 7px; }
   .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .booking-main-card { padding: 16px; }

@@ -105,11 +105,9 @@
   width: fit-content;
   max-width: 100%;
   align-items: center;
-  border: 1px solid rgba(214, 224, 234, 0.92);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.96);
-  padding: 6px 8px;
-  box-shadow: 0 9px 24px rgba(22, 59, 91, 0.2);
+  border: 0;
+  background: transparent;
+  padding: 0;
 }
 
 .brandLogo {
@@ -117,6 +115,14 @@
   width: 180px;
   max-width: 100%;
   height: auto;
+}
+
+.sidebar .brandLogo,
+.mobileBrand .brandLogo {
+  filter:
+    drop-shadow(0 0 1px rgba(245, 248, 252, 0.98))
+    drop-shadow(0 0 4px rgba(245, 248, 252, 0.7))
+    drop-shadow(0 8px 16px rgba(7, 31, 52, 0.28));
 }
 
 .brandContext {
@@ -892,7 +898,7 @@
   .mobileBrand { min-height: 76px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; background: var(--ink); color: var(--white); padding: 8px 18px; }
   .mobileBrand .brand { gap: 0; }
   .mobileBrand .brandLogo { width: 136px; }
-  .mobileBrand .logoPlate { border-radius: 10px; padding: 5px 7px; box-shadow: 0 7px 18px rgba(7,31,52,.28); }
+  .mobileBrand .logoPlate { padding: 0; }
   .mobileBrand .brandContext { display: none; }
   .mobileAvatar { width: 44px; height: 44px; border: 1px solid rgba(255,255,255,.18); border-radius: 10px; background: rgba(255,255,255,.08); color: var(--white); font-size: .62rem; font-weight: 800; }
   .mobileNav { position: sticky; z-index: 22; top: 0; display: flex; gap: 5px; overflow-x: auto; border-bottom: 1px solid var(--line); background: rgba(245,248,252,.96); padding: 8px 13px; scrollbar-width: none; backdrop-filter: blur(14px); }

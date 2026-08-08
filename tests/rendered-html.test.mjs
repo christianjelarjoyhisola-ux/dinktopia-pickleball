@@ -243,13 +243,14 @@ test("removes the disposable Codex starter preview and skeleton dependency", asy
 });
 
 test("uses the official transparent Dinktopia logo and extracted brand palette", async () => {
-  const [booking, config, globalsCss, layout, manage, publicCss, logo, og] =
+  const [booking, config, globalsCss, layout, manage, manageCss, publicCss, logo, og] =
     await Promise.all([
       readFile(files.booking, "utf8"),
       readFile(files.config, "utf8"),
       readFile(files.globalsCss, "utf8"),
       readFile(files.layout, "utf8"),
       readFile(files.manage, "utf8"),
+      readFile(files.manageCss, "utf8"),
       readFile(files.publicCss, "utf8"),
       readFile(files.logo),
       readFile(files.og),
@@ -265,6 +266,8 @@ test("uses the official transparent Dinktopia logo and extracted brand palette",
   );
   assert.match(manage, /src="\/dinktopia-logo\.png"/);
   assert.match(booking, /aria-label="Dinktopia home"/);
+  assert.match(publicCss, /\.wordmark\s*\{[^}]*background:\s*transparent/s);
+  assert.match(manageCss, /\.logoPlate\s*\{[^}]*background:\s*transparent/s);
 
   for (const source of [globalsCss, publicCss]) {
     assert.match(source, /#163b5b/i);
