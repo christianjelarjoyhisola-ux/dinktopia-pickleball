@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import {
   FormEvent,
   useEffect,
@@ -10,6 +9,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { TransitionLink as Link } from "./transition-link";
 import { activeTenant } from "./tenants/registry";
 import {
   bookingStatus,
@@ -1643,9 +1643,15 @@ export function BookingExperience({
             <Link href="/courts" aria-current={isCourtsPage ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>
               Courts
             </Link>
-            <Link href="/#how-it-works" onClick={() => setMobileNavOpen(false)}>
-              How it works
-            </Link>
+            {isHome ? (
+              <a href="#how-it-works" onClick={() => setMobileNavOpen(false)}>
+                How it works
+              </a>
+            ) : (
+              <Link href="/#how-it-works" onClick={() => setMobileNavOpen(false)}>
+                How it works
+              </Link>
+            )}
             <Link
               className="nav-text-button"
               href="/book?mode=manage"
@@ -2348,7 +2354,7 @@ export function BookingExperience({
       <footer className="site-footer">
         <div className="site-container footer-grid">
           <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></Link><p>Good games live here.</p></div>
-          <div><h2>Play</h2><Link href="/courts">Courts</Link><Link href="/#gallery">Gallery</Link><Link href="/courts">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
+          <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/courts">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
         </div>

@@ -4,13 +4,17 @@ import test from "node:test";
 
 const files = {
   booking: new URL("../app/booking-experience.tsx", import.meta.url),
+  bookLoading: new URL("../app/book/loading.tsx", import.meta.url),
   bookPage: new URL("../app/book/page.tsx", import.meta.url),
   client: new URL("../app/lib/platform/client.ts", import.meta.url),
   config: new URL("../app/tenants/dinktopia/config.ts", import.meta.url),
   courtsPage: new URL("../app/courts/page.tsx", import.meta.url),
+  courtsLoading: new URL("../app/courts/loading.tsx", import.meta.url),
   globalsCss: new URL("../app/globals.css", import.meta.url),
   layout: new URL("../app/layout.tsx", import.meta.url),
+  loading: new URL("../app/loading.tsx", import.meta.url),
   manage: new URL("../app/manage/page.tsx", import.meta.url),
+  manageLoading: new URL("../app/manage/loading.tsx", import.meta.url),
   managementAdapter: new URL(
     "../app/manage/management-adapter.ts",
     import.meta.url,
@@ -22,6 +26,11 @@ const files = {
   page: new URL("../app/page.tsx", import.meta.url),
   publicCss: new URL("../app/dinktopia.css", import.meta.url),
   registry: new URL("../app/tenants/registry.ts", import.meta.url),
+  routeLoadingScreen: new URL(
+    "../app/route-loading-screen.tsx",
+    import.meta.url,
+  ),
+  transitionLink: new URL("../app/transition-link.tsx", import.meta.url),
   types: new URL("../app/lib/platform/types.ts", import.meta.url),
   worker: new URL("../worker/index.ts", import.meta.url),
 };
@@ -175,7 +184,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.match(galleryHtml, /Court gallery/i);
   assert.match(galleryHtml, /Court photos are coming soon\./i);
   assert.doesNotMatch(galleryHtml, /class="gallery-grid"|<figure\b|<img\b/i);
-  assert.match(home, /<a\b[^>]*href="\/#gallery"[^>]*>Gallery<\/a>/i);
+  assert.match(home, /<a\b[^>]*href="#gallery"[^>]*>Gallery<\/a>/i);
 
   assert.match(courts, /class="court-discovery section-pad"/i);
   assert.match(courts, /Choose your court\.[\s\S]*Start your rally\./i);
@@ -193,6 +202,102 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.match(manageBook, /Manage your booking/i);
   assert.match(manageBook, /Find booking/i);
   assert.doesNotMatch(manageBook, /class="court-discovery section-pad"|class="club-gallery/i);
+});
+
+test("uses a branded, accessible pickleball loader only for route transitions", async () => {
+  const [
+    booking,
+    transitionLink,
+    loadingScreen,
+    rootLoading,
+    bookLoading,
+    courtsLoading,
+    manageLoading,
+    globalsCss,
+  ] = await Promise.all([
+    readFile(files.booking, "utf8"),
+    readFile(files.transitionLink, "utf8"),
+    readFile(files.routeLoadingScreen, "utf8"),
+    readFile(files.loading, "utf8"),
+    readFile(files.bookLoading, "utf8"),
+    readFile(files.courtsLoading, "utf8"),
+    readFile(files.manageLoading, "utf8"),
+    readFile(files.globalsCss, "utf8"),
+  ]);
+
+  assert.match(
+    booking,
+    /import \{ TransitionLink as Link \} from "\.\/transition-link";/,
+  );
+  assert.doesNotMatch(booking, /import Link from "next\/link"/);
+  assert.match(transitionLink, /^"use client";/);
+  assert.match(transitionLink, /NextLink, \{ useLinkStatus \} from "next\/link"/);
+  assert.match(transitionLink, /createPortal\(/);
+  assert.match(transitionLink, /<RouteLoadingScreen source="link" \/>/);
+  assert.match(transitionLink, /portalRoot/);
+  assert.match(transitionLink, /document\.body/);
+  assert.match(transitionLink, /className="route-loading-portal"/);
+  assert.match(transitionLink, /onClick=\{\(event\) => event\.stopPropagation\(\)\}/);
+  assert.match(
+    transitionLink,
+    /onPointerDown=\{\(event\) => event\.stopPropagation\(\)\}/,
+  );
+  assert.doesNotMatch(
+    transitionLink,
+    /addEventListener|setTimeout|setInterval|dataset\.routeLoading|useEffect/,
+  );
+
+  assert.match(loadingScreen, /className="route-loading-screen"/);
+  assert.match(loadingScreen, /data-loading-source=\{source\}/);
+  assert.match(loadingScreen, /role="status"/);
+  assert.match(loadingScreen, /aria-live="polite"/);
+  assert.match(loadingScreen, /aria-atomic="true"/);
+  assert.doesNotMatch(loadingScreen, /aria-busy/);
+  assert.match(loadingScreen, /className="route-loading-court" aria-hidden="true"/);
+  assert.match(loadingScreen, /Loading your next rally…/);
+  assert.match(loadingScreen, /Getting the court ready\./);
+  assert.doesNotMatch(
+    loadingScreen,
+    /<a\b|<button\b|<input\b|<select\b|<textarea\b|tabIndex|autoFocus/,
+  );
+
+  for (const boundary of [
+    rootLoading,
+    bookLoading,
+    courtsLoading,
+    manageLoading,
+  ]) {
+    assert.match(boundary, /<RouteLoadingScreen \/>/);
+    assert.doesNotMatch(
+      boundary,
+      /"use client"|window\.|document\.|setTimeout|fetch\(/,
+    );
+  }
+
+  assert.match(
+    globalsCss,
+    /\.route-loading-screen\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*12000[^}]*inset:\s*0[^}]*min-height:\s*100dvh/s,
+  );
+  assert.match(
+    globalsCss,
+    /body:has\(> \.route-loading-portal\)[\s\S]*?\.route-loading-screen\[data-loading-source="boundary"\]\s*\{[^}]*display:\s*none/s,
+  );
+  assert.match(
+    globalsCss,
+    /\.route-loading-card\s*\{[^}]*width:\s*min\(320px,\s*100%\)[^}]*border-radius:\s*28px/s,
+  );
+  assert.match(
+    globalsCss,
+    /\.route-loading-ball\s*\{[^}]*width:\s*clamp\(52px,\s*15vw,\s*64px\)[^}]*radial-gradient[\s\S]*?animation:\s*dinktopia-ball-roll 760ms linear infinite/s,
+  );
+  assert.match(
+    globalsCss,
+    /@keyframes\s+dinktopia-ball-roll\s*\{\s*to\s*\{\s*transform:\s*rotate\(360deg\)/s,
+  );
+  assert.match(
+    globalsCss,
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.route-loading-ball-wrap,[\s\S]*?\.route-loading-ball,[\s\S]*?\.route-loading-shadow\s*\{[^}]*animation:\s*none\s*!important[^}]*transform:\s*none\s*!important[^}]*will-change:\s*auto/s,
+  );
 });
 
 test("keeps the court gallery tenant-sourced, safe, compact, and responsive", async () => {

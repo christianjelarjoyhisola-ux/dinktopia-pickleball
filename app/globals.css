@@ -136,6 +136,177 @@ img {
   border: 0 !important;
 }
 
+.route-loading-screen {
+  position: fixed;
+  z-index: 12000;
+  inset: 0;
+  display: grid;
+  min-width: 0;
+  min-height: 100dvh;
+  place-items: center;
+  padding:
+    max(20px, env(safe-area-inset-top))
+    max(20px, env(safe-area-inset-right))
+    max(20px, env(safe-area-inset-bottom))
+    max(20px, env(safe-area-inset-left));
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 50% 34%, rgba(37, 76, 132, 0.34), transparent 38%),
+    rgba(11, 33, 53, 0.94);
+  color: var(--white);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  animation: dinktopia-route-reveal 140ms ease both;
+}
+
+body:has(> .route-loading-portal)
+  .route-loading-screen[data-loading-source="boundary"] {
+  display: none;
+}
+
+.route-loading-card {
+  width: min(320px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: clamp(24px, 7vw, 34px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 28px;
+  background: rgba(16, 42, 67, 0.82);
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.32);
+  text-align: center;
+}
+
+.route-loading-card > p {
+  margin: 8px 0 0;
+  color: var(--citrus);
+  font-family: var(--font-display), var(--font-body), Arial, sans-serif;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-semibold);
+  line-height: 1.2;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.route-loading-card > strong {
+  color: var(--white);
+  font-size: clamp(1.15rem, 4.8vw, 1.4rem);
+  font-weight: var(--weight-bold);
+  line-height: var(--leading-snug);
+  letter-spacing: -0.025em;
+}
+
+.route-loading-card > span {
+  color: #c8d3df;
+  font-size: var(--text-small);
+  line-height: var(--leading-snug);
+}
+
+.route-loading-court {
+  position: relative;
+  width: 132px;
+  height: 92px;
+  display: grid;
+  place-items: center;
+}
+
+.route-loading-court-line {
+  position: absolute;
+  top: 48%;
+  right: 2px;
+  left: 2px;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.78) 18%,
+    rgba(255, 255, 255, 0.78) 82%,
+    transparent
+  );
+}
+
+.route-loading-ball-wrap {
+  position: relative;
+  z-index: 2;
+  display: block;
+  animation: dinktopia-ball-hop 1.05s cubic-bezier(0.45, 0, 0.25, 1) infinite;
+  will-change: transform;
+}
+
+.route-loading-ball {
+  display: block;
+  width: clamp(52px, 15vw, 64px);
+  aspect-ratio: 1;
+  border: 3px solid rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 29% 24%, var(--ink) 0 3px, transparent 3.8px),
+    radial-gradient(circle at 68% 19%, var(--ink) 0 3px, transparent 3.8px),
+    radial-gradient(circle at 76% 54%, var(--ink) 0 3px, transparent 3.8px),
+    radial-gradient(circle at 45% 72%, var(--ink) 0 3px, transparent 3.8px),
+    radial-gradient(circle at 20% 58%, var(--ink) 0 3px, transparent 3.8px),
+    var(--citrus);
+  box-shadow:
+    0 0 0 8px rgba(130, 245, 0, 0.08),
+    0 13px 28px rgba(0, 0, 0, 0.28);
+  animation: dinktopia-ball-roll 760ms linear infinite;
+  will-change: transform;
+}
+
+.route-loading-shadow {
+  position: absolute;
+  z-index: 1;
+  bottom: 6px;
+  width: 58px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.34);
+  filter: blur(4px);
+  animation: dinktopia-ball-shadow 1.05s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes dinktopia-route-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes dinktopia-ball-roll {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes dinktopia-ball-hop {
+  0%,
+  100% { transform: translateY(8px); }
+  50% { transform: translateY(-10px); }
+}
+
+@keyframes dinktopia-ball-shadow {
+  0%,
+  100% {
+    opacity: 0.52;
+    transform: scaleX(1);
+  }
+  50% {
+    opacity: 0.24;
+    transform: scaleX(0.66);
+  }
+}
+
+@media (prefers-contrast: more) {
+  .route-loading-screen {
+    background: #0b2135;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  .route-loading-card {
+    border-color: var(--white);
+    background: var(--ink);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
@@ -148,5 +319,17 @@ img {
     animation-iteration-count: 1 !important;
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .route-loading-screen {
+    animation: none !important;
+  }
+
+  .route-loading-ball-wrap,
+  .route-loading-ball,
+  .route-loading-shadow {
+    animation: none !important;
+    transform: none !important;
+    will-change: auto;
   }
 }
