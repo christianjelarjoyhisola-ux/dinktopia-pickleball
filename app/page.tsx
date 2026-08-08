@@ -3,11 +3,11 @@ import { BookingExperience } from "./booking-experience";
 import "./dinktopia.css";
 
 export const metadata: Metadata = {
-  title: "Dinktopia | Pickleball, on your time",
+  title: "Home",
   description:
-    "Find a court, choose your hour, and get your next Dinktopia rally on the calendar.",
+    "Meet Dinktopia Pickleball, explore the club, and start planning your next rally.",
 };
 
 export default function Home() {
-  return <BookingExperience />;
+  return <BookingExperience surface="home" />;
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import {
   FormEvent,
   useEffect,
@@ -29,6 +30,7 @@ import type {
 
 type Court = {
   id: string;
+  slug: string;
   number: string;
   name: string;
   descriptor: string;
@@ -115,10 +117,14 @@ export type BookingAdapter = {
 
 export type BookingExperienceProps = {
   adapter?: BookingAdapter;
+  surface?: "home" | "courts" | "booking";
+  initialCourtSlug?: string;
+  initialMode?: "book" | "manage";
 };
 
 const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => ({
   id: court.id,
+  slug: court.slug,
   number: String(index + 1).padStart(2, "0"),
   name: court.name,
   descriptor: court.surface,
@@ -126,9 +132,12 @@ const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => 
   color: index === 0 ? "blue" : "coral",
 }));
 
+const tickerPhrases = ["PLAY MORE", "RALLY OFTEN", "STAY FOCUSED", "NEW HABIT"] as const;
+
 function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
   return publicCourts.map((court, index) => ({
     id: court.id,
+    slug: court.slug,
     number: String(index + 1).padStart(2, "0"),
     name: court.name,
     descriptor: court.description || "Pickleball court",
@@ -777,22 +786,29 @@ declare global {
 
 export function BookingExperience({
   adapter = platformAdapter,
+  surface = "home",
+  initialCourtSlug,
+  initialMode = "book",
 }: BookingExperienceProps) {
   const isLive = platformMode() === "live";
+  const isHome = surface === "home";
+  const isCourtsPage = surface === "courts";
+  const isBookingPage = surface === "booking";
   const [dateHorizon, setDateHorizon] = useState<number>(activeTenant.booking.maximumAdvanceDays);
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
-  const tickerRef = useRef<HTMLDivElement>(null);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetRef = useRef<string | null>(null);
   const bookingAttemptIdRef = useRef("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [tickerInView, setTickerInView] = useState(false);
-  const [mode, setMode] = useState<"book" | "manage">("book");
+  const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
-  const [selectedCourtId, setSelectedCourtId] = useState(previewCourts[0].id);
+  const [selectedCourtId, setSelectedCourtId] = useState(() => {
+    if (isLive) return previewCourts[0].id;
+    return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
+  });
   const [duration, setDuration] = useState(1);
   const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
@@ -839,6 +855,11 @@ export function BookingExperience({
         : previewCourts,
     [bootstrap, isLive],
   );
+  const courtDirectoryCourts = useMemo(() => {
+    if (!isLive) return previewCourts;
+    if (bootstrapState !== "ready") return [];
+    return displayCourtsFromPlatform(bootstrap?.courts ?? []);
+  }, [bootstrap, bootstrapState, isLive]);
   const galleryPhotos = useMemo(() => galleryPhotosFromPlatform(bootstrap), [bootstrap]);
   const selectedCourt =
     displayCourts.find((court) => court.id === selectedCourtId) ?? displayCourts[0];
@@ -934,22 +955,34 @@ export function BookingExperience({
         if (!active) return;
         setBootstrap(result);
         if (isLive && result.courts.length) {
-          setSelectedCourtId((current) =>
-            result.courts.some((court) => court.id === current)
-              ? current
-              : result.courts[0].id,
+          const requestedCourt = result.courts.find(
+            (court) => court.slug === initialCourtSlug,
           );
-          const publicConfig = result.courts[0].publicConfig as
-            | { maximumAdvanceDays?: number }
-            | undefined;
+          const configuredCourt = requestedCourt ?? result.courts[0];
+          setSelectedCourtId((current) => {
+            if (requestedCourt) return requestedCourt.id;
+            return result.courts.some((court) => court.id === current)
+              ? current
+              : result.courts[0].id;
+          });
+          const publicConfig = (configuredCourt.publicConfig ?? {}) as {
+            maximumAdvanceDays?: number;
+          };
           if (typeof publicConfig?.maximumAdvanceDays === "number") {
             setDateHorizon(publicConfig.maximumAdvanceDays);
           }
-          const pricingConfig = result.courts[0].pricingConfig as
-            | { regular?: { minimumHours?: number } }
-            | undefined;
-          if (typeof pricingConfig?.regular?.minimumHours === "number") {
-            setDuration(pricingConfig.regular.minimumHours);
+          const pricingConfig = (configuredCourt.pricingConfig ?? {}) as {
+            regular?: { minimumHours?: number; maximumHours?: number };
+          };
+          const minimumHours = pricingConfig.regular?.minimumHours;
+          const maximumHours = pricingConfig.regular?.maximumHours;
+          if (typeof minimumHours === "number") {
+            setDuration((current) => {
+              const atLeastMinimum = Math.max(current, minimumHours);
+              return typeof maximumHours === "number"
+                ? Math.min(atLeastMinimum, maximumHours)
+                : atLeastMinimum;
+            });
           }
         }
         setBootstrapState("ready");
@@ -962,34 +995,10 @@ export function BookingExperience({
     return () => {
       active = false;
     };
-  }, [isLive]);
+  }, [initialCourtSlug, isLive]);
 
   useEffect(() => {
-    const ticker = tickerRef.current;
-    if (!ticker || tickerInView) return;
-
-    const Observer = (
-      window as unknown as { IntersectionObserver?: typeof IntersectionObserver }
-    ).IntersectionObserver;
-    if (!Observer) {
-      const frame = window.requestAnimationFrame(() => setTickerInView(true));
-      return () => window.cancelAnimationFrame(frame);
-    }
-
-    const observer = new Observer(
-      ([entry]) => {
-        if (!entry?.isIntersecting) return;
-        setTickerInView(true);
-        observer.disconnect();
-      },
-      { threshold: 0.25, rootMargin: "0px 0px -5% 0px" },
-    );
-    observer.observe(ticker);
-    return () => observer.disconnect();
-  }, [tickerInView]);
-
-  useEffect(() => {
-    if (adapter !== platformAdapter) return;
+    if (!isBookingPage || adapter !== platformAdapter) return;
     let active = true;
 
     const restoreActiveHold = async () => {
@@ -1133,7 +1142,7 @@ export function BookingExperience({
     return () => {
       active = false;
     };
-  }, [adapter]);
+  }, [adapter, isBookingPage]);
 
   useEffect(() => {
     if (!pendingBooking?.expiresAt) return;
@@ -1142,7 +1151,7 @@ export function BookingExperience({
   }, [pendingBooking?.expiresAt]);
 
   useEffect(() => {
-    if (!isLive || step !== 4 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
+    if (!isBookingPage || !isLive || step !== 4 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
     let disposed = false;
     const container = turnstileContainerRef.current;
     const renderWidget = () => {
@@ -1180,9 +1189,10 @@ export function BookingExperience({
       }
       setTurnstileTokenValue("");
     };
-  }, [isLive, pendingBooking, securitySiteKey, step]);
+  }, [isBookingPage, isLive, pendingBooking, securitySiteKey, step]);
 
   useEffect(() => {
+    if (!isBookingPage) return;
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
@@ -1219,7 +1229,7 @@ export function BookingExperience({
     return () => {
       active = false;
     };
-  }, [adapter, availabilityRetry, bootstrapState, duration, isLive, selectedCourtId, selectedDate]);
+  }, [adapter, availabilityRetry, bootstrapState, duration, isBookingPage, isLive, selectedCourtId, selectedDate]);
 
   useEffect(() => {
     if (!pendingBooking) bookingAttemptIdRef.current = "";
@@ -1543,6 +1553,54 @@ export function BookingExperience({
   }
 
   const stepLabels = ["Choose", "Details", "Review", "Pay"];
+  const gallerySection = (
+    <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
+      <div className="site-container">
+        <div className="gallery-heading">
+          <div>
+            <p className="eyebrow eyebrow-dark">Court gallery</p>
+            <h2 id="gallery-heading">See the space before you play.</h2>
+          </div>
+          <p>Fresh photos published by the Dinktopia team.</p>
+        </div>
+
+        {galleryPhotos.length ? (
+          <div
+            className={`gallery-grid${galleryPhotos.length === 5 ? " is-bento" : ""}`}
+            aria-label="Dinktopia court gallery"
+            role="region"
+            tabIndex={0}
+          >
+            {galleryPhotos.map((photo) => (
+              <figure className="gallery-card" key={photo.id}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={photo.src}
+                  alt={photo.alt}
+                  width={1200}
+                  height={900}
+                  loading="lazy"
+                  decoding="async"
+                />
+                <figcaption>{photo.caption}</figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : (
+          <div className="gallery-empty">
+            <div className="gallery-empty-frames" aria-hidden="true">
+              <span>01</span><span>02</span><span>+</span>
+            </div>
+            <div>
+              <p className="eyebrow eyebrow-dark">Gallery ready</p>
+              <h3>Court photos are coming soon.</h3>
+              <p>Fresh court photos will appear here after the Dinktopia team publishes them.</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
 
   return (
     <div className="dinktopia-site">
@@ -1553,7 +1611,7 @@ export function BookingExperience({
       )}
       <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
         <div className="site-container header-inner">
-          <a className="wordmark" href="#top" aria-label="Dinktopia home">
+          <Link className="wordmark" href="/" aria-label="Dinktopia home">
             <Image
               className="brand-logo"
               src="/dinktopia-logo.png"
@@ -1563,7 +1621,7 @@ export function BookingExperience({
               sizes="(max-width: 390px) 128px, (max-width: 779px) 132px, 164px"
               priority
             />
-          </a>
+          </Link>
           <button
             className="menu-button"
             type="button"
@@ -1579,24 +1637,32 @@ export function BookingExperience({
             className={`primary-nav ${mobileNavOpen ? "is-open" : ""}`}
             aria-label="Primary navigation"
           >
-            <a href="#courts" onClick={() => setMobileNavOpen(false)}>
+            <Link href="/" aria-current={isHome ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>
+              Home
+            </Link>
+            <Link href="/courts" aria-current={isCourtsPage ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>
               Courts
-            </a>
-            <a href="#how-it-works" onClick={() => setMobileNavOpen(false)}>
+            </Link>
+            <Link href="/#how-it-works" onClick={() => setMobileNavOpen(false)}>
               How it works
-            </a>
-            <button className="nav-text-button" type="button" onClick={openManage}>
+            </Link>
+            <Link
+              className="nav-text-button"
+              href="/book?mode=manage"
+              aria-current={isBookingPage && mode === "manage" ? "page" : undefined}
+              onClick={() => setMobileNavOpen(false)}
+            >
               Manage booking
-            </button>
-            <a className="button button-small button-lime" href="#courts" onClick={() => setMobileNavOpen(false)}>
+            </Link>
+            <Link className="button button-small button-lime" href="/courts" onClick={() => setMobileNavOpen(false)}>
               Book a court <span aria-hidden="true">↗</span>
-            </a>
+            </Link>
           </nav>
         </div>
       </header>
 
-      <main id="main-content">
-        <section className="hero" id="top">
+      <main id="main-content" className={isHome ? undefined : "route-main"}>
+        {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
               <p className="eyebrow"><span aria-hidden="true">●</span> Dinktopia Pickleball Club</p>
@@ -1609,9 +1675,9 @@ export function BookingExperience({
                 and meet your crew on the bright side of the net.
               </p>
               <div className="hero-actions">
-                <a className="button button-lime button-large" href="#courts">
+                <Link className="button button-lime button-large" href="/courts">
                   Book a court <span aria-hidden="true">→</span>
-                </a>
+                </Link>
                 <a className="text-link" href="#how-it-works">
                   How booking works <span aria-hidden="true">↓</span>
                 </a>
@@ -1647,59 +1713,119 @@ export function BookingExperience({
               </div>
             </div>
           </div>
-          <div ref={tickerRef} className={`ticker${tickerInView ? " is-in-view" : ""}`}>
-            <p className="sr-only">Play more. Rally often. Stay curious.</p>
-            <div className="ticker-sequence" aria-hidden="true">
-              <span>PLAY MORE</span>
-              <span>RALLY OFTEN</span>
-              <span>STAY CURIOUS</span>
-            </div>
+          <div className="ticker">
+            <p id={`${formId}-ticker-copy`} className="sr-only">
+              Play more. Rally often. Stay focused. New habit.
+            </p>
+            <input
+              id={`${formId}-ticker-motion`}
+              className="ticker-motion-toggle sr-only"
+              type="checkbox"
+              aria-label="Pause or resume moving club phrases"
+            />
+            <label className="ticker-viewport" htmlFor={`${formId}-ticker-motion`}>
+              <span className="ticker-track" aria-hidden="true">
+                {[0, 1].map((copy) => (
+                  <span
+                    className={`ticker-group${copy === 1 ? " ticker-group-clone" : ""}`}
+                    key={copy}
+                  >
+                    {tickerPhrases.map((phrase) => (
+                      <span key={`${copy}-${phrase}`}>
+                        <strong>{phrase}</strong><i aria-hidden="true">◆</i>
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </span>
+            </label>
           </div>
-        </section>
+        </section>}
 
-        <section className="court-discovery section-pad" id="courts">
+        {isHome && gallerySection}
+
+        {isCourtsPage && <section className="court-discovery section-pad" id="courts">
           <div className="site-container">
             <div className="section-heading">
               <div>
                 <p className="eyebrow eyebrow-dark">Pick your playground</p>
-                <h2>Same game.<br />Different energy.</h2>
+                <h1>Choose your court.<br />Start your rally.</h1>
               </div>
               <p>
-                {isLive ? `${displayCourts.length} configured courts` : "Two dedicated preview courts"}, designed for quick games,
-                long rallies, and the happy blur in between.
+                {isLive && bootstrapState !== "ready"
+                  ? "Loading configured courts."
+                  : `${isLive ? `${courtDirectoryCourts.length} configured courts` : "Two dedicated preview courts"}, designed for quick games, long rallies, and the happy blur in between.`}
               </p>
             </div>
-            <div className="court-card-grid">
-              {displayCourts.map((court) => (
-                <article className={`court-card court-card-${court.color}`} key={court.id}>
-                  <div className="court-card-topline">
-                    <span>COURT {court.number}</span>
-                    <span className="court-status"><i aria-hidden="true" /> Booking preview</span>
-                  </div>
-                  <div className="mini-court" aria-hidden="true">
-                    <span className="mini-court-number">{court.number}</span>
-                    <i className="mini-court-line-one" />
-                    <i className="mini-court-line-two" />
-                    <i className="mini-court-net" />
-                  </div>
-                  <div className="court-card-copy">
-                    <p>{court.descriptor}</p>
-                    <h3>{court.name}</h3>
-                    <div className="court-card-meta">
-                      <span>{court.mood}</span>
-                      <span>From ₱300 / hour</span>
+            {isLive && bootstrapState !== "ready" ? (
+              <div
+                className="setup-unavailable-card"
+                role={bootstrapState === "loading" ? "status" : "alert"}
+              >
+                <span
+                  className={bootstrapState === "loading" ? "spinner" : "setup-unavailable-symbol"}
+                  aria-hidden="true"
+                >
+                  {bootstrapState === "loading" ? "" : "!"}
+                </span>
+                <div>
+                  <p className="eyebrow eyebrow-dark">
+                    {bootstrapState === "loading" ? "Checking court setup" : "Courts unavailable"}
+                  </p>
+                  <h3>
+                    {bootstrapState === "loading"
+                      ? "Loading the court directory…"
+                      : "The verified court list could not be loaded."}
+                  </h3>
+                  <p>
+                    {bootstrapState === "loading"
+                      ? "We’ll show booking links after the Dinktopia courts are verified."
+                      : "Please refresh before choosing a court. Preview links stay hidden in live mode."}
+                  </p>
+                </div>
+              </div>
+            ) : courtDirectoryCourts.length ? (
+              <div className="court-card-grid">
+                {courtDirectoryCourts.map((court) => (
+                  <article className={`court-card court-card-${court.color}`} key={court.id}>
+                    <div className="court-card-topline">
+                      <span>COURT {court.number}</span>
+                      <span className="court-status"><i aria-hidden="true" /> {isLive ? "Published court" : "Booking preview"}</span>
                     </div>
-                    <button className="button court-button" type="button" onClick={() => openBooking(court.id)}>
-                      See times for Court {court.number} <span aria-hidden="true">→</span>
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
+                    <div className="mini-court" aria-hidden="true">
+                      <span className="mini-court-number">{court.number}</span>
+                      <i className="mini-court-line-one" />
+                      <i className="mini-court-line-two" />
+                      <i className="mini-court-net" />
+                    </div>
+                    <div className="court-card-copy">
+                      <p>{court.descriptor}</p>
+                      <h3>{court.name}</h3>
+                      <div className="court-card-meta">
+                        <span>{court.mood}</span>
+                        <span>From ₱300 / hour</span>
+                      </div>
+                      <Link className="button court-button" href={`/book?court=${encodeURIComponent(court.slug)}`}>
+                        See times for Court {court.number} <span aria-hidden="true">→</span>
+                      </Link>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="setup-unavailable-card" role="status">
+                <span className="setup-unavailable-symbol" aria-hidden="true">!</span>
+                <div>
+                  <p className="eyebrow eyebrow-dark">No published courts</p>
+                  <h3>Court booking is not open yet.</h3>
+                  <p>The Dinktopia team will publish bookable courts here when setup is complete.</p>
+                </div>
+              </div>
+            )}
           </div>
-        </section>
+        </section>}
 
-        <section className="how-section section-pad" id="how-it-works">
+        {isHome && <section className="how-section section-pad" id="how-it-works">
           <div className="site-container how-grid">
             <div className="how-intro">
               <p className="eyebrow">No back-and-forth</p>
@@ -1712,33 +1838,31 @@ export function BookingExperience({
               <li><span>03</span><div><h3>Pay, then play</h3><p>Send your GCash receipt and get a booking reference.</p></div></li>
             </ol>
           </div>
-        </section>
+        </section>}
 
-        <section className="booking-zone section-pad" id="book" ref={bookingSectionRef}>
+        {isBookingPage && <section className="booking-zone section-pad" id="book" ref={bookingSectionRef}>
           <div className="site-container">
             <div className="booking-zone-heading">
               <div>
                 <p className="eyebrow eyebrow-dark">Make your move</p>
-                <h2>{mode === "book" ? "Book a court" : "Manage your booking"}</h2>
+                <h1>{mode === "book" ? "Book a court" : "Manage your booking"}</h1>
               </div>
-              <div className="mode-switch" role="group" aria-label="Booking actions">
-                <button
-                  type="button"
+              <nav className="mode-switch" aria-label="Booking actions">
+                <Link
+                  href="/book"
                   className={mode === "book" ? "is-active" : ""}
-                  aria-pressed={mode === "book"}
-                  onClick={() => setMode("book")}
+                  aria-current={mode === "book" ? "page" : undefined}
                 >
                   New booking
-                </button>
-                <button
-                  type="button"
+                </Link>
+                <Link
+                  href="/book?mode=manage"
                   className={mode === "manage" ? "is-active" : ""}
-                  aria-pressed={mode === "manage"}
-                  onClick={() => setMode("manage")}
+                  aria-current={mode === "manage" ? "page" : undefined}
                 >
                   Manage
-                </button>
-              </div>
+                </Link>
+              </nav>
             </div>
 
             {mode === "book" && isLive && !liveBookingReady ? (
@@ -1749,7 +1873,7 @@ export function BookingExperience({
                   <h3>{bootstrapState === "loading" ? "Loading the court board…" : "The clubhouse is still getting ready."}</h3>
                   <p>{bootstrapState === "loading" ? "We’re confirming courts, policies, payment, and security." : "No payment instructions are shown until the venue, published policy, payment method, and security check are all active."}</p>
                 </div>
-                {bootstrapState !== "loading" && <a className="button button-outline" href="#courts">Explore the preview courts</a>}
+                {bootstrapState !== "loading" && <Link className="button button-outline" href="/courts">Explore the preview courts</Link>}
               </div>
             ) : mode === "book" ? (
               <div className="booking-shell">
@@ -2210,70 +2334,21 @@ export function BookingExperience({
               />
             )}
           </div>
-        </section>
+        </section>}
 
-        {(!isLive || galleryPhotos.length > 0) && (
-          <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
-            <div className="site-container">
-              <div className="gallery-heading">
-                <div>
-                  <p className="eyebrow eyebrow-dark">Court gallery</p>
-                  <h2 id="gallery-heading">See the space before you play.</h2>
-                </div>
-                <p>Fresh photos published by the Dinktopia team.</p>
-              </div>
-
-              {galleryPhotos.length ? (
-                <div
-                  className={`gallery-grid${galleryPhotos.length === 5 ? " is-bento" : ""}`}
-                  aria-label="Dinktopia court gallery"
-                  role="region"
-                  tabIndex={0}
-                >
-                  {galleryPhotos.map((photo) => (
-                    <figure className="gallery-card" key={photo.id}>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={photo.src}
-                        alt={photo.alt}
-                        width={1200}
-                        height={900}
-                        loading="lazy"
-                        decoding="async"
-                      />
-                      <figcaption>{photo.caption}</figcaption>
-                    </figure>
-                  ))}
-                </div>
-              ) : (
-                <div className="gallery-empty">
-                  <div className="gallery-empty-frames" aria-hidden="true">
-                    <span>01</span><span>02</span><span>+</span>
-                  </div>
-                  <div>
-                    <p className="eyebrow eyebrow-dark">Gallery ready</p>
-                    <h3>Court photos are coming soon.</h3>
-                    <p>The owner can publish real venue photos here once secure gallery uploads are activated.</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-
-        <section className="club-note">
+        {isHome && <section className="club-note">
           <div className="site-container club-note-inner">
             <p className="eyebrow">Welcome to your next favorite habit</p>
             <h2>Serious court.<br /><span>Playful spirit.</span></h2>
-            <a className="button button-lime button-large" href="#courts">Book a court <span aria-hidden="true">→</span></a>
+            <Link className="button button-lime button-large" href="/courts">Book a court <span aria-hidden="true">→</span></Link>
           </div>
-        </section>
+        </section>}
       </main>
 
       <footer className="site-footer">
         <div className="site-container footer-grid">
-          <div><a className="wordmark wordmark-footer" href="#top" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></a><p>Good games live here.</p></div>
-          <div><h2>Play</h2><a href="#courts">Courts</a>{(!isLive || galleryPhotos.length > 0) && <a href="#gallery">Gallery</a>}<a href="#courts">Book a court</a><button type="button" onClick={openManage}>Manage booking</button></div>
+          <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></Link><p>Good games live here.</p></div>
+          <div><h2>Play</h2><Link href="/courts">Courts</Link><Link href="/#gallery">Gallery</Link><Link href="/courts">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
         </div>

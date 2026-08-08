@@ -4,8 +4,10 @@ import test from "node:test";
 
 const files = {
   booking: new URL("../app/booking-experience.tsx", import.meta.url),
+  bookPage: new URL("../app/book/page.tsx", import.meta.url),
   client: new URL("../app/lib/platform/client.ts", import.meta.url),
   config: new URL("../app/tenants/dinktopia/config.ts", import.meta.url),
+  courtsPage: new URL("../app/courts/page.tsx", import.meta.url),
   globalsCss: new URL("../app/globals.css", import.meta.url),
   layout: new URL("../app/layout.tsx", import.meta.url),
   manage: new URL("../app/manage/page.tsx", import.meta.url),
@@ -94,66 +96,103 @@ function assertHtmlResponse(response) {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 }
 
-test("server-renders the complete public Dinktopia booking experience", async () => {
-  const response = await render("/");
-  assertHtmlResponse(response);
-
-  const html = await response.text();
-  const text = documentText(html);
-
-  assert.equal(
-    documentTitle(html),
-    "Dinktopia | Pickleball, on your time · Dinktopia Pickleball",
+function courtChoiceMarkup(html, courtName) {
+  const choices =
+    html.match(/<label\b[^>]*class="court-choice[^"]*"[\s\S]*?<\/label>/gi) ?? [];
+  const choice = choices.find((candidate) =>
+    documentText(candidate).includes(courtName),
   );
-  assert.match(html, /<html\b[^>]*\blang="en-PH"/i);
-  assert.match(html, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="noindex, nofollow"/i);
-  assert.match(html, /<a\b[^>]*class="skip-link"[^>]*href="#main-content"/i);
-  assert.equal(countTags(html, "main"), 1);
-  assert.equal(countTags(html, "header"), 1);
-  assert.equal(countTags(html, "nav"), 1);
-  assert.equal(countTags(html, "footer"), 1);
-  assert.match(html, /<main\b[^>]*id="main-content"/i);
-  assert.match(html, /class="hero-visual"[^>]*aria-hidden="true"/i);
-  assert.match(text, /Dinktopia Pickleball Club/i);
-  assert.match(text, /Your next rally starts here\./i);
-  assert.match(text, /Same game\. Different energy\./i);
-  assert.match(text, /Court 01/i);
-  assert.match(text, /Court 02/i);
-  assert.match(text, /Book a court/i);
+  assert.ok(choice, `expected booking choice for ${courtName}`);
+  return choice;
+}
+
+function assertSelectedCourt(html, selectedCourtName) {
+  const court01 = courtChoiceMarkup(html, "Court 01");
+  const court02 = courtChoiceMarkup(html, "Court 02");
+  const selected = selectedCourtName === "Court 02" ? court02 : court01;
+  const unselected = selectedCourtName === "Court 02" ? court01 : court02;
+
+  assert.match(selected, /class="court-choice is-selected"/i);
+  assert.match(selected, /<input\b[^>]*\bchecked(?:="")?/i);
+  assert.doesNotMatch(unselected, /class="court-choice is-selected"/i);
+  assert.doesNotMatch(unselected, /<input\b[^>]*\bchecked(?:="")?/i);
+}
+
+test("server-renders named Home, Courts, Book, and Manage routes", async () => {
+  const responses = await Promise.all([
+    render("/"),
+    render("/courts"),
+    render("/book?court=preview-court-02"),
+    render("/book?court=not-a-court"),
+    render("/book?court=one&court=two"),
+    render("/book?mode=manage"),
+  ]);
+  responses.forEach(assertHtmlResponse);
+  const [home, courts, selectedBook, invalidBook, repeatedBook, manageBook] =
+    await Promise.all(responses.map((response) => response.text()));
+
+  assert.equal(documentTitle(home), "Home · Dinktopia Pickleball");
+  assert.equal(documentTitle(courts), "Courts · Dinktopia Pickleball");
+  assert.equal(documentTitle(selectedBook), "Book a Court · Dinktopia Pickleball");
+  assert.equal(documentTitle(manageBook), "Manage Booking · Dinktopia Pickleball");
+
+  for (const html of [home, courts, selectedBook, invalidBook, repeatedBook, manageBook]) {
+    assert.match(html, /<html\b[^>]*\blang="en-PH"/i);
+    assert.match(html, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="noindex, nofollow"/i);
+    assert.match(html, /<a\b[^>]*class="skip-link"[^>]*href="#main-content"/i);
+    assert.equal(countTags(html, "main"), 1);
+    assert.equal(countTags(html, "h1"), 1);
+    assert.equal(countTags(html, "header"), 1);
+    assert.equal(countTags(html, "footer"), 1);
+    assert.match(html, /<main\b[^>]*id="main-content"/i);
+    assert.doesNotMatch(html, starterMarkers);
+  }
+
+  const homeText = documentText(home);
+  assert.match(home, /class="hero-visual"[^>]*aria-hidden="true"/i);
+  assert.match(homeText, /Dinktopia Pickleball Club/i);
+  assert.match(homeText, /Your next rally starts here\./i);
   assert.match(
-    html,
-    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="#courts")[^>]*>\s*Book a court\b/is,
+    home,
+    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="\/courts")[^>]*>\s*Book a court\b/is,
   );
-  assert.match(
-    html,
-    /<a\b(?=[^>]*class="text-link")(?=[^>]*href="#how-it-works")[^>]*>\s*How booking works\b/is,
-  );
-  assert.match(text, /Manage booking/i);
-  assert.match(text, /Good games live here\./i);
-  assert.match(html, /Play more\. Rally often\. Stay curious\./i);
-  assert.match(html, /class="ticker-sequence"[^>]*aria-hidden="true"/i);
-  assert.equal((html.match(/class="ticker-sequence"/g) ?? []).length, 1);
-  assert.match(html, /PLAY MORE[\s\S]*RALLY OFTEN[\s\S]*STAY CURIOUS/i);
-  assert.doesNotMatch(
-    html,
-    /ticker-toggle|Pause moving phrase banner|Play moving phrase banner/i,
-  );
+  assert.match(home, /<a\b(?=[^>]*class="text-link")(?=[^>]*href="#how-it-works")/is);
+  assert.doesNotMatch(home, /class="court-discovery section-pad"|class="booking-zone section-pad"/i);
 
-  const galleryStart = html.indexOf('class="club-gallery section-pad"');
-  const finalCalloutStart = html.indexOf('class="club-note"');
-  assert.ok(galleryStart >= 0, "expected the public gallery near the page bottom");
-  assert.ok(
-    finalCalloutStart > galleryStart,
-    "expected the compact gallery before the final booking callout",
-  );
-  const galleryHtml = html.slice(galleryStart, finalCalloutStart);
+  assert.match(home, /Play more\. Rally often\. Stay focused\. New habit\./i);
+  assert.match(home, /class="ticker-motion-toggle sr-only"[^>]*type="checkbox"/i);
+  assert.match(home, /class="ticker-track"[^>]*aria-hidden="true"/i);
+  assert.equal((home.match(/class="ticker-group(?: ticker-group-clone)?"/g) ?? []).length, 2);
+  assert.match(home, /PLAY MORE[\s\S]*RALLY OFTEN[\s\S]*STAY FOCUSED[\s\S]*NEW HABIT/i);
+  assert.doesNotMatch(home, /<button\b[^>]*(?:ticker|Pause|Resume)/i);
+
+  const tickerStart = home.indexOf('class="ticker"');
+  const galleryStart = home.indexOf('class="club-gallery section-pad"');
+  const howStart = home.indexOf('class="how-section section-pad"');
+  assert.ok(tickerStart >= 0 && galleryStart > tickerStart && howStart > galleryStart);
+  const galleryHtml = home.slice(galleryStart, howStart);
   assert.match(galleryHtml, /id="gallery"/i);
   assert.match(galleryHtml, /Court gallery/i);
   assert.match(galleryHtml, /Court photos are coming soon\./i);
-  assert.match(galleryHtml, /owner can publish real venue photos/i);
   assert.doesNotMatch(galleryHtml, /class="gallery-grid"|<figure\b|<img\b/i);
-  assert.match(html, /<a\b[^>]*href="#gallery"[^>]*>Gallery<\/a>/i);
-  assert.doesNotMatch(html, starterMarkers);
+  assert.match(home, /<a\b[^>]*href="\/#gallery"[^>]*>Gallery<\/a>/i);
+
+  assert.match(courts, /class="court-discovery section-pad"/i);
+  assert.match(courts, /Choose your court\.[\s\S]*Start your rally\./i);
+  assert.match(courts, /href="\/book\?court=preview-court-01"/i);
+  assert.match(courts, /href="\/book\?court=preview-court-02"/i);
+  assert.doesNotMatch(courts, /class="hero"|class="booking-zone section-pad"|class="club-gallery/i);
+
+  assert.match(selectedBook, /class="booking-zone section-pad"/i);
+  assert.match(selectedBook, /Book a court/i);
+  assertSelectedCourt(selectedBook, "Court 02");
+  assertSelectedCourt(invalidBook, "Court 01");
+  assertSelectedCourt(repeatedBook, "Court 01");
+  assert.doesNotMatch(selectedBook, /class="hero"|class="court-discovery section-pad"|class="club-gallery/i);
+
+  assert.match(manageBook, /Manage your booking/i);
+  assert.match(manageBook, /Find booking/i);
+  assert.doesNotMatch(manageBook, /class="court-discovery section-pad"|class="club-gallery/i);
 });
 
 test("keeps the court gallery tenant-sourced, safe, compact, and responsive", async () => {
@@ -234,7 +273,7 @@ test("keeps the court gallery tenant-sourced, safe, compact, and responsive", as
     '<section className="club-gallery section-pad"',
   );
   const galleryMarkupEnd = booking.indexOf(
-    '<section className="club-note">',
+    "\n\n  return (",
     galleryMarkupStart,
   );
   assert.ok(galleryMarkupStart >= 0 && galleryMarkupEnd > galleryMarkupStart);
@@ -242,12 +281,13 @@ test("keeps the court gallery tenant-sourced, safe, compact, and responsive", as
 
   assert.match(
     booking,
-    /\{\(!isLive \|\| galleryPhotos\.length > 0\) && \(\s*<section className="club-gallery section-pad"/s,
+    /const gallerySection = \(\s*<section className="club-gallery section-pad"/s,
   );
   assert.match(
     booking,
-    /\{\(!isLive \|\| galleryPhotos\.length > 0\) && <a href="#gallery">Gallery<\/a>\}/,
+    /\{isHome && gallerySection\}/,
   );
+  assert.match(booking, /<Link href="\/#gallery">Gallery<\/Link>/);
   assert.match(galleryMarkup, /galleryPhotos\.length \? \(/);
   assert.ok(
     galleryMarkup.includes(
@@ -277,11 +317,11 @@ test("keeps the court gallery tenant-sourced, safe, compact, and responsive", as
 
   assert.match(
     publicCss,
-    /\.gallery-grid\s*\{[^}]*grid-auto-columns:\s*min\(82vw,\s*360px\)[^}]*grid-auto-flow:\s*column[^}]*overflow-x:\s*auto[^}]*scroll-snap-type:\s*x mandatory/s,
+    /\.gallery-grid\s*\{[^}]*grid-auto-columns:\s*min\(78vw,\s*340px\)[^}]*grid-auto-flow:\s*column[^}]*overflow-x:\s*auto[^}]*scroll-snap-type:\s*x mandatory/s,
   );
   assert.match(
     publicCss,
-    /\.gallery-card\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3[^}]*scroll-snap-align:\s*start/s,
+    /\.gallery-card\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*10[^}]*scroll-snap-align:\s*start/s,
   );
   assert.match(
     publicCss,
@@ -357,7 +397,8 @@ test("marks local customer and manager rendering as non-live preview", async () 
     customerText,
     /No live reservations or payments are created\./i,
   );
-  assert.match(customerText, /Booking preview/i);
+  assert.match(customerHtml, /href="\/courts"/i);
+  assert.doesNotMatch(customerHtml, /class="booking-zone section-pad"/i);
 
   assert.match(managerText, /Preview mode/i);
   assert.match(managerText, /Bookings are not public/i);
@@ -667,7 +708,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
 
 test("renders accessible labels, control states, and announcements", async () => {
   const [customerResponse, managerResponse, booking, manage] = await Promise.all([
-    render("/"),
+    render("/book"),
     render("/manage"),
     readFile(files.booking, "utf8"),
     readFile(files.manage, "utf8"),
@@ -741,7 +782,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*48px/s);
   assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.text-link\s*\{[^}]*min-height:\s*44px/s);
-  assert.match(publicCss, /\.mode-switch button\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.mode-switch a\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.header-inner\s*\{[^}]*min-height:\s*60px/s);
   assert.match(publicCss, /\.hero-grid\s*\{[^}]*padding-top:\s*102px/s);
   assert.match(
@@ -754,59 +795,44 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /\.ticker-sequence\s*\{[^}]*width:\s*min\(920px,\s*calc\(100% - 16px\)\)[^}]*grid-template-columns:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)[^}]*font-size:\s*clamp\(var\(--text-caption\),\s*2vw,\s*var\(--text-meta\)\)/s,
+    /\.ticker-track\s*\{[^}]*display:\s*flex[^}]*width:\s*max-content[^}]*animation:\s*dinktopia-ticker-loop 18s linear infinite[^}]*will-change:\s*transform/s,
   );
   assert.match(
     publicCss,
-    /\.ticker-sequence\s*>\s*span\s*\{[^}]*animation:\s*dinktopia-ticker-fallback 900ms[^}]*var\(--ticker-delay\)[^}]*both/s,
+    /\.ticker-group\s*\{[^}]*width:\s*max-content[^}]*min-width:\s*100vw[^}]*flex:\s*0 0 auto[^}]*gap:\s*var\(--ticker-gap\)[^}]*padding:\s*7px calc\(var\(--ticker-gap\) \/ 2\)/s,
   );
   assert.match(
     publicCss,
-    /\.ticker-sequence\s*>\s*span\s*\{[^}]*min-width:\s*0[^}]*overflow-wrap:\s*anywhere/s,
+    /@keyframes\s+dinktopia-ticker-loop\s*\{\s*to\s*\{\s*transform:\s*translate3d\(-50%,\s*0,\s*0\)/s,
   );
   assert.doesNotMatch(
     booking,
-    /tickerPaused|ticker-toggle|Pause moving phrase banner|Play moving phrase banner/,
-  );
-  assert.match(booking, /const tickerRef = useRef<HTMLDivElement>\(null\)/);
-  assert.match(booking, /const \[tickerInView, setTickerInView\] = useState\(false\)/);
-  assert.match(booking, /\.IntersectionObserver;[\s\S]*?if \(!Observer\)/s);
-  assert.match(
-    booking,
-    /if \(!Observer\)[\s\S]*?requestAnimationFrame\(\(\) => setTickerInView\(true\)\)/s,
+    /tickerRef|tickerInView|IntersectionObserver|ticker-sequence|dinktopia-ticker-hop/,
   );
   assert.match(
     booking,
-    /new Observer\([\s\S]*?entry\?\.isIntersecting[\s\S]*?setTickerInView\(true\)[\s\S]*?observer\.disconnect\(\)[\s\S]*?threshold:\s*0\.25/s,
+    /const tickerPhrases = \["PLAY MORE", "RALLY OFTEN", "STAY FOCUSED", "NEW HABIT"\] as const/,
   );
-  assert.match(booking, /observer\.observe\(ticker\)/);
   assert.match(
     booking,
-    /ref=\{tickerRef\} className=\{`ticker\$\{tickerInView \? " is-in-view" : ""\}`\}/,
+    /className="ticker-motion-toggle sr-only"[\s\S]*?type="checkbox"[\s\S]*?aria-label="Pause or resume moving club phrases"/s,
   );
+  assert.match(
+    booking,
+    /\{\[0, 1\]\.map\(\(copy\) => \([\s\S]*?ticker-group-clone[\s\S]*?tickerPhrases\.map/s,
+  );
+  assert.doesNotMatch(booking, /<button[^>]*(?:ticker|Pause|Resume)/i);
   assert.doesNotMatch(
     publicCss,
-    /\.ticker-toggle|\.ticker\.is-paused|dinktopia-ticker-(?:fallback|hop)[^;}]*infinite|animation-play-state/s,
+    /\.ticker-viewport:hover[^{]*\{[^}]*animation-play-state/s,
   );
   assert.match(
     publicCss,
-    /\.ticker\.is-in-view \.ticker-sequence\s*>\s*span\s*\{[^}]*animation-name:\s*dinktopia-ticker-hop[^}]*animation-duration:\s*3\.1s/s,
+    /\.ticker-motion-toggle:checked \+ \.ticker-viewport \.ticker-track,[\s\S]*?animation-play-state:\s*paused/s,
   );
   assert.match(
     publicCss,
-    /@keyframes\s+dinktopia-ticker-fallback\s*\{[\s\S]*?opacity:\s*1[\s\S]*?translateY\(0\)/s,
-  );
-  assert.match(
-    publicCss,
-    /@keyframes\s+dinktopia-ticker-hop\s*\{[\s\S]*?translateY\(-9px\) scale\(1\.03\)[\s\S]*?100%\s*\{[^}]*opacity:\s*1[^}]*transform:\s*none/s,
-  );
-  assert.match(
-    publicCss,
-    /\.ticker-sequence\s*>\s*span:nth-child\(2\)\s*\{[^}]*--ticker-delay:\s*140ms/s,
-  );
-  assert.match(
-    publicCss,
-    /\.ticker-sequence\s*>\s*span:nth-child\(3\)\s*\{[^}]*--ticker-delay:\s*280ms/s,
+    /\.ticker-motion-toggle:focus-visible \+ \.ticker-viewport\s*\{[^}]*outline:\s*3px solid var\(--ink\)/s,
   );
   assert.match(publicCss, /\.preview-ribbon\s*\{[^}]*position:\s*relative/s);
   assert.match(
@@ -839,7 +865,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*64px[^}]*\}[\s\S]*?\.header-inner\s*>\s*\.wordmark\s*\{[^}]*width:\s*164px[^}]*\}[\s\S]*?\.hero-grid\s*\{[^}]*padding-top:\s*120px/s,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*64px[^}]*\}[\s\S]*?\.header-inner\s*>\s*\.wordmark\s*\{[^}]*width:\s*164px[^}]*\}[\s\S]*?\.hero-grid\s*\{[^}]*padding-top:\s*120px[^}]*\}[\s\S]*?\.ticker-track\s*\{\s*animation-duration:\s*20s/s,
   );
   assert.match(
     publicCss,
@@ -847,7 +873,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*1180px\)[\s\S]*?\.menu-button\s*\{\s*display:\s*none[\s\S]*?\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center[^}]*justify-content:\s*center[^}]*font-size:\s*var\(--text-nav\)[^}]*line-height:\s*1\.3/s,
+    /@media\s*\(min-width:\s*1180px\)[\s\S]*?\.ticker-track\s*\{\s*animation-duration:\s*24s[^}]*\}[\s\S]*?\.menu-button\s*\{\s*display:\s*none[\s\S]*?\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*display:\s*inline-flex[^}]*align-items:\s*center[^}]*justify-content:\s*center[^}]*font-size:\s*var\(--text-nav\)[^}]*line-height:\s*1\.3/s,
   );
   assert.match(
     publicCss,
@@ -885,7 +911,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   assert.match(publicCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(
     publicCss,
-    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.ticker-sequence\s*>\s*span\s*\{[^}]*opacity:\s*1[^}]*transform:\s*none[^}]*animation:\s*none\s*!important/s,
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.ticker-motion-toggle\s*\{[^}]*display:\s*none\s*!important[^}]*\}[\s\S]*?\.ticker-track\s*\{[^}]*animation:\s*none\s*!important[^}]*transform:\s*none\s*!important[^}]*\}[\s\S]*?\.ticker-group-clone\s*\{\s*display:\s*none/s,
   );
 
   assert.match(
