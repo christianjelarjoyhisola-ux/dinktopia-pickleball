@@ -131,7 +131,7 @@
 
 .header-inner {
   display: flex;
-  min-height: 68px;
+  min-height: 60px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 0;
@@ -140,10 +140,10 @@
 .wordmark {
   display: inline-flex;
   align-items: center;
-  width: 142px;
+  width: 132px;
   border: 0;
   background: transparent;
-  padding: 2px 0;
+  padding: 0;
 }
 
 .brand-logo {
@@ -328,7 +328,7 @@
   min-height: 700px;
   align-items: center;
   gap: 36px;
-  padding-top: 110px;
+  padding-top: 102px;
   padding-bottom: 72px;
 }
 
@@ -639,91 +639,51 @@
 }
 
 .ticker {
-  --ticker-gap: clamp(14px, 2vw, 26px);
   position: relative;
   z-index: 6;
-  display: grid;
-  min-height: 44px;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: stretch;
+  min-height: 38px;
   overflow: hidden;
   border-block: 1px solid rgba(16, 42, 67, 0.18);
   background: var(--lime);
   color: var(--ink);
 }
 
-.ticker-window {
-  min-width: 0;
-  overflow: hidden;
-}
-
-.ticker-track {
-  display: flex;
-  width: max-content;
-  align-items: stretch;
-  gap: 0;
-  animation: dinktopia-ticker 26s linear infinite;
-  will-change: transform;
-}
-
 .ticker-sequence {
-  display: flex;
-  min-width: 100vw;
-  flex: 0 0 auto;
+  display: grid;
+  width: min(920px, calc(100% - 16px));
+  min-height: 38px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   align-items: center;
-  justify-content: space-around;
-  gap: var(--ticker-gap);
-  padding: 10px calc(var(--ticker-gap) / 2);
+  gap: 4px;
+  margin-inline: auto;
+  padding-block: 7px;
   font-family: var(--font-display), var(--font-body), system-ui, sans-serif;
-  font-size: var(--text-meta);
+  font-size: clamp(var(--text-caption), 2vw, var(--text-meta));
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.14em;
+  line-height: 1.15;
+  letter-spacing: 0.06em;
 }
 
 .ticker-sequence > span {
-  display: inline-flex;
-  min-height: 24px;
-  flex: 0 0 clamp(116px, 11vw, 156px);
+  display: flex;
+  min-width: 0;
   align-items: center;
   justify-content: center;
-  white-space: nowrap;
+  opacity: 0;
+  transform: translateY(7px);
+  animation: dinktopia-ticker-intro 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  overflow-wrap: anywhere;
   text-align: center;
 }
 
-.ticker-sequence > i {
-  flex: 0 0 auto;
-  color: var(--blue);
-  font-style: normal;
-}
+.ticker-sequence > span:nth-child(2) { animation-delay: 90ms; }
+.ticker-sequence > span:nth-child(3) { animation-delay: 180ms; }
 
-.ticker-toggle {
-  position: relative;
-  z-index: 2;
-  display: grid;
-  width: 44px;
-  min-height: 44px;
-  place-items: center;
-  border: 0;
-  border-left: 1px solid rgba(244, 247, 250, 0.2);
-  background: var(--ink);
-  color: var(--lime);
-  font-family: var(--font-display), var(--font-body), system-ui, sans-serif;
-  font-size: var(--text-small);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.ticker-toggle:hover { background: var(--blue); }
-.ticker.is-paused .ticker-track { animation-play-state: paused; }
-
-@media (hover: hover) {
-  .ticker-window:hover .ticker-track { animation-play-state: paused; }
-}
-
-@keyframes dinktopia-ticker {
-  from { transform: translate3d(0, 0, 0); }
-  to { transform: translate3d(-50%, 0, 0); }
+@keyframes dinktopia-ticker-intro {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .section-pad {
@@ -2900,7 +2860,8 @@
 
 @media (min-width: 560px) {
   .site-container { width: min(1180px, calc(100% - 48px)); }
-  .hero-grid { padding-top: 124px; }
+  .hero-grid { padding-top: 116px; }
+  .ticker-sequence { gap: 12px; letter-spacing: 0.1em; }
   .hero-visual { min-height: 520px; }
   .court-art { inset: 12px 36px 40px; }
   .score-card { right: 20px; }
@@ -2924,10 +2885,9 @@
 }
 
 @media (min-width: 780px) {
-  .header-inner { min-height: 72px; }
-  .header-inner > .wordmark { width: 176px; }
-  .hero-grid { padding-top: 128px; }
-  .ticker-track { animation-duration: 36s; }
+  .header-inner { min-height: 64px; }
+  .header-inner > .wordmark { width: 164px; }
+  .hero-grid { padding-top: 120px; }
   .section-pad { padding-block: 88px; }
   .court-card-grid { grid-template-columns: 1fr 1fr; }
   .mini-court { min-height: 320px; }
@@ -2947,7 +2907,7 @@
 }
 
 @media (min-width: 980px) {
-  .hero-grid { grid-template-columns: minmax(0, 1.08fr) minmax(410px, 0.92fr); min-height: 720px; padding-top: 92px; padding-bottom: 56px; }
+  .hero-grid { grid-template-columns: minmax(0, 1.08fr) minmax(410px, 0.92fr); min-height: 720px; padding-top: 84px; padding-bottom: 56px; }
   .hero-visual { min-height: 560px; }
   .court-art { inset: 35px 20px 35px; }
   .score-card { top: 17px; right: -10px; }
@@ -2962,7 +2922,7 @@
 }
 
 @media (min-width: 1180px) {
-  .header-inner > .wordmark { width: 180px; }
+  .header-inner > .wordmark { width: 164px; }
   .menu-button { display: none; }
   .primary-nav,
   .primary-nav.is-open {
@@ -3039,7 +2999,7 @@
 }
 
 @media (max-width: 390px) {
-  .wordmark { width: 138px; }
+  .wordmark { width: 128px; }
   .hero-proof { gap: 7px; }
   .slot-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .booking-main-card { padding: 16px; }
@@ -3057,28 +3017,11 @@
     transition-duration: 0.01ms !important;
   }
 
-  .ticker-track {
-    width: 100%;
+  .ticker-sequence > span {
+    opacity: 1;
+    transform: none;
     animation: none !important;
-    transform: none !important;
-    will-change: auto;
   }
-
-  .ticker-sequence {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    width: 100%;
-    min-width: 0;
-    gap: 4px;
-    padding-inline: 8px;
-    font-size: var(--text-caption);
-    letter-spacing: 0.06em;
-  }
-
-  .ticker-sequence-copy,
-  .ticker-sequence > span:nth-of-type(n + 2),
-  .ticker-sequence > i,
-  .ticker-toggle { display: none; }
 }
 
 @media (prefers-contrast: more) {

@@ -717,7 +717,6 @@ export function BookingExperience({
   const turnstileWidgetRef = useRef<string | null>(null);
   const bookingAttemptIdRef = useRef("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [tickerPaused, setTickerPaused] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">("book");
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
@@ -1464,7 +1463,7 @@ export function BookingExperience({
               alt=""
               width={2046}
               height={769}
-              sizes="(max-width: 390px) 138px, (max-width: 779px) 142px, (max-width: 1179px) 176px, 180px"
+              sizes="(max-width: 390px) 128px, (max-width: 779px) 132px, 164px"
               priority
             />
           </a>
@@ -1551,30 +1550,13 @@ export function BookingExperience({
               </div>
             </div>
           </div>
-          <div className={`ticker ${tickerPaused ? "is-paused" : ""}`}>
-            <div className="ticker-window" aria-hidden="true">
-              <div className="ticker-track">
-                <div className="ticker-sequence">
-                  <span>PLAY MORE</span><i>◆</i><span>RALLY OFTEN</span><i>◆</i>
-                  <span>STAY CURIOUS</span><i>◆</i><span>PLAY MORE</span><i>◆</i>
-                  <span>RALLY OFTEN</span><i>◆</i><span>STAY CURIOUS</span><i>◆</i>
-                </div>
-                <div className="ticker-sequence ticker-sequence-copy">
-                  <span>PLAY MORE</span><i>◆</i><span>RALLY OFTEN</span><i>◆</i>
-                  <span>STAY CURIOUS</span><i>◆</i><span>PLAY MORE</span><i>◆</i>
-                  <span>RALLY OFTEN</span><i>◆</i><span>STAY CURIOUS</span><i>◆</i>
-                </div>
-              </div>
+          <div className="ticker">
+            <p className="sr-only">Play more. Rally often. Stay curious.</p>
+            <div className="ticker-sequence" aria-hidden="true">
+              <span>PLAY MORE</span>
+              <span>RALLY OFTEN</span>
+              <span>STAY CURIOUS</span>
             </div>
-            <button
-              className="ticker-toggle"
-              type="button"
-              aria-label="Pause moving phrase banner"
-              aria-pressed={tickerPaused}
-              onClick={() => setTickerPaused((paused) => !paused)}
-            >
-              <span aria-hidden="true">{tickerPaused ? "▶" : "Ⅱ"}</span>
-            </button>
           </div>
         </section>
 
