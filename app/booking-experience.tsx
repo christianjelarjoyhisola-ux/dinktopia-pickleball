@@ -36,6 +36,13 @@ type Court = {
   color: "blue" | "coral";
 };
 
+type GalleryPhoto = {
+  id: string;
+  src: string;
+  alt: string;
+  caption: string;
+};
+
 type SlotStatus = "available" | "limited" | "unavailable";
 
 export type AvailabilitySlot = {
@@ -128,6 +135,69 @@ function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
     mood: court.description || "Configured for Dinktopia play",
     color: index % 2 === 0 ? "blue" : "coral",
   }));
+}
+
+function trustedGallerySource(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const source = value.trim();
+  try {
+    const localOrigin = "https://dinktopia.invalid";
+    const localUrl = new URL(source, localOrigin);
+    if (
+      source.startsWith("/") &&
+      !source.startsWith("//") &&
+      !source.includes("\\") &&
+      localUrl.origin === localOrigin
+    ) {
+      return `${localUrl.pathname}${localUrl.search}${localUrl.hash}`;
+    }
+    if (!/^https:\/\//i.test(source) || source.includes("\\")) return null;
+    const url = new URL(source);
+    if (
+      url.protocol === "https:" &&
+      !url.username &&
+      !url.password &&
+      !url.port &&
+      url.hostname.endsWith(".supabase.co") &&
+      url.pathname.includes("/storage/v1/object/")
+    ) {
+      return url.href;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function galleryText(value: unknown, fallback: string, maxLength: number) {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().replace(/\s+/g, " ");
+  return normalized ? normalized.slice(0, maxLength) : fallback;
+}
+
+function galleryPhotosFromPlatform(tenantBootstrap: TenantBootstrap | null) {
+  if (!tenantBootstrap) return [];
+  return tenantBootstrap.courts
+    .flatMap<GalleryPhoto>((court) => {
+      const config = (court.publicConfig ?? {}) as {
+        photoUrl?: unknown;
+        photoAlt?: unknown;
+        photoCaption?: unknown;
+      };
+      const src = trustedGallerySource(config.photoUrl);
+      if (!src) return [];
+      return [{
+        id: court.id,
+        src,
+        alt: galleryText(
+          config.photoAlt,
+          `${court.name} at ${tenantBootstrap.tenant.name}`,
+          180,
+        ),
+        caption: galleryText(config.photoCaption, court.name, 80),
+      }];
+    })
+    .slice(0, 5);
 }
 
 const seededCustomer: CustomerDetails = {
@@ -713,10 +783,12 @@ export function BookingExperience({
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
+  const tickerRef = useRef<HTMLDivElement>(null);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetRef = useRef<string | null>(null);
   const bookingAttemptIdRef = useRef("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [tickerInView, setTickerInView] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">("book");
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
@@ -767,6 +839,7 @@ export function BookingExperience({
         : previewCourts,
     [bootstrap, isLive],
   );
+  const galleryPhotos = useMemo(() => galleryPhotosFromPlatform(bootstrap), [bootstrap]);
   const selectedCourt =
     displayCourts.find((court) => court.id === selectedCourtId) ?? displayCourts[0];
   const selectedPublicCourt = bootstrap?.courts.find((court) => court.id === selectedCourtId);
@@ -890,6 +963,30 @@ export function BookingExperience({
       active = false;
     };
   }, [isLive]);
+
+  useEffect(() => {
+    const ticker = tickerRef.current;
+    if (!ticker || tickerInView) return;
+
+    const Observer = (
+      window as unknown as { IntersectionObserver?: typeof IntersectionObserver }
+    ).IntersectionObserver;
+    if (!Observer) {
+      const frame = window.requestAnimationFrame(() => setTickerInView(true));
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    const observer = new Observer(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        setTickerInView(true);
+        observer.disconnect();
+      },
+      { threshold: 0.25, rootMargin: "0px 0px -5% 0px" },
+    );
+    observer.observe(ticker);
+    return () => observer.disconnect();
+  }, [tickerInView]);
 
   useEffect(() => {
     if (adapter !== platformAdapter) return;
@@ -1491,9 +1588,9 @@ export function BookingExperience({
             <button className="nav-text-button" type="button" onClick={openManage}>
               Manage booking
             </button>
-            <button className="button button-small button-lime" type="button" onClick={() => openBooking()}>
+            <a className="button button-small button-lime" href="#courts" onClick={() => setMobileNavOpen(false)}>
               Book a court <span aria-hidden="true">↗</span>
-            </button>
+            </a>
           </nav>
         </div>
       </header>
@@ -1512,11 +1609,11 @@ export function BookingExperience({
                 and meet your crew on the bright side of the net.
               </p>
               <div className="hero-actions">
-                <button className="button button-lime button-large" type="button" onClick={() => openBooking()}>
-                  Find a court <span aria-hidden="true">→</span>
-                </button>
-                <a className="text-link" href="#courts">
-                  Meet the courts <span aria-hidden="true">↓</span>
+                <a className="button button-lime button-large" href="#courts">
+                  Book a court <span aria-hidden="true">→</span>
+                </a>
+                <a className="text-link" href="#how-it-works">
+                  How booking works <span aria-hidden="true">↓</span>
                 </a>
               </div>
               <ul className="hero-proof" aria-label="Booking highlights">
@@ -1550,7 +1647,7 @@ export function BookingExperience({
               </div>
             </div>
           </div>
-          <div className="ticker">
+          <div ref={tickerRef} className={`ticker${tickerInView ? " is-in-view" : ""}`}>
             <p className="sr-only">Play more. Rally often. Stay curious.</p>
             <div className="ticker-sequence" aria-hidden="true">
               <span>PLAY MORE</span>
@@ -1593,7 +1690,7 @@ export function BookingExperience({
                       <span>From ₱300 / hour</span>
                     </div>
                     <button className="button court-button" type="button" onClick={() => openBooking(court.id)}>
-                      Check Court {court.number} times <span aria-hidden="true">→</span>
+                      See times for Court {court.number} <span aria-hidden="true">→</span>
                     </button>
                   </div>
                 </article>
@@ -2115,11 +2212,60 @@ export function BookingExperience({
           </div>
         </section>
 
+        {(!isLive || galleryPhotos.length > 0) && (
+          <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
+            <div className="site-container">
+              <div className="gallery-heading">
+                <div>
+                  <p className="eyebrow eyebrow-dark">Court gallery</p>
+                  <h2 id="gallery-heading">See the space before you play.</h2>
+                </div>
+                <p>Fresh photos published by the Dinktopia team.</p>
+              </div>
+
+              {galleryPhotos.length ? (
+                <div
+                  className={`gallery-grid${galleryPhotos.length === 5 ? " is-bento" : ""}`}
+                  aria-label="Dinktopia court gallery"
+                  role="region"
+                  tabIndex={0}
+                >
+                  {galleryPhotos.map((photo) => (
+                    <figure className="gallery-card" key={photo.id}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.src}
+                        alt={photo.alt}
+                        width={1200}
+                        height={900}
+                        loading="lazy"
+                        decoding="async"
+                      />
+                      <figcaption>{photo.caption}</figcaption>
+                    </figure>
+                  ))}
+                </div>
+              ) : (
+                <div className="gallery-empty">
+                  <div className="gallery-empty-frames" aria-hidden="true">
+                    <span>01</span><span>02</span><span>+</span>
+                  </div>
+                  <div>
+                    <p className="eyebrow eyebrow-dark">Gallery ready</p>
+                    <h3>Court photos are coming soon.</h3>
+                    <p>The owner can publish real venue photos here once secure gallery uploads are activated.</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        )}
+
         <section className="club-note">
           <div className="site-container club-note-inner">
             <p className="eyebrow">Welcome to your next favorite habit</p>
             <h2>Serious court.<br /><span>Playful spirit.</span></h2>
-            <button className="button button-lime button-large" type="button" onClick={() => openBooking()}>Find your hour <span aria-hidden="true">→</span></button>
+            <a className="button button-lime button-large" href="#courts">Book a court <span aria-hidden="true">→</span></a>
           </div>
         </section>
       </main>
@@ -2127,7 +2273,7 @@ export function BookingExperience({
       <footer className="site-footer">
         <div className="site-container footer-grid">
           <div><a className="wordmark wordmark-footer" href="#top" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></a><p>Good games live here.</p></div>
-          <div><h2>Play</h2><a href="#courts">Courts</a><button type="button" onClick={() => openBooking()}>Book a court</button><button type="button" onClick={openManage}>Manage booking</button></div>
+          <div><h2>Play</h2><a href="#courts">Courts</a>{(!isLive || galleryPhotos.length > 0) && <a href="#gallery">Gallery</a>}<a href="#courts">Book a court</a><button type="button" onClick={openManage}>Manage booking</button></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
         </div>

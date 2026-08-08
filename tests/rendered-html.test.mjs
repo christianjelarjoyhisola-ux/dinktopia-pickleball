@@ -120,14 +120,198 @@ test("server-renders the complete public Dinktopia booking experience", async ()
   assert.match(text, /Court 01/i);
   assert.match(text, /Court 02/i);
   assert.match(text, /Book a court/i);
+  assert.match(
+    html,
+    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="#courts")[^>]*>\s*Book a court\b/is,
+  );
+  assert.match(
+    html,
+    /<a\b(?=[^>]*class="text-link")(?=[^>]*href="#how-it-works")[^>]*>\s*How booking works\b/is,
+  );
   assert.match(text, /Manage booking/i);
   assert.match(text, /Good games live here\./i);
   assert.match(html, /Play more\. Rally often\. Stay curious\./i);
   assert.match(html, /class="ticker-sequence"[^>]*aria-hidden="true"/i);
   assert.equal((html.match(/class="ticker-sequence"/g) ?? []).length, 1);
   assert.match(html, /PLAY MORE[\s\S]*RALLY OFTEN[\s\S]*STAY CURIOUS/i);
-  assert.doesNotMatch(html, /ticker-toggle|Pause moving phrase banner/i);
+  assert.doesNotMatch(
+    html,
+    /ticker-toggle|Pause moving phrase banner|Play moving phrase banner/i,
+  );
+
+  const galleryStart = html.indexOf('class="club-gallery section-pad"');
+  const finalCalloutStart = html.indexOf('class="club-note"');
+  assert.ok(galleryStart >= 0, "expected the public gallery near the page bottom");
+  assert.ok(
+    finalCalloutStart > galleryStart,
+    "expected the compact gallery before the final booking callout",
+  );
+  const galleryHtml = html.slice(galleryStart, finalCalloutStart);
+  assert.match(galleryHtml, /id="gallery"/i);
+  assert.match(galleryHtml, /Court gallery/i);
+  assert.match(galleryHtml, /Court photos are coming soon\./i);
+  assert.match(galleryHtml, /owner can publish real venue photos/i);
+  assert.doesNotMatch(galleryHtml, /class="gallery-grid"|<figure\b|<img\b/i);
+  assert.match(html, /<a\b[^>]*href="#gallery"[^>]*>Gallery<\/a>/i);
   assert.doesNotMatch(html, starterMarkers);
+});
+
+test("keeps the court gallery tenant-sourced, safe, compact, and responsive", async () => {
+  const [booking, publicCss] = await Promise.all([
+    readFile(files.booking, "utf8"),
+    readFile(files.publicCss, "utf8"),
+  ]);
+
+  const allowlistStart = booking.indexOf("function trustedGallerySource");
+  const galleryDataEnd = booking.indexOf("const seededCustomer", allowlistStart);
+  assert.ok(allowlistStart >= 0 && galleryDataEnd > allowlistStart);
+  const galleryDataSource = booking.slice(allowlistStart, galleryDataEnd);
+
+  assert.match(galleryDataSource, /if \(!tenantBootstrap\) return \[\]/);
+  assert.match(
+    galleryDataSource,
+    /source\.startsWith\("\/"\)\s*&&\s*!source\.startsWith\("\/\/"\)/s,
+  );
+  assert.match(galleryDataSource, /const localOrigin = "https:\/\/dinktopia\.invalid"/);
+  assert.match(galleryDataSource, /new URL\(source, localOrigin\)/);
+  assert.match(galleryDataSource, /localUrl\.origin === localOrigin/);
+  assert.match(
+    galleryDataSource,
+    /return `\$\{localUrl\.pathname\}\$\{localUrl\.search\}\$\{localUrl\.hash\}`/,
+  );
+  assert.ok(
+    (galleryDataSource.match(/source\.includes\("\\\\"\)/g) ?? []).length >= 2,
+    "expected both local and remote gallery URLs to reject backslashes",
+  );
+  assert.match(galleryDataSource, /!\/\^https:\\\/\\\/\/i\.test\(source\)/);
+  assert.match(galleryDataSource, /url\.protocol === "https:"/);
+  assert.match(
+    galleryDataSource,
+    /!url\.username\s*&&\s*!url\.password\s*&&\s*!url\.port/s,
+  );
+  assert.match(
+    galleryDataSource,
+    /url\.hostname\.endsWith\("\.supabase\.co"\)/,
+  );
+  assert.match(
+    galleryDataSource,
+    /url\.pathname\.includes\("\/storage\/v1\/object\/"\)/,
+  );
+  assert.match(
+    galleryDataSource,
+    /const config = \(court\.publicConfig \?\? \{\}\) as/,
+  );
+  assert.match(galleryDataSource, /const src = trustedGallerySource\(config\.photoUrl\)/);
+  assert.match(galleryDataSource, /if \(!src\) return \[\]/);
+  assert.match(
+    galleryDataSource,
+    /function galleryText\(value: unknown, fallback: string, maxLength: number\)/,
+  );
+  assert.ok(
+    galleryDataSource.includes(
+      'const normalized = value.trim().replace(/\\s+/g, " ");',
+    ),
+  );
+  assert.match(
+    galleryDataSource,
+    /return normalized \? normalized\.slice\(0, maxLength\) : fallback/,
+  );
+  assert.match(
+    galleryDataSource,
+    /alt:\s*galleryText\([\s\S]*?config\.photoAlt,[\s\S]*?180,[\s\S]*?\)/s,
+  );
+  assert.match(
+    galleryDataSource,
+    /caption:\s*galleryText\(config\.photoCaption, court\.name, 80\)/,
+  );
+  assert.match(galleryDataSource, /\.slice\(0, 5\)/);
+  assert.doesNotMatch(
+    galleryDataSource,
+    /data:|blob:|localStorage|sessionStorage|FileReader|createObjectURL/i,
+  );
+
+  const galleryMarkupStart = booking.indexOf(
+    '<section className="club-gallery section-pad"',
+  );
+  const galleryMarkupEnd = booking.indexOf(
+    '<section className="club-note">',
+    galleryMarkupStart,
+  );
+  assert.ok(galleryMarkupStart >= 0 && galleryMarkupEnd > galleryMarkupStart);
+  const galleryMarkup = booking.slice(galleryMarkupStart, galleryMarkupEnd);
+
+  assert.match(
+    booking,
+    /\{\(!isLive \|\| galleryPhotos\.length > 0\) && \(\s*<section className="club-gallery section-pad"/s,
+  );
+  assert.match(
+    booking,
+    /\{\(!isLive \|\| galleryPhotos\.length > 0\) && <a href="#gallery">Gallery<\/a>\}/,
+  );
+  assert.match(galleryMarkup, /galleryPhotos\.length \? \(/);
+  assert.ok(
+    galleryMarkup.includes(
+      'className={`gallery-grid${galleryPhotos.length === 5 ? " is-bento" : ""}`}',
+    ),
+    "expected only a complete five-photo set to opt into the bento mosaic",
+  );
+  assert.doesNotMatch(
+    galleryMarkup,
+    /galleryPhotos\.length\s*(?:>|>=|<|<=)\s*5\s*\?\s*" is-bento"/,
+  );
+  assert.match(
+    galleryMarkup,
+    /<img[\s\S]*?src=\{photo\.src\}[\s\S]*?alt=\{photo\.alt\}[\s\S]*?width=\{1200\}[\s\S]*?height=\{900\}[\s\S]*?loading="lazy"[\s\S]*?decoding="async"[\s\S]*?\/>/s,
+  );
+  assert.match(
+    galleryMarkup,
+    /aria-label="Dinktopia court gallery"\s*role="region"\s*tabIndex=\{0\}/s,
+  );
+  assert.match(galleryMarkup, /<figcaption>\{photo\.caption\}<\/figcaption>/);
+  assert.match(galleryMarkup, /className="gallery-empty"/);
+  assert.match(galleryMarkup, /aria-hidden="true"/);
+  assert.doesNotMatch(
+    galleryMarkup,
+    /type="file"|localStorage|sessionStorage|FileReader|createObjectURL/i,
+  );
+
+  assert.match(
+    publicCss,
+    /\.gallery-grid\s*\{[^}]*grid-auto-columns:\s*min\(82vw,\s*360px\)[^}]*grid-auto-flow:\s*column[^}]*overflow-x:\s*auto[^}]*scroll-snap-type:\s*x mandatory/s,
+  );
+  assert.match(
+    publicCss,
+    /\.gallery-card\s*\{[^}]*aspect-ratio:\s*4\s*\/\s*3[^}]*scroll-snap-align:\s*start/s,
+  );
+  assert.match(
+    publicCss,
+    /\.gallery-heading h2\s*\{[^}]*font-size:\s*var\(--text-section\)[^}]*font-weight:\s*var\(--weight-bold\)[^}]*letter-spacing:\s*var\(--tracking-heading\)[^}]*line-height:\s*0\.96/s,
+  );
+  assert.match(
+    publicCss,
+    /\.gallery-card figcaption\s*\{[^}]*overflow-wrap:\s*anywhere[^}]*display:\s*-webkit-box[^}]*overflow:\s*hidden[^}]*-webkit-box-orient:\s*vertical[^}]*-webkit-line-clamp:\s*2/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.gallery-grid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)[^}]*overflow:\s*visible/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.gallery-grid:not\(\.is-bento\)\s*\{[^}]*grid-template-columns:\s*repeat\(auto-fit,\s*minmax\(260px,\s*1fr\)\)/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.gallery-grid \.gallery-card:only-child\s*\{[^}]*width:\s*min\(760px,\s*100%\)[^}]*grid-column:\s*1\s*\/\s*-1[^}]*justify-self:\s*center[^}]*aspect-ratio:\s*16\s*\/\s*7/s,
+  );
+  assert.doesNotMatch(publicCss, /repeat\(auto-fill,\s*minmax\(260px,/);
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.gallery-grid\.is-bento\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)[^}]*grid-template-rows:\s*repeat\(2,\s*clamp\(170px,\s*16vw,\s*205px\)\)[^}]*\}[\s\S]*?\.gallery-grid\.is-bento \.gallery-card:first-child\s*\{[^}]*grid-column:\s*span 2[^}]*grid-row:\s*span 2/s,
+  );
+  assert.doesNotMatch(
+    publicCss,
+    /\.gallery-grid(?!\.is-bento|:not\()\s*\{[^}]*grid-template-columns:\s*repeat\(4,/s,
+  );
 });
 
 test("server-renders the responsive tenant management workspace", async () => {
@@ -574,7 +758,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /\.ticker-sequence\s*>\s*span\s*\{[^}]*animation:\s*dinktopia-ticker-intro 560ms[^}]*both/s,
+    /\.ticker-sequence\s*>\s*span\s*\{[^}]*animation:\s*dinktopia-ticker-fallback 900ms[^}]*var\(--ticker-delay\)[^}]*both/s,
   );
   assert.match(
     publicCss,
@@ -584,17 +768,45 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     booking,
     /tickerPaused|ticker-toggle|Pause moving phrase banner|Play moving phrase banner/,
   );
+  assert.match(booking, /const tickerRef = useRef<HTMLDivElement>\(null\)/);
+  assert.match(booking, /const \[tickerInView, setTickerInView\] = useState\(false\)/);
+  assert.match(booking, /\.IntersectionObserver;[\s\S]*?if \(!Observer\)/s);
+  assert.match(
+    booking,
+    /if \(!Observer\)[\s\S]*?requestAnimationFrame\(\(\) => setTickerInView\(true\)\)/s,
+  );
+  assert.match(
+    booking,
+    /new Observer\([\s\S]*?entry\?\.isIntersecting[\s\S]*?setTickerInView\(true\)[\s\S]*?observer\.disconnect\(\)[\s\S]*?threshold:\s*0\.25/s,
+  );
+  assert.match(booking, /observer\.observe\(ticker\)/);
+  assert.match(
+    booking,
+    /ref=\{tickerRef\} className=\{`ticker\$\{tickerInView \? " is-in-view" : ""\}`\}/,
+  );
   assert.doesNotMatch(
     publicCss,
-    /\.ticker-toggle|\.ticker\.is-paused|animation:\s*dinktopia-ticker-intro[^;}]*infinite/s,
+    /\.ticker-toggle|\.ticker\.is-paused|dinktopia-ticker-(?:fallback|hop)[^;}]*infinite|animation-play-state/s,
   );
   assert.match(
     publicCss,
-    /@keyframes\s+dinktopia-ticker-intro\s*\{[\s\S]*?opacity:\s*1[\s\S]*?translateY\(0\)/s,
+    /\.ticker\.is-in-view \.ticker-sequence\s*>\s*span\s*\{[^}]*animation-name:\s*dinktopia-ticker-hop[^}]*animation-duration:\s*3\.1s/s,
   );
   assert.match(
     publicCss,
-    /\.ticker-sequence\s*>\s*span:nth-child\(3\)\s*\{[^}]*animation-delay:\s*180ms/s,
+    /@keyframes\s+dinktopia-ticker-fallback\s*\{[\s\S]*?opacity:\s*1[\s\S]*?translateY\(0\)/s,
+  );
+  assert.match(
+    publicCss,
+    /@keyframes\s+dinktopia-ticker-hop\s*\{[\s\S]*?translateY\(-9px\) scale\(1\.03\)[\s\S]*?100%\s*\{[^}]*opacity:\s*1[^}]*transform:\s*none/s,
+  );
+  assert.match(
+    publicCss,
+    /\.ticker-sequence\s*>\s*span:nth-child\(2\)\s*\{[^}]*--ticker-delay:\s*140ms/s,
+  );
+  assert.match(
+    publicCss,
+    /\.ticker-sequence\s*>\s*span:nth-child\(3\)\s*\{[^}]*--ticker-delay:\s*280ms/s,
   );
   assert.match(publicCss, /\.preview-ribbon\s*\{[^}]*position:\s*relative/s);
   assert.match(
