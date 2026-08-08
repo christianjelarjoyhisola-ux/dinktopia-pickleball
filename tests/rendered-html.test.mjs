@@ -522,7 +522,16 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   ]);
 
   assert.match(globalsCss, /html\s*\{[^}]*min-width:\s*0/s);
-  assert.match(globalsCss, /body\s*\{[^}]*overflow-x:\s*hidden/s);
+  assert.doesNotMatch(
+    globalsCss,
+    /body\s*\{[^}]*overflow-x:\s*(?:hidden|clip)/s,
+  );
+  assert.match(globalsCss, /--text-micro:\s*0\.75rem/);
+  assert.match(globalsCss, /--text-caption:\s*0\.75rem/);
+  assert.match(globalsCss, /--text-small:\s*0\.875rem/);
+  assert.match(globalsCss, /--text-nav:\s*0\.9375rem/);
+  assert.match(globalsCss, /--text-body:\s*1rem/);
+  assert.match(globalsCss, /--text-title:\s*clamp\(/);
   assert.match(globalsCss, /img\s*\{[^}]*max-width:\s*100%/s);
   assert.match(globalsCss, /:focus-visible\s*\{[^}]*outline:/s);
   assert.match(globalsCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
@@ -532,17 +541,32 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     /\.site-container\s*\{[^}]*width:\s*min\(1180px,\s*calc\(100% - 32px\)\)/s,
   );
   assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*48px/s);
+  assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.mode-switch button\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.preview-ribbon\s*\{[^}]*position:\s*relative/s);
+  assert.match(
+    publicCss,
+    /\.site-header\.has-preview-ribbon\s*\{[^}]*top:\s*auto/s,
+  );
   assert.match(
     publicCss,
     /\.menu-button\s*\{[^}]*display:\s*flex[^}]*min-width:\s*44px[^}]*min-height:\s*44px/s,
   );
   assert.match(
     publicCss,
-    /\.footer-grid small\s*\{[^}]*font-size:\s*12px/s,
+    /\.footer-grid small\s*\{[^}]*font-size:\s*var\(--text-meta\)/s,
   );
   assert.match(
     publicCss,
-    /\.footer-bottom\s*\{[^}]*font-size:\s*12px/s,
+    /\.footer-bottom\s*\{[^}]*font-size:\s*var\(--text-meta\)/s,
+  );
+  assert.match(
+    publicCss,
+    /:where\(\s*\.dinktopia-site button,[\s\S]*?\.dinktopia-site textarea\s*\)\s*\{\s*font:\s*inherit/s,
+  );
+  assert.match(
+    publicCss,
+    /\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-body\)[^}]*font-weight:\s*var\(--weight-medium\)/s,
   );
   assert.match(
     publicCss,
@@ -550,7 +574,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.menu-button\s*\{\s*display:\s*none/s,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.menu-button\s*\{\s*display:\s*none[\s\S]*?\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-nav\)[^}]*line-height:\s*20px/s,
   );
   assert.match(
     publicCss,
@@ -565,7 +589,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /\.desktopNav p\s*\{[^}]*color:\s*var\(--muted\)[^}]*font-size:\s*0\.7rem/s,
+    /\.desktopNav p\s*\{[^}]*color:\s*var\(--muted\)[^}]*font-size:\s*var\(--text-caption\)/s,
   );
   assert.match(
     manageCss,
@@ -577,11 +601,57 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.signInShell input\s*\{\s*font-size:\s*var\(--text-body\)/s,
+  );
+  assert.match(
+    manageCss,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.mobileNav button\s*\{[^}]*font-size:\s*var\(--text-small\)/s,
+  );
+  assert.match(
+    manageCss,
     /@media\s*\(max-width:\s*680px\)[\s\S]*?\.dataTable[^\{]*\{[^}]*display:\s*block/s,
   );
   assert.match(
     manageCss,
     /@media\s*\(max-width:\s*430px\)[\s\S]*?\.metricGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
   );
+  assert.match(manageCss, /\.dateButton\s*\{[^}]*min-height:\s*59px/s);
+  assert.match(
+    manageCss,
+    /\.slotGrid\s*\{[^}]*grid-template-rows:\s*minmax\(86px,\s*auto\)/s,
+  );
+  assert.match(
+    manageCss,
+    /\.slotGrid\s*\{[^}]*grid-template-columns:\s*repeat\(14,\s*5rem\)/s,
+  );
+  assert.match(
+    manageCss,
+    /\.hoursList\s*>\s*div\s*>\s*input\s*\{[^}]*width:\s*100%[^}]*min-width:\s*0/s,
+  );
+  assert.match(
+    manageCss,
+    /@media\s*\(max-width:\s*680px\)[\s\S]*?\.hoursList\s*>\s*div\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*auto\s*minmax\(0,\s*1fr\)/s,
+  );
   assert.match(manageCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+
+  const publicPixelTypeSizes = [
+    ...publicCss.matchAll(/font-size:\s*([0-9.]+)px/g),
+  ].map((match) => Number(match[1]));
+  assert.ok(publicPixelTypeSizes.every((size) => size >= 12));
+
+  const manageRemTypeSizes = [
+    ...manageCss.matchAll(/font-size:\s*([0-9.]+)rem/g),
+  ].map((match) => Number(match[1]));
+  assert.ok(manageRemTypeSizes.every((size) => size >= 0.75));
+
+  for (const css of [publicCss, manageCss]) {
+    const numericWeights = [...css.matchAll(/font-weight:\s*(\d+)/g)].map(
+      (match) => Number(match[1]),
+    );
+    assert.ok(
+      numericWeights.every((weight) =>
+        [400, 500, 600, 700, 800].includes(weight),
+      ),
+    );
+  }
 });
