@@ -268,20 +268,44 @@ test("uses the official transparent Dinktopia logo and extracted brand palette",
   assert.match(booking, /aria-label="Dinktopia home"/);
   assert.match(publicCss, /\.wordmark\s*\{[^}]*background:\s*transparent/s);
   assert.match(manageCss, /\.logoPlate\s*\{[^}]*background:\s*transparent/s);
+  assert.match(
+    publicCss,
+    /\.site-header\s*\{[^}]*background:\s*rgba\(248,\s*251,\s*255,\s*0\.97\)[^}]*color:\s*var\(--ink\)/s,
+  );
+  assert.match(
+    publicCss,
+    /\.site-footer\s*\{[^}]*background:\s*var\(--paper-deep\)[^}]*color:\s*var\(--ink\)/s,
+  );
+  assert.match(
+    publicCss,
+    /\.site-header \.brand-logo,\s*\.site-footer \.brand-logo\s*\{[^}]*filter:\s*none/s,
+  );
+  assert.match(
+    manageCss,
+    /\.sidebar\s*\{[^}]*background:[^;]*var\(--brand-surface\);[^}]*color:\s*var\(--ink\)/s,
+  );
+  assert.match(
+    manageCss,
+    /\.sidebar \.brandLogo,\s*\.mobileBrand \.brandLogo\s*\{[^}]*filter:\s*none/s,
+  );
+  assert.match(
+    manageCss,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.mobileBrand\s*\{[^}]*background:\s*var\(--brand-surface\)[^}]*color:\s*var\(--ink\)/s,
+  );
 
   for (const source of [globalsCss, publicCss]) {
-    assert.match(source, /#163b5b/i);
-    assert.match(source, /#244f89/i);
+    assert.match(source, /#102a43/i);
+    assert.match(source, /#254c84/i);
     assert.match(source, /#82f500/i);
-    assert.match(source, /#f5f8fc/i);
+    assert.match(source, /#f4f7fa/i);
   }
-  assert.match(config, /primary:\s*"#163B5B"/);
-  assert.match(config, /electric:\s*"#244F89"/);
+  assert.match(config, /primary:\s*"#102A43"/);
+  assert.match(config, /electric:\s*"#254C84"/);
   assert.match(config, /citrus:\s*"#82F500"/);
 
-  assert.equal(og.readUInt32BE(16), 1729);
-  assert.equal(og.readUInt32BE(20), 910);
-  assert.match(layout, /width:\s*1729,\s*height:\s*910/);
+  assert.equal(og.readUInt32BE(16), 1727);
+  assert.equal(og.readUInt32BE(20), 911);
+  assert.match(layout, /width:\s*1727,\s*height:\s*911/);
 });
 
 test("pins Dinktopia to one fail-closed tenant registry and provisional config", async () => {
@@ -497,7 +521,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     readFile(files.manageCss, "utf8"),
   ]);
 
-  assert.match(globalsCss, /html\s*\{[^}]*min-width:\s*320px/s);
+  assert.match(globalsCss, /html\s*\{[^}]*min-width:\s*0/s);
   assert.match(globalsCss, /body\s*\{[^}]*overflow-x:\s*hidden/s);
   assert.match(globalsCss, /img\s*\{[^}]*max-width:\s*100%/s);
   assert.match(globalsCss, /:focus-visible\s*\{[^}]*outline:/s);
@@ -541,7 +565,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /\.desktopNav p\s*\{[^}]*color:\s*rgba\(255,\s*255,\s*255,\s*0\.72\)[^}]*font-size:\s*0\.7rem/s,
+    /\.desktopNav p\s*\{[^}]*color:\s*var\(--muted\)[^}]*font-size:\s*0\.7rem/s,
   );
   assert.match(
     manageCss,
@@ -557,7 +581,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /@media\s*\(max-width:\s*430px\)[\s\S]*?\.metricGrid\s*\{[^}]*grid-template-columns:\s*1fr/s,
+    /@media\s*\(max-width:\s*430px\)[\s\S]*?\.metricGrid\s*\{[^}]*grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/s,
   );
   assert.match(manageCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
 });

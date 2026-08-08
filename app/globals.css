@@ -1,16 +1,16 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #163b5b;
-  --paper: #f5f8fc;
-  --electric: #244f89;
+  --ink: #102a43;
+  --paper: #f4f7fa;
+  --electric: #254c84;
   --citrus: #82f500;
   --coral: #c13e2b;
-  --mist: #e7eef7;
+  --mist: #eaf0f6;
   --white: #ffffff;
-  --muted: #5e6f7e;
-  --line: rgba(22, 59, 91, 0.16);
-  --shadow-soft: 0 24px 80px rgba(22, 59, 91, 0.14);
+  --muted: #526678;
+  --line: rgba(16, 42, 67, 0.16);
+  --shadow-soft: 0 24px 80px rgba(16, 42, 67, 0.14);
   --background: var(--paper);
   --foreground: var(--ink);
 }
@@ -29,7 +29,7 @@
 }
 
 html {
-  min-width: 320px;
+  min-width: 0;
   background: var(--paper);
   color-scheme: light;
   scroll-behavior: smooth;

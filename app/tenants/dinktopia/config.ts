@@ -102,9 +102,9 @@ export const dinktopiaConfig = {
   brand: {
     direction: "Modern court club led by the official Dinktopia mark",
     tagline: "Find your hour. Own the rally.",
-    primary: "#163B5B",
-    paper: "#F5F8FC",
-    electric: "#244F89",
+    primary: "#102A43",
+    paper: "#F4F7FA",
+    electric: "#254C84",
     citrus: "#82F500",
     coral: "#C13E2B",
   },
