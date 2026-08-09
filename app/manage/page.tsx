@@ -22,6 +22,7 @@ import {
   type ManagementCapability,
   type ManagementContext,
   type ManagementSnapshot,
+  type RemittanceDestination,
   type TenantRole,
 } from "./management-adapter";
 import {
@@ -54,6 +55,7 @@ type View =
   | "customers"
   | "reports"
   | "settings"
+  | "launch"
   | "access";
 
 type PreviewState = "ready" | "loading" | "empty" | "error" | "restricted";
@@ -82,6 +84,7 @@ const NAV_ITEMS: { id: View; label: string; short: string }[] = [
   { id: "customers", label: "Customers", short: "CU" },
   { id: "reports", label: "Reports", short: "RP" },
   { id: "settings", label: "Venue settings", short: "ST" },
+  { id: "launch", label: "Launch", short: "GO" },
   { id: "access", label: "Team & access", short: "AC" },
 ];
 
@@ -89,6 +92,7 @@ const VIEW_CAPABILITY: Partial<Record<View, ManagementCapability>> = {
   customers: "customer:view",
   reports: "report:view",
   settings: "settings:update",
+  launch: "tenant:publish",
 };
 
 const VIEW_COPY: Record<View, { eyebrow: string; title: string; description: string }> = {
@@ -126,6 +130,11 @@ const VIEW_COPY: Record<View, { eyebrow: string; title: string; description: str
     eyebrow: "Tenant configuration",
     title: "Venue settings",
     description: "Manage Dinktopia’s courts, rates, hours and booking rules.",
+  },
+  launch: {
+    eyebrow: "Platform launch",
+    title: "Go live",
+    description: "Finish the authoritative launch checks and open public booking.",
   },
   access: {
     eyebrow: "Tenant access",
@@ -169,6 +178,11 @@ const LIVE_VIEW_COPY: Record<View, { eyebrow: string; title: string; description
     eyebrow: "Server-authorized setup",
     title: "Venue settings",
     description: "Configure live court inventory, shared hours and rates within the authenticated session's server permissions.",
+  },
+  launch: {
+    eyebrow: "System Owner controls",
+    title: "Launch Dinktopia",
+    description: "Configure platform billing and remittance, then complete the server-authorized launch.",
   },
   access: {
     eyebrow: "Authenticated session",
@@ -513,11 +527,11 @@ function OverviewView({
                   </span>
                 </div>
                 <StatusPill status={booking.status} />
-                {isPreview && (
+                {isPreview && booking.bookingType === "regular" && (
                   <button
                     type="button"
                     className={styles.rowAction}
-                    disabled={!can("booking:check-in") || booking.status === "checked_in"}
+                    disabled={!can("booking:check-in") || booking.status === "checked_in" || booking.payment !== "paid"}
                     aria-label={`Check in ${booking.customer}`}
                     onClick={() =>
                       request({
@@ -525,7 +539,7 @@ function OverviewView({
                         detail: `${booking.court}, ${booking.time}. This will mark the arrival for today’s operations team.`,
                         confirmLabel: "Confirm check-in",
                         actionType: "booking:check-in",
-                        resourceId: booking.id,
+                        resourceId: booking.bookingId,
                       })
                     }
                   >
@@ -615,12 +629,14 @@ function OverviewView({
 
 function BookingsView({
   bookings,
+  courts,
   can,
   request,
   goTo,
   isPreview,
 }: {
   bookings: Booking[];
+  courts: ManagementSnapshot["courts"];
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
   goTo: (view: View) => void;
@@ -628,6 +644,27 @@ function BookingsView({
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"all" | BookingStatus>("all");
+  const [creating, setCreating] = useState(false);
+  const [rescheduling, setRescheduling] = useState<Booking | null>(null);
+  const [manual, setManual] = useState({
+    courtId: courts[0]?.id ?? "",
+    bookingDate: manilaCalendarDate(),
+    startTime: "06:00",
+    durationHours: "1",
+    customerName: "",
+    customerEmail: "",
+    customerPhone: "",
+    paymentMethod: "gcash",
+    paymentReference: "",
+  });
+  const [rescheduleDraft, setRescheduleDraft] = useState({
+    newDate: manilaCalendarDate(),
+    newStartTime: "06:00",
+    reasonCode: "customer_request",
+    publicReason: "Requested by the customer",
+    internalNote: "",
+    notifyCustomer: true,
+  });
   const filtered = bookings.filter((booking) => {
     const matchesQuery = `${booking.customer} ${booking.id} ${booking.court}`
       .toLowerCase()
@@ -642,10 +679,89 @@ function BookingsView({
           <p className={styles.eyebrow}>Reservation register</p>
           <h2 id="booking-list-title">{isPreview ? "All preview bookings" : "Loaded bookings"}</h2>
         </div>
-        {isPreview && <ActionButton disabled={!can("booking:create")} onClick={() => goTo("schedule")}>
-          <span aria-hidden="true">＋</span> New booking
-        </ActionButton>}
+        <ActionButton
+          disabled={!can("booking:create") || (!isPreview && !courts.length)}
+          onClick={() => isPreview ? goTo("schedule") : setCreating((value) => !value)}
+        >
+          <span aria-hidden="true">＋</span> {creating ? "Close form" : "New booking"}
+        </ActionButton>
       </div>
+      {!isPreview && creating && (
+        <form className={styles.compactActionForm} onSubmit={(event) => {
+          event.preventDefault();
+          request({
+            title: "Create this paid booking?",
+            detail: `${manual.customerName.trim()} · ${manual.bookingDate} at ${wholeHourLabel(manual.startTime)} · ${manual.durationHours} ${manual.durationHours === "1" ? "hour" : "hours"}. Availability and the total are recalculated by the server.`,
+            confirmLabel: "Create paid booking",
+            actionType: "booking:create",
+            payload: {
+              courtId: manual.courtId,
+              bookingDate: manual.bookingDate,
+              startTime: manual.startTime,
+              durationHours: Number(manual.durationHours),
+              customer: {
+                name: manual.customerName,
+                email: manual.customerEmail,
+                phone: manual.customerPhone,
+              },
+              payment: {
+                method: manual.paymentMethod,
+                reference: manual.paymentMethod === "cash" ? null : manual.paymentReference,
+              },
+              clientRequestId: crypto.randomUUID(),
+            },
+            onSuccess: () => setCreating(false),
+          });
+        }}>
+          <div className={styles.compactFormHeading}>
+            <div><p className={styles.eyebrow}>Owner-assisted</p><h3>New paid booking</h3></div>
+            <span>Live quote at save</span>
+          </div>
+          <div className={styles.compactFields}>
+            <label className={styles.field}><span>Court</span><select required value={manual.courtId} onChange={(event) => setManual({ ...manual, courtId: event.target.value })}>{courts.map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}</select></label>
+            <label className={styles.field}><span>Date</span><input required type="date" min={manilaCalendarDate()} value={manual.bookingDate} onChange={(event) => setManual({ ...manual, bookingDate: event.target.value })} /></label>
+            <label className={styles.field}><span>Starts</span><select value={manual.startTime} onChange={(event) => setManual({ ...manual, startTime: event.target.value })}>{wholeHourOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className={styles.field}><span>Hours</span><select value={manual.durationHours} onChange={(event) => setManual({ ...manual, durationHours: event.target.value })}>{Array.from({ length: 18 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
+            <label className={styles.field}><span>Player name</span><input required minLength={2} maxLength={100} value={manual.customerName} onChange={(event) => setManual({ ...manual, customerName: event.target.value })} /></label>
+            <label className={styles.field}><span>Phone</span><input required minLength={7} maxLength={30} value={manual.customerPhone} onChange={(event) => setManual({ ...manual, customerPhone: event.target.value })} /></label>
+            <label className={styles.field}><span>Email <small>optional</small></span><input type="email" maxLength={254} value={manual.customerEmail} onChange={(event) => setManual({ ...manual, customerEmail: event.target.value })} /></label>
+            <label className={styles.field}><span>Paid through</span><select value={manual.paymentMethod} onChange={(event) => setManual({ ...manual, paymentMethod: event.target.value })}><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
+            {manual.paymentMethod !== "cash" && <label className={styles.field}><span>Payment reference</span><input required minLength={4} maxLength={100} value={manual.paymentReference} onChange={(event) => setManual({ ...manual, paymentReference: event.target.value })} /></label>}
+          </div>
+          <div className={styles.compactFormActions}><span>Only a server-authorized owner can complete this write.</span><ActionButton type="submit">Review booking</ActionButton></div>
+        </form>
+      )}
+      {!isPreview && rescheduling && (
+        <form className={styles.compactActionForm} onSubmit={(event) => {
+          event.preventDefault();
+          request({
+            title: `Move ${rescheduling.reference}?`,
+            detail: `Move ${rescheduling.customer} to ${rescheduleDraft.newDate} at ${wholeHourLabel(rescheduleDraft.newStartTime)}. The server will reject any conflict.`,
+            confirmLabel: "Reschedule booking",
+            actionType: "booking:update",
+            resourceId: rescheduling.bookingId,
+            payload: {
+              bookingId: rescheduling.bookingId,
+              bookingReference: rescheduling.reference,
+              ...rescheduleDraft,
+              internalNote: rescheduleDraft.internalNote || null,
+              idempotencyKey: crypto.randomUUID(),
+            },
+            onSuccess: () => setRescheduling(null),
+          });
+        }}>
+          <div className={styles.compactFormHeading}><div><p className={styles.eyebrow}>Reschedule {rescheduling.reference}</p><h3>{rescheduling.customer}</h3></div><button type="button" className={styles.textButton} onClick={() => setRescheduling(null)}>Close</button></div>
+          <div className={styles.compactFields}>
+            <label className={styles.field}><span>New date</span><input required type="date" min={manilaCalendarDate()} value={rescheduleDraft.newDate} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newDate: event.target.value })} /></label>
+            <label className={styles.field}><span>New start</span><select value={rescheduleDraft.newStartTime} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newStartTime: event.target.value })}>{wholeHourOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className={styles.field}><span>Reason</span><select value={rescheduleDraft.reasonCode} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, reasonCode: event.target.value })}><option value="customer_request">Customer request</option><option value="weather">Weather</option><option value="court_maintenance">Court maintenance</option><option value="schedule_conflict">Schedule conflict</option><option value="admin_correction">Admin correction</option><option value="other">Other</option></select></label>
+            <label className={cx(styles.field, styles.fieldWide)}><span>Customer-facing reason</span><input required minLength={3} maxLength={500} value={rescheduleDraft.publicReason} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, publicReason: event.target.value })} /></label>
+            <label className={cx(styles.field, styles.fieldWide)}><span>Internal note <small>optional</small></span><input minLength={3} maxLength={1000} value={rescheduleDraft.internalNote} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, internalNote: event.target.value })} /></label>
+            <label className={styles.switchLabel}><input type="checkbox" checked={rescheduleDraft.notifyCustomer} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, notifyCustomer: event.target.checked })} /><span aria-hidden="true" />Email customer</label>
+          </div>
+          <div className={styles.compactFormActions}><span>Availability and price are previewed first. Higher-priced moves require cancelling and creating a new paid booking.</span><ActionButton type="submit">Review change</ActionButton></div>
+        </form>
+      )}
       <div className={styles.filterBar}>
         <label className={styles.searchField}>
           <span className={styles.srOnly}>Search bookings</span>
@@ -682,7 +798,7 @@ function BookingsView({
                 <th scope="col">Court</th>
                 <th scope="col">Payment</th>
                 <th scope="col">Status</th>
-                {isPreview && <th scope="col"><span className={styles.srOnly}>Actions</span></th>}
+                <th scope="col"><span className={styles.srOnly}>Actions</span></th>
               </tr>
             </thead>
             <tbody>
@@ -709,30 +825,47 @@ function BookingsView({
                     </span>
                   </td>
                   <td data-label="Status"><StatusPill status={booking.status} /></td>
-                  {isPreview && <td data-label="Actions">
+                  <td data-label="Actions">
                     <div className={styles.tableActions}>
-                      {booking.status === "confirmed" && (
+                      {booking.status === "confirmed" && booking.bookingType === "regular" && (
                         <button
                           type="button"
                           className={styles.miniButton}
-                          disabled={!can("booking:check-in")}
+                          disabled={!can("booking:check-in") || booking.payment !== "paid"}
                           onClick={() =>
                             request({
                               title: `Check in ${booking.customer}?`,
                               detail: `${booking.id} will be marked as arrived. The booking itself will not be changed.`,
                               confirmLabel: "Check in",
                               actionType: "booking:check-in",
-                              resourceId: booking.id,
+                              resourceId: booking.bookingId,
                             })
                           }
                         >
                           Check in
                         </button>
                       )}
+                      {!isPreview && booking.status === "confirmed" && booking.payment === "paid" && (
+                        <button
+                          type="button"
+                          className={styles.miniButton}
+                          disabled={!can("booking:update") || !booking.bookingDate || !booking.startTime}
+                          onClick={() => {
+                            setRescheduling(booking);
+                            setRescheduleDraft((current) => ({
+                              ...current,
+                              newDate: booking.bookingDate ?? current.newDate,
+                              newStartTime: booking.startTime ?? current.newStartTime,
+                            }));
+                          }}
+                        >
+                          Move
+                        </button>
+                      )}
                       <button
                         type="button"
                         className={styles.moreButton}
-                        disabled={!can("booking:cancel") || booking.status === "completed"}
+                        disabled={!can("booking:cancel") || booking.status === "completed" || booking.status === "checked_in"}
                         aria-label={`Cancel booking ${booking.id}`}
                         onClick={() =>
                           request({
@@ -740,7 +873,8 @@ function BookingsView({
                             detail: `${booking.customer} will lose ${booking.court} on ${booking.date}, ${booking.time}. Paid refunds remain owner-assisted.`,
                             confirmLabel: "Cancel booking",
                             actionType: "booking:cancel",
-                            resourceId: booking.id,
+                            resourceId: booking.bookingId,
+                            payload: { reason: "Cancelled by venue management" },
                             tone: "danger",
                           })
                         }
@@ -748,7 +882,7 @@ function BookingsView({
                         Cancel
                       </button>
                     </div>
-                  </td>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -1591,6 +1725,29 @@ type BusinessDraft = {
   paymentMethods: PaymentMethodDraft[];
 };
 
+type PolicyDraft = { title: string; intro: string; content: string };
+
+function policyDraftFor(snapshot: ManagementSnapshot): PolicyDraft {
+  const policy = snapshot.configuration.policy;
+  const source = policy?.draft ?? policy?.publishedPolicy;
+  return source
+    ? { title: source.title, intro: source.intro, content: source.content }
+    : { title: "Dinktopia booking rules", intro: "Please review these rules before booking.", content: "" };
+}
+
+function policyDraftError(draft: PolicyDraft): string | null {
+  if (draft.title.trim().length < 3 || draft.title.trim().length > 180) {
+    return "Title must contain 3 to 180 characters.";
+  }
+  if (draft.intro.trim().length < 10 || draft.intro.trim().length > 1_200) {
+    return "Introduction must contain 10 to 1,200 characters.";
+  }
+  if (draft.content.trim().length < 20 || draft.content.trim().length > 30_000) {
+    return "Rules must contain 20 to 30,000 characters.";
+  }
+  return null;
+}
+
 function businessDraftFor(
   configuration: BusinessPaymentConfiguration | null,
 ): BusinessDraft | null {
@@ -1673,12 +1830,14 @@ function LiveSettingsView({
   snapshot,
   can,
   request,
+  initialSection = "courts",
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
+  initialSection?: "courts" | "schedule" | "business" | "rules";
 }) {
-  const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
+  const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">(initialSection);
   const [courtDrafts, setCourtDrafts] = useState(() => courtDraftsFor(snapshot));
   const [newCourt, setNewCourt] = useState<NewCourtDraft>(() => newCourtDraftFor(snapshot));
   const [newCourtAttempted, setNewCourtAttempted] = useState(false);
@@ -1691,6 +1850,7 @@ function LiveSettingsView({
   const [businessDraft, setBusinessDraft] = useState(() =>
     businessDraftFor(snapshot.configuration.businessPayments)
   );
+  const [policyDraft, setPolicyDraft] = useState(() => policyDraftFor(snapshot));
 
   const setCourtField = <Key extends keyof CourtDraft>(
     courtId: string,
@@ -2064,14 +2224,38 @@ function LiveSettingsView({
         )}
         {section === "rules" && (
           <div className={styles.settingsSection}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Customer policy</p><h2>Booking rules</h2></div><span className={styles.needsTag}>Write unavailable</span></div>
-            <div className={styles.ruleList} aria-disabled="true">
-              <label className={styles.field}><span>Advance notice</span><input disabled value="Configured per court; not editable in this section" readOnly /></label>
-              <label className={styles.field}><span>Booking horizon</span><input disabled value="Configured per court; not editable in this section" readOnly /></label>
-              <label className={styles.field}><span>Cancellation policy</span><textarea disabled value="Policy publishing is not connected on this page." readOnly rows={3} /></label>
-              <label className={styles.field}><span>Rescheduling policy</span><textarea disabled value="Policy publishing is not connected on this page." readOnly rows={3} /></label>
+            <div className={styles.panelHeading}>
+              <div><p className={styles.eyebrow}>Customer policy</p><h2>Booking rules</h2></div>
+              <span className={snapshot.configuration.policy?.policyConfigured ? styles.openTag : styles.needsTag}>
+                {snapshot.configuration.policy?.policyConfigured ? "Published" : "Draft required"}
+              </span>
             </div>
-            <div className={styles.noticeBox}><span aria-hidden="true">!</span><p><strong>No live action is sent.</strong> The page has no server contract for publishing policy text, so these controls remain disabled.</p></div>
+            {snapshot.configuration.policyStatus === "available" && snapshot.configuration.policy ? (
+              <>
+                <div className={styles.policyStatusLine}>
+                  <span>Draft revision</span>
+                  <strong>{snapshot.configuration.policy.revision ? new Date(snapshot.configuration.policy.revision).toLocaleString("en-PH") : "First draft"}</strong>
+                  <span>Published version</span>
+                  <strong>{snapshot.configuration.policy.publishedPolicy?.version ?? "Not published"}</strong>
+                </div>
+                <div className={styles.ruleList}>
+                  <label className={styles.field}><span>Title</span><input required minLength={3} maxLength={180} value={policyDraft.title} onChange={(event) => setPolicyDraft({ ...policyDraft, title: event.target.value })} /></label>
+                  <label className={cx(styles.field, styles.fieldWide)}><span>Short introduction</span><textarea required minLength={10} maxLength={1200} rows={2} value={policyDraft.intro} onChange={(event) => setPolicyDraft({ ...policyDraft, intro: event.target.value })} /></label>
+                  <label className={cx(styles.field, styles.fieldWide)}><span>Full booking, cancellation and reschedule rules</span><textarea required minLength={20} maxLength={30000} rows={8} value={policyDraft.content} onChange={(event) => setPolicyDraft({ ...policyDraft, content: event.target.value })} /></label>
+                </div>
+                {policyDraftError(policyDraft) && <p className={styles.inlineError} role="alert">{policyDraftError(policyDraft)}</p>}
+                <div className={styles.noticeBox}><span aria-hidden="true">i</span><p><strong>Safe concurrent editing.</strong> Saving uses the loaded revision. If another session changes these rules first, the server rejects this copy and asks you to refresh.</p></div>
+                <div className={styles.settingsFooter}>
+                  <span>Save a draft anytime. Publish only when this exact text is customer-ready.</span>
+                  <div className={styles.inlineActions}>
+                    <ActionButton variant="secondary" disabled={!can("settings:update") || !snapshot.configuration.policy.permissions.canManagePolicy || Boolean(policyDraftError(policyDraft))} onClick={() => request({ title: "Save these booking rules as a draft?", detail: "This does not change the rules customers currently see.", confirmLabel: "Save draft", actionType: "policy:update", payload: { expectedRevision: snapshot.configuration.policy!.revision, policy: policyDraft } })}>Save draft</ActionButton>
+                    <ActionButton disabled={!can("settings:update") || !snapshot.configuration.policy.permissions.canPublishPolicy || Boolean(policyDraftError(policyDraft))} onClick={() => request({ title: "Publish these booking rules?", detail: "Customers will see this exact title, introduction and policy text. The server assigns the published version.", confirmLabel: "Publish rules", actionType: "policy:publish", payload: { expectedRevision: snapshot.configuration.policy!.revision, policy: policyDraft } })}>Publish rules</ActionButton>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Policy service unavailable</p><h3>Rules could not be loaded safely.</h3><p>Refresh before editing so the current revision and permissions can be verified.</p></div>
+            )}
           </div>
         )}
       </div>
@@ -2083,10 +2267,12 @@ function SettingsView({
   snapshot,
   can,
   request,
+  initialLiveSection,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
+  initialLiveSection?: "courts" | "schedule" | "business" | "rules";
 }) {
   const [section, setSection] = useState<"courts" | "rates" | "hours" | "rules">("courts");
   if (snapshot.tenant.mode === "live") {
@@ -2096,10 +2282,13 @@ function SettingsView({
           snapshot.courts,
           snapshot.configuration.sharedSchedule,
           snapshot.configuration.businessPayments,
+          snapshot.configuration.policy,
+          initialLiveSection,
         ])}
         snapshot={snapshot}
         can={can}
         request={request}
+        initialSection={initialLiveSection}
       />
     );
   }
@@ -2178,16 +2367,134 @@ function SettingsView({
   );
 }
 
+function LaunchView({
+  snapshot,
+  request,
+  openSettings,
+}: {
+  snapshot: ManagementSnapshot;
+  request: (action: ConfirmAction) => void;
+  openSettings: (section: "business" | "rules") => void;
+}) {
+  const existingBilling = snapshot.configuration.businessPayments?.platformBilling;
+  const [billing, setBilling] = useState({
+    feeMode: existingBilling?.feeMode ?? "fixed_per_booking",
+    feeAmount: existingBilling ? String(existingBilling.feeAmount) : "",
+  });
+  const existingDestination = snapshot.configuration.remittanceDestination;
+  const [destination, setDestination] = useState({
+    method: existingDestination?.method ?? "gcash",
+    accountName: existingDestination?.accountName ?? "",
+    accountReference: existingDestination?.accountReference ?? "",
+    dueDay: existingDestination ? String(existingDestination.dueDay) : "",
+    instructions: existingDestination?.instructions ?? "",
+  });
+  const launchChecks = snapshot.setup.filter((item) =>
+    item.id !== "setup-status" && item.id !== "public-booking"
+  );
+  const ready = launchChecks.length > 0 && launchChecks.every((item) => item.complete);
+  const publicBookingIsLive = snapshot.setup.find((item) => item.id === "public-booking")?.complete === true;
+  const billingAmount = Number(billing.feeAmount);
+  const billingValid = billing.feeAmount.trim() !== "" && Number.isFinite(billingAmount) &&
+    billingAmount >= 0 && billingAmount <= (billing.feeMode === "percentage" ? 100 : 9_999_999_999.99);
+  const dueDay = Number(destination.dueDay);
+  const destinationValid = destination.accountName.trim().length >= 2 &&
+    destination.accountReference.trim().length >= 4 && Number.isSafeInteger(dueDay) &&
+    dueDay >= 1 && dueDay <= 28;
+
+  if (!snapshot.session.isSystemOwner) {
+    return <PermissionPanel role={snapshot.session.role} view="launch" isPreview={false} />;
+  }
+
+  return (
+    <div className={styles.launchLayout}>
+      <section className={styles.panel} aria-labelledby="launch-readiness-title">
+        <div className={styles.panelHeading}>
+          <div><p className={styles.eyebrow}>Authoritative readiness</p><h2 id="launch-readiness-title">{launchChecks.filter((item) => item.complete).length} of {launchChecks.length} ready</h2></div>
+          <span className={publicBookingIsLive || ready ? styles.openTag : styles.needsTag}>{publicBookingIsLive ? "Live" : ready ? "Ready to launch" : "Setup required"}</span>
+        </div>
+        <div className={styles.launchChecklist}>
+          {launchChecks.map((item) => (
+            <article key={item.id} className={item.complete ? styles.launchCheckReady : styles.launchCheckMissing}>
+              <span aria-hidden="true">{item.complete ? "✓" : "!"}</span>
+              <div><strong>{item.label}</strong><p>{item.detail}</p></div>
+              {!item.complete && item.id === "email" && <button type="button" className={styles.textButton} onClick={() => openSettings("business")}>Configure email</button>}
+              {!item.complete && item.id === "policy" && <button type="button" className={styles.textButton} onClick={() => openSettings("rules")}>Write rules</button>}
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <div className={styles.launchEditorGrid}>
+        <form className={styles.panel} onSubmit={(event) => {
+          event.preventDefault();
+          if (!billingValid) return;
+          request({
+            title: "Save the platform billing rule?",
+            detail: "This fee is applied authoritatively by the booking platform. Existing bookings are not recalculated.",
+            confirmLabel: "Save billing",
+            actionType: "activation:update",
+            payload: { platformBilling: { feeMode: billing.feeMode, feeAmount: billingAmount } },
+          });
+        }}>
+          <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Platform revenue</p><h2>Billing rule</h2></div><span className={existingBilling?.isConfigured ? styles.openTag : styles.needsTag}>{existingBilling?.isConfigured ? "Configured" : "Required"}</span></div>
+          <div className={styles.compactFields}>
+            <label className={styles.field}><span>Fee model</span><select value={billing.feeMode} onChange={(event) => setBilling({ ...billing, feeMode: event.target.value as typeof billing.feeMode })}><option value="fixed_per_booking">Fixed per booking</option><option value="fixed_per_hour">Fixed per hour</option><option value="percentage">Percentage</option></select></label>
+            <label className={styles.field}><span>{billing.feeMode === "percentage" ? "Percentage" : "Amount (PHP)"}</span><input required type="number" min="0" max={billing.feeMode === "percentage" ? "100" : undefined} step="0.01" value={billing.feeAmount} onChange={(event) => setBilling({ ...billing, feeAmount: event.target.value })} /></label>
+          </div>
+          <div className={styles.settingsFooter}><span>System Owner only</span><ActionButton type="submit" disabled={!billingValid}>Save billing</ActionButton></div>
+        </form>
+
+        <form className={styles.panel} onSubmit={(event) => {
+          event.preventDefault();
+          if (!destinationValid) return;
+          request({
+            title: "Save the remittance destination?",
+            detail: "Court owners will use this verified destination when remitting platform fees.",
+            confirmLabel: "Save destination",
+            actionType: "remittance:update",
+            payload: {
+              method: destination.method,
+              accountName: destination.accountName,
+              accountReference: destination.accountReference,
+              dueDay,
+              instructions: destination.instructions || null,
+              removeQr: false,
+            },
+          });
+        }}>
+          <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Platform remittance</p><h2>Destination</h2></div><span className={existingDestination ? styles.openTag : styles.needsTag}>{existingDestination ? "Configured" : "Required"}</span></div>
+          <div className={styles.compactFields}>
+            <label className={styles.field}><span>Method</span><select value={destination.method} onChange={(event) => setDestination({ ...destination, method: event.target.value as RemittanceDestination["method"] })}><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
+            <label className={styles.field}><span>Monthly due day</span><input required type="number" min="1" max="28" step="1" value={destination.dueDay} onChange={(event) => setDestination({ ...destination, dueDay: event.target.value })} /></label>
+            <label className={styles.field}><span>Account name</span><input required minLength={2} maxLength={160} value={destination.accountName} onChange={(event) => setDestination({ ...destination, accountName: event.target.value })} /></label>
+            <label className={styles.field}><span>Account number / reference</span><input required minLength={4} maxLength={120} value={destination.accountReference} onChange={(event) => setDestination({ ...destination, accountReference: event.target.value })} /></label>
+            <label className={cx(styles.field, styles.fieldWide)}><span>Instructions <small>optional</small></span><textarea rows={3} maxLength={2000} value={destination.instructions} onChange={(event) => setDestination({ ...destination, instructions: event.target.value })} /></label>
+          </div>
+          <div className={styles.settingsFooter}><span>No account value is guessed or prefilled.</span><ActionButton type="submit" disabled={!destinationValid}>Save destination</ActionButton></div>
+        </form>
+      </div>
+
+      <section className={cx(styles.panel, styles.launchFinal)}>
+        <div><p className={styles.eyebrow}>Final server gate</p><h2>{publicBookingIsLive ? "Dinktopia is live" : ready ? "Dinktopia is ready" : "Complete every missing item"}</h2><p>{publicBookingIsLive ? "Public booking is already enabled. Continue managing venue details without running initial activation again." : "The platform rechecks every requirement atomically. This browser cannot bypass a missing configuration."}</p></div>
+        <ActionButton disabled={publicBookingIsLive || !ready} onClick={() => request({ title: "Open Dinktopia public booking?", detail: "The platform will run one final authoritative readiness check and enable public booking only if every requirement still passes.", confirmLabel: "Go live", actionType: "tenant:publish" })}>{publicBookingIsLive ? "Already live" : "Go live"}</ActionButton>
+      </section>
+    </div>
+  );
+}
+
 function AccessView({
   role,
   capabilities,
   isPreview,
   session,
+  toolAvailability,
 }: {
   role: TenantRole;
   capabilities: ManagementCapability[];
   isPreview: boolean;
   session?: ManagementSnapshot["session"];
+  toolAvailability?: ManagementSnapshot["configuration"]["toolAvailability"];
 }) {
   return (
     <section className={styles.accessGrid}>
@@ -2211,16 +2518,23 @@ function AccessView({
           <span>{ROLE_LABEL[role].slice(0, 2).toUpperCase()}</span>
           <div>
             <h2>{isPreview ? ROLE_LABEL[role] : session?.isSystemOwner ? "System Owner" : `Tenant ${ROLE_LABEL[role]}`}</h2>
-            <p>{isPreview ? `${capabilities.length} preview capabilities` : session?.isSystemOwner ? `${capabilities.length} server capabilities · no tenant membership` : `${capabilities.length} server capabilities · ${session?.membershipRole ?? "no"} membership`}</p>
+            <p>{isPreview ? `${capabilities.length} preview capabilities` : session?.isSystemOwner ? "Full platform account authority · no tenant membership required" : `${capabilities.length} account permissions · ${session?.membershipRole ?? "no"} membership`}</p>
           </div>
         </div>
         <ul className={styles.capabilityList}>
-          {(Object.keys(CAPABILITY_LABEL) as ManagementCapability[]).map((capability) => {
-            const granted = capabilities.includes(capability);
-            return <li key={capability} className={granted ? styles.granted : styles.notGranted}><span aria-hidden="true">{granted ? "✓" : "—"}</span>{CAPABILITY_LABEL[capability]}</li>;
-          })}
+          {(Object.keys(CAPABILITY_LABEL) as ManagementCapability[])
+            .filter((capability) => capabilities.includes(capability))
+            .map((capability) => <li key={capability} className={styles.granted}><span aria-hidden="true">✓</span>{CAPABILITY_LABEL[capability]}</li>)}
         </ul>
-        <p className={styles.authorityNote}><strong>{isPreview ? "Preview, not policy." : "Server policy is authoritative."}</strong> {isPreview ? "The production adapter uses capabilities from the authenticated tenant session. This UI does not grant access." : "Unavailable capabilities remain disabled; the browser cannot elevate its own role."}</p>
+        {!isPreview && toolAvailability && (
+          <div className={styles.toolStatusList}>
+            <strong>Connected controls</strong>
+            {capabilities.map((capability) => (
+              <span key={capability}><i className={toolAvailability[capability] === false ? styles.toolUnavailable : styles.toolReady} />{CAPABILITY_LABEL[capability]} · {toolAvailability[capability] === false ? "setup unavailable" : "connected"}</span>
+            ))}
+          </div>
+        )}
+        <p className={styles.authorityNote}><strong>{isPreview ? "Preview, not policy." : "Account authority and tool readiness are separate."}</strong> {isPreview ? "The production adapter uses capabilities from the authenticated tenant session. This UI does not grant access." : "A temporary read or setup gap does not remove System Owner authority. Every write is still re-authorized by the server."}</p>
       </aside>
     </section>
   );
@@ -2295,6 +2609,7 @@ export default function ManagePage() {
   const [refreshPending, setRefreshPending] = useState(false);
   const [accountPending, setAccountPending] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const context = useMemo<ManagementContext>(() => ({
@@ -2383,10 +2698,10 @@ export default function ManagePage() {
     } catch (error) {
       if (error instanceof PlatformRequestError) {
         setToast({
-          message: error.code === "SETTINGS_STALE_REFRESH_REQUIRED"
+          message: error.code === "SETTINGS_STALE_REFRESH_REQUIRED" || error.code === "POLICY_STALE_REFRESH_REQUIRED"
             ? error.message
             : `The server rejected this change: ${error.message}`,
-          tone: error.code === "SETTINGS_STALE_REFRESH_REQUIRED"
+          tone: error.code === "SETTINGS_STALE_REFRESH_REQUIRED" || error.code === "POLICY_STALE_REFRESH_REQUIRED"
             ? "warning"
             : "error",
         });
@@ -2411,10 +2726,8 @@ export default function ManagePage() {
   const requiredCapability = VIEW_CAPABILITY[view];
   const viewPermitted = !requiredCapability || can(requiredCapability);
   const completedSetup = snapshot?.setup.filter((item) => item.complete).length ?? 0;
-  const activationPrerequisitesReady = Boolean(
-    snapshot?.setup.length && snapshot.setup
-      .filter((item) => item.id !== "setup-status" && item.id !== "public-booking")
-      .every((item) => item.complete),
+  const visibleNavItems = NAV_ITEMS.filter((item) =>
+    item.id !== "launch" || snapshot?.session.isSystemOwner === true
   );
 
   const renderView = () => {
@@ -2426,13 +2739,14 @@ export default function ManagePage() {
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     switch (view) {
       case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={setView} request={request} />;
-      case "bookings": return <BookingsView bookings={snapshot.bookings} can={can} request={request} goTo={setView} isPreview={isPreview} />;
+      case "bookings": return <BookingsView bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} />;
       case "schedule": return <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
       case "blocks": return <BlocksView snapshot={snapshot} can={can} request={request} />;
       case "customers": return <CustomersView snapshot={snapshot} />;
       case "reports": return <ReportsView snapshot={snapshot} />;
-      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} />;
-      case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} />;
+      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} />;
+      case "launch": return <LaunchView snapshot={snapshot} request={request} openSettings={(section) => { setSettingsSection(section); setView("settings"); }} />;
+      case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} toolAvailability={snapshot.configuration.toolAvailability} />;
     }
   };
 
@@ -2477,14 +2791,14 @@ export default function ManagePage() {
         </div>
         <nav className={styles.desktopNav} aria-label="Management navigation">
           <p>Workspace</p>
-          {NAV_ITEMS.slice(0, 6).map((item) => (
+          {visibleNavItems.slice(0, 6).map((item) => (
             <button type="button" key={item.id} onClick={() => setView(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
           <p>Manage</p>
-          {NAV_ITEMS.slice(6).map((item) => (
+          {visibleNavItems.slice(6).map((item) => (
             <button type="button" key={item.id} onClick={() => setView(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
@@ -2549,7 +2863,7 @@ export default function ManagePage() {
           </button>
         </header>
         <nav className={styles.mobileNav} aria-label="Mobile management navigation">
-          {NAV_ITEMS.map((item) => (
+          {visibleNavItems.map((item) => (
             <button type="button" key={item.id} onClick={() => setView(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
             </button>
@@ -2582,15 +2896,12 @@ export default function ManagePage() {
               {isPreview && <button type="button" className={styles.iconButton} aria-label="Preview search control">⌕</button>}
               {isPreview && <button type="button" className={styles.iconButton} aria-label="Preview notifications">◎<span>2</span></button>}
               {isPreview && view === "overview" && <ActionButton disabled={!can("booking:create")} onClick={() => setView("schedule")}><span aria-hidden="true">＋</span> New booking</ActionButton>}
-              {view === "settings" && (
+              {view === "settings" && snapshot?.session.isSystemOwner && (
                 <ActionButton
                   variant="secondary"
-                  disabled={
-                    !can("tenant:publish") || !activationPrerequisitesReady
-                  }
-                  onClick={() => request({ title: isPreview ? "Request live activation?" : "Activate public booking?", detail: isPreview ? "A final tenant, payment and policy review is required before public bookings can open." : "The platform will recheck every launch prerequisite atomically. Only the global System Owner can complete initial activation.", confirmLabel: isPreview ? "Request activation" : "Activate Dinktopia", actionType: "tenant:publish" })}
+                  onClick={() => setView("launch")}
                 >
-                  Go live
+                  Review launch
                 </ActionButton>
               )}
             </div>

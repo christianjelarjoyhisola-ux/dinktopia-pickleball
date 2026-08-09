@@ -441,6 +441,135 @@ export async function listManagerBlocks(
   );
 }
 
+export type ManualBookingInput = {
+  courtId: string;
+  bookingDate: string;
+  startTime: string;
+  durationHours: number;
+  customer: { name: string; email?: string; phone: string };
+  payment: { method: string; reference?: string | null };
+  clientRequestId: string;
+};
+
+export async function createManualBooking(
+  accessToken: string,
+  input: ManualBookingInput,
+) {
+  managementHostname({ mutation: true });
+  return authenticatedFunction<Record<string, unknown>>(
+    "create-manual-booking",
+    accessToken,
+    input,
+  );
+}
+
+export type BookingReschedulePreview = {
+  ok: true;
+  booking: {
+    id: string;
+    reference: string;
+    courtId: string;
+    courtName: string;
+    startsAt: string;
+    endsAt: string;
+    localBookingDate: string;
+    durationHours: number;
+    status: string;
+    paymentStatus: string;
+    customerName: string;
+    customerEmail: string | null;
+    subtotalAmount: number;
+    serviceFeeAmount: number;
+    totalAmount: number;
+    currency: string;
+  };
+  options: Array<{
+    startsAt: string;
+    endsAt: string;
+    startTime: string;
+    endTime: string;
+    label: string;
+    available: boolean;
+    unavailableReason: string | null;
+    courtSubtotalAmount: number;
+    newSubtotalAmount: number;
+    newTotalAmount: number;
+    originalTotalAmount: number;
+    amountPaid: number;
+    additionalAmount: number;
+    paymentRequired: boolean;
+  }>;
+  policies: {
+    sameCourtOnly: true;
+    sameDurationOnly: true;
+    amountPolicy: "preserve_original";
+    reasonCodes: Array<{ value: string; label: string }>;
+    notificationDefault: true;
+    notificationAvailable: boolean;
+  };
+};
+
+export async function previewBookingReschedule(
+  accessToken: string,
+  bookingReference: string,
+  bookingDate: string,
+) {
+  return authenticatedFunction<BookingReschedulePreview>(
+    "reschedule-booking",
+    accessToken,
+    { action: "preview", bookingReference, bookingDate },
+  );
+}
+
+export async function rescheduleBooking(
+  accessToken: string,
+  input: {
+    bookingReference: string;
+    newDate: string;
+    newStartTime: string;
+    reasonCode: string;
+    publicReason: string;
+    internalNote?: string | null;
+    notifyCustomer: boolean;
+    idempotencyKey: string;
+  },
+) {
+  managementHostname({ mutation: true });
+  return authenticatedFunction<Record<string, unknown>>(
+    "reschedule-booking",
+    accessToken,
+    { action: "reschedule", ...input },
+  );
+}
+
+export async function cancelTenantBooking(
+  accessToken: string,
+  bookingId: string,
+  reason: string,
+) {
+  managementHostname({ mutation: true });
+  return rpc<Record<string, unknown>>(
+    "cancel_tenant_booking",
+    { p_booking_id: bookingId, p_reason: reason },
+    accessToken,
+  );
+}
+
+export async function checkInTenantBooking(
+  accessToken: string,
+  bookingId: string,
+) {
+  return rpc<Record<string, unknown>>(
+    "check_in_tenant_booking",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+      p_booking_id: bookingId,
+    },
+    accessToken,
+  );
+}
+
 export async function getActivationSettings(accessToken: string) {
   return authenticatedFunction<Record<string, unknown>>(
     "tenant-activation-settings",
@@ -458,6 +587,82 @@ export async function updateActivationSettings(
     "tenant-activation-settings",
     accessToken,
     { action: "update", patch },
+  );
+}
+
+export type TenantPolicyDraft = {
+  title: string;
+  intro: string;
+  content: string;
+};
+
+export async function getTenantPolicy(accessToken: string) {
+  return authenticatedFunction<Record<string, unknown>>(
+    "tenant-activation-settings",
+    accessToken,
+    { action: "getPolicy" },
+  );
+}
+
+export async function saveTenantPolicy(
+  accessToken: string,
+  options: {
+    publish: boolean;
+    expectedRevision: string | null;
+    policy: TenantPolicyDraft;
+  },
+) {
+  managementHostname({ mutation: true });
+  try {
+    return await authenticatedFunction<Record<string, unknown>>(
+      "tenant-activation-settings",
+      accessToken,
+      {
+        action: options.publish ? "publishPolicy" : "updatePolicy",
+        expectedRevision: options.expectedRevision,
+        policy: options.policy,
+      },
+    );
+  } catch (error) {
+    if (
+      error instanceof PlatformRequestError &&
+      (error.code === "POLICY_REVISION_STALE" || error.status === 409)
+    ) {
+      throw new PlatformRequestError(
+        409,
+        "POLICY_STALE_REFRESH_REQUIRED",
+        "These rules changed in another session. Refresh before saving or publishing.",
+      );
+    }
+    throw error;
+  }
+}
+
+export async function getRemittanceDestination(accessToken: string) {
+  return authenticatedFunction<Record<string, unknown>>(
+    "tenant-remittance-asset",
+    accessToken,
+    { action: "get-destination" },
+  );
+}
+
+export async function saveRemittanceDestination(
+  accessToken: string,
+  input: {
+    method: string;
+    accountName: string;
+    accountReference: string;
+    dueDay: number;
+    instructions?: string | null;
+    qrDataUrl?: string | null;
+    removeQr?: boolean;
+  },
+) {
+  managementHostname({ mutation: true });
+  return authenticatedFunction<Record<string, unknown>>(
+    "tenant-remittance-asset",
+    accessToken,
+    { action: "save-destination", ...input },
   );
 }
 

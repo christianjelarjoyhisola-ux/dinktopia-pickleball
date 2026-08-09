@@ -1248,6 +1248,49 @@
   line-height: 1;
 }
 
+.compactActionForm {
+  margin: 0 0 18px;
+  border: 1px solid color-mix(in srgb, var(--blue) 22%, var(--line));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--paper-deep) 72%, white);
+  padding: 18px;
+}
+.compactFormHeading,
+.compactFormActions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.compactFormHeading { margin-bottom: 14px; }
+.compactFormHeading h3 { margin: 2px 0 0; font-size: var(--text-subheading); }
+.compactFormHeading > span,
+.compactFormActions > span { color: var(--muted); font-size: var(--text-caption); }
+.compactFields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.compactFormActions { margin-top: 15px; border-top: 1px solid var(--line); padding-top: 14px; }
+.inlineActions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
+.policyStatusLine { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 8px 12px; margin-bottom: 18px; border-radius: 12px; background: var(--paper-deep); padding: 12px 14px; font-size: var(--text-caption); }
+.policyStatusLine span { color: var(--muted); }
+.policyStatusLine strong { overflow-wrap: anywhere; }
+.toolStatusList { display: grid; gap: 7px; margin-top: 20px; border-top: 1px solid rgb(255 255 255 / .15); padding-top: 16px; }
+.toolStatusList > strong { margin-bottom: 3px; color: var(--citrus); font-size: var(--text-caption); letter-spacing: var(--tracking-label); text-transform: uppercase; }
+.toolStatusList > span { display: flex; align-items: center; gap: 8px; color: rgb(255 255 255 / .78); font-size: var(--text-caption); }
+.toolStatusList i { width: 7px; height: 7px; border-radius: 50%; }
+.toolReady { background: var(--citrus); }
+.toolUnavailable { background: #f0ad4e; }
+.launchLayout { display: grid; gap: 18px; }
+.launchChecklist { display: grid; gap: 8px; }
+.launchChecklist article { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; align-items: center; gap: 11px; border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; }
+.launchChecklist article > span { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 8px; font-weight: 800; }
+.launchChecklist strong { font-size: var(--text-body); }
+.launchChecklist p { margin: 2px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.launchCheckReady > span { background: color-mix(in srgb, var(--citrus) 22%, white); color: var(--ink); }
+.launchCheckMissing > span { background: #fff1dc; color: #8a4d00; }
+.launchEditorGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.launchEditorGrid > .panel { display: flex; min-width: 0; flex-direction: column; }
+.launchEditorGrid .compactFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.launchEditorGrid .settingsFooter { margin-top: auto; }
+.launchFinal { display: flex; align-items: center; justify-content: space-between; gap: 20px; background: var(--ink); color: white; }
+.launchFinal h2 { margin: 3px 0 7px; }
+.launchFinal p:not(.eyebrow) { max-width: 720px; margin: 0; color: rgb(255 255 255 / .72); }
+.launchFinal .eyebrow { color: var(--citrus); }
+.launchFinal .button { flex: 0 0 auto; }
+
 @media (max-width: 1180px) {
   .manageShell { grid-template-columns: 212px minmax(0,1fr); }
   .metricGrid { grid-template-columns: repeat(2,1fr); }
@@ -1368,6 +1411,14 @@
   .reportHero select { flex: 1; }
   .reportNotes { grid-template-columns: 1fr; }
   .rateGrid, .ruleList { grid-template-columns: 1fr; }
+  .compactFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .compactFormActions { align-items: stretch; flex-direction: column; }
+  .compactFormActions .button { width: 100%; }
+  .policyStatusLine { grid-template-columns: 1fr; }
+  .policyStatusLine strong + span { margin-top: 5px; }
+  .launchEditorGrid { grid-template-columns: 1fr; }
+  .launchFinal { align-items: stretch; flex-direction: column; }
+  .launchFinal .button { width: 100%; }
   .courtSettingList article:not(.courtEditorCard) { grid-template-columns: 33px 1fr; }
   .courtSettingList article:not(.courtEditorCard) .field { grid-column: 2; }
   .courtSettingList .openTag { grid-column: 1; grid-row: 2; align-self: start; }
@@ -1416,6 +1467,14 @@
   .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metricCard { min-height: 123px; }
   .panelHeading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .compactActionForm { margin-inline: -4px; padding: 14px; }
+  .compactFormHeading { align-items: flex-start; flex-direction: column; }
+  .compactFields,
+  .launchEditorGrid .compactFields { grid-template-columns: minmax(0, 1fr); }
+  .launchChecklist article { grid-template-columns: 28px minmax(0, 1fr); }
+  .launchChecklist article .textButton { grid-column: 2; justify-self: start; }
+  .inlineActions { width: 100%; }
+  .inlineActions > * { flex: 1; }
   .courtEditorCard {
     grid-template-columns: 30px minmax(0, 1fr);
     grid-template-areas:

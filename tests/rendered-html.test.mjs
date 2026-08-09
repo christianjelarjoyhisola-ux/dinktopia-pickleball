@@ -1376,8 +1376,16 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
   );
 
   for (const wrapper of [
+    "createManualBooking",
+    "rescheduleBooking",
+    "cancelTenantBooking",
+    "checkInTenantBooking",
     "getManagerCourts",
     "getBlockedDateAccess",
+    "getTenantPolicy",
+    "saveTenantPolicy",
+    "getRemittanceDestination",
+    "saveRemittanceDestination",
     "manageTenantCourt",
     "applySharedCourtSchedule",
     "manageBlockedDates",
@@ -1408,7 +1416,7 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
   );
   assert.match(
     managementAdapter,
-    /const capabilities = liveCapabilities\(\{[\s\S]*?session:\s*serverSession,[\s\S]*?canManageVenueSettings:[\s\S]*?canManageBlocks:[\s\S]*?canActivatePublicBooking:/,
+    /const capabilities = authorityCapabilities\(serverSession\)/,
   );
   assert.match(
     managementAdapter,
@@ -1416,7 +1424,7 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
   );
   assert.match(
     managementAdapter,
-    /if \(options\.session\.isSystemOwner && options\.canActivatePublicBooking\)[\s\S]*?capabilities\.push\("tenant:publish"\)/,
+    /function authorityCapabilities\(session: VerifiedManagerSession\): ManagementCapability\[\][\s\S]*?if \(session\.isSystemOwner\)[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"schedule:block"[\s\S]*?"customer:view"[\s\S]*?"report:view"[\s\S]*?"settings:update"[\s\S]*?"tenant:publish"/,
   );
   assert.match(managementAdapter, /listManagerBookings\(session\.access_token/);
   assert.match(managementAdapter, /listManagerBlocks\(session\.access_token/);
@@ -1446,6 +1454,501 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
     /\bcontext\.(?:role|capabilities)\b/,
   );
   assert.doesNotMatch(managementAdapter, /LIVE_MUTATION_NOT_CONNECTED/);
+});
+
+test("keeps System Owner authority distinct from tool readiness and rechecks every booking write", async () => {
+  const [client, manage, managementAdapter, manageCss] = await Promise.all([
+    readFile(files.client, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  const authorityStart = managementAdapter.indexOf(
+    "function authorityCapabilities(",
+  );
+  const authorityEnd = managementAdapter.indexOf(
+    "function exactInteger(",
+    authorityStart,
+  );
+  assert.ok(authorityStart >= 0 && authorityEnd > authorityStart);
+  const authoritySource = managementAdapter.slice(authorityStart, authorityEnd);
+  assert.match(
+    authoritySource,
+    /if \(session\.isSystemOwner\)\s*\{\s*return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"schedule:block"[\s\S]*?"customer:view"[\s\S]*?"report:view"[\s\S]*?"settings:update"[\s\S]*?"tenant:publish"[\s\S]*?\];\s*\}/,
+  );
+  assert.match(
+    authoritySource,
+    /session\.membershipRole === "owner" \|\| session\.membershipRole === "admin"[\s\S]*?return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"settings:update"[\s\S]*?\];/,
+  );
+  assert.match(
+    authoritySource,
+    /session\.membershipRole === "staff"[\s\S]*?return \["booking:cancel", "booking:check-in", "customer:view"\];[\s\S]*?return \[\];/,
+  );
+  const tenantManagerBranch = authoritySource.slice(
+    authoritySource.indexOf('session.membershipRole === "owner"'),
+    authoritySource.indexOf('session.membershipRole === "staff"'),
+  );
+  assert.doesNotMatch(tenantManagerBranch, /tenant:publish/);
+
+  assert.match(
+    managementAdapter,
+    /const capabilities = authorityCapabilities\(serverSession\);/,
+  );
+  assert.match(
+    managementAdapter,
+    /session:\s*\{ \.\.\.serverSession, capabilities \}/,
+  );
+  assert.match(
+    managementAdapter,
+    /toolAvailability:\s*\{[\s\S]*?"booking:create": true,[\s\S]*?"booking:update": true,[\s\S]*?"booking:cancel": true,[\s\S]*?"booking:check-in": true,[\s\S]*?"settings:update": courtResult !== null &&[\s\S]*?"tenant:publish": activationPermissions\.canActivatePublicBooking/,
+  );
+  assert.doesNotMatch(
+    managementAdapter,
+    /authorityCapabilities\([^)]*(?:toolAvailability|activationPermissions|courtResult|blockAccess)/,
+  );
+
+  assert.match(manage, /Full platform account authority/);
+  assert.match(manage, /<strong>Connected controls<\/strong>/);
+  assert.match(manage, /Account authority and tool readiness are separate\./);
+  assert.match(
+    manage,
+    /capabilities\.includes\(capability\)[\s\S]*?className=\{styles\.granted\}/,
+  );
+  assert.match(
+    manage,
+    /toolAvailability\[capability\] === false \? "setup unavailable" : "connected"/,
+  );
+  assert.doesNotMatch(
+    manage,
+    /setCapabilities|setSessionRole|toolAvailability\[[^\]]+\][\s\S]{0,100}capabilities\.push/,
+  );
+  assert.match(
+    manage,
+    /capabilities:\s*isPreview\s*\?\s*previewRoleSessions\[role\]\s*:\s*snapshot\?\.session\.capabilities \?\? \[\]/,
+  );
+
+  assert.ok(
+    (managementAdapter.match(/const session = await currentOwnerSession\(\)/g) ?? [])
+      .length >= 2,
+    "expected live reads and writes to require the current authenticated account",
+  );
+  assert.ok(
+    (managementAdapter.match(/await getManagerSession\(session\.access_token\)/g) ?? [])
+      .length >= 2,
+    "expected live reads and writes to derive role facts from the server",
+  );
+  assert.doesNotMatch(managementAdapter, /\bcontext\.(?:role|capabilities)\b/);
+
+  const bookingActionStart = managementAdapter.indexOf(
+    'action.type === "booking:create"',
+  );
+  const policyActionStart = managementAdapter.indexOf(
+    'action.type === "policy:update"',
+    bookingActionStart,
+  );
+  assert.ok(bookingActionStart >= 0 && policyActionStart > bookingActionStart);
+  const bookingActionSource = managementAdapter.slice(
+    bookingActionStart,
+    policyActionStart,
+  );
+  assert.match(bookingActionSource, /assertBookingManager\(authority, "create"\)/);
+  assert.match(bookingActionSource, /assertBookingManager\(authority, "reschedule"\)/);
+  assert.match(bookingActionSource, /assertBookingManager\(authority, "cancel"\)/);
+  assert.match(bookingActionSource, /assertBookingManager\(authority, "check-in"\)/);
+  assert.match(
+    managementAdapter,
+    /const staffWrite = action === "cancel" \|\| action === "check-in";[\s\S]*?!manager && !\(staffWrite && session\.membershipRole === "staff"\)[\s\S]*?BOOKING_ACTION_ACCESS_DENIED/,
+  );
+
+  for (const wrapper of [
+    "createManualBooking",
+    "rescheduleBooking",
+    "cancelTenantBooking",
+    "checkInTenantBooking",
+  ]) {
+    const start = client.indexOf(`export async function ${wrapper}(`);
+    const end = client.indexOf("\nexport ", start + 1);
+    assert.ok(start >= 0, `expected ${wrapper}`);
+    const source = client.slice(start, end >= 0 ? end : undefined);
+    assert.match(
+      source,
+      /managementHostname\(\{ mutation: true \}\)/,
+      `expected ${wrapper} to enforce the registered mutation origin`,
+    );
+  }
+
+  const compactCss = cssBlock(manageCss, "@media (max-width: 680px)");
+  assert.match(
+    compactCss,
+    /\.compactFields\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s,
+  );
+  const phoneCss = cssBlock(manageCss, "@media (max-width: 430px)");
+  assert.match(
+    phoneCss,
+    /\.compactActionForm\s*\{[^}]*padding:\s*14px/s,
+  );
+  assert.match(
+    phoneCss,
+    /\.compactFields,\s*\.launchEditorGrid \.compactFields\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+});
+
+test("connects create, reschedule, cancel, and check-in without confusing booking UUIDs and references", async () => {
+  const [client, manage, managementAdapter] = await Promise.all([
+    readFile(files.client, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+  ]);
+
+  assert.match(
+    managementAdapter,
+    /export type Booking = \{\s*bookingId:\s*string;[\s\S]*?reference:\s*string;\s*id:\s*string;/,
+  );
+  assert.match(
+    managementAdapter,
+    /export type Booking = \{[\s\S]*?bookingType:\s*"regular" \| "event";/,
+  );
+  const mapperStart = managementAdapter.indexOf("function mapLiveBooking(");
+  const mapperEnd = managementAdapter.indexOf("function mapLiveBlock(", mapperStart);
+  assert.ok(mapperStart >= 0 && mapperEnd > mapperStart);
+  const mapperSource = managementAdapter.slice(mapperStart, mapperEnd);
+  assert.match(mapperSource, /const bookingId = value\(row, \["id"\]\)/);
+  assert.match(
+    mapperSource,
+    /const reference = value\(row, \["reference", "booking_reference"\]\)/,
+  );
+  assert.match(mapperSource, /!UUID_PATTERN\.test\(bookingId\)/);
+  assert.match(
+    mapperSource,
+    /const bookingType = value\(row, \["booking_type", "bookingType"\]\)\.toLowerCase\(\)[\s\S]*?bookingType !== "regular" && bookingType !== "event"/,
+  );
+  assert.match(mapperSource, /bookingId,[\s\S]*?reference,[\s\S]*?id:\s*reference,/);
+  assert.match(
+    mapperSource,
+    /status:\s*value\(row, \["checked_in_at"\]\) \? "checked_in" : liveStatus\(row\)/,
+  );
+
+  const createFormStart = manage.indexOf("function BookingsView(");
+  const createFormEnd = manage.indexOf("function ScheduleView(", createFormStart);
+  assert.ok(createFormStart >= 0 && createFormEnd > createFormStart);
+  const bookingUi = manage.slice(createFormStart, createFormEnd);
+  assert.match(bookingUi, /<h3>New paid booking<\/h3>/);
+  assert.match(
+    bookingUi,
+    /actionType:\s*"booking:create",[\s\S]*?courtId:\s*manual\.courtId,[\s\S]*?clientRequestId:\s*crypto\.randomUUID\(\)/,
+  );
+  assert.match(bookingUi, /confirmLabel:\s*"Create paid booking"/);
+  assert.match(
+    bookingUi,
+    /actionType:\s*"booking:update",\s*resourceId:\s*rescheduling\.bookingId,[\s\S]*?bookingId:\s*rescheduling\.bookingId,[\s\S]*?bookingReference:\s*rescheduling\.reference,[\s\S]*?idempotencyKey:\s*crypto\.randomUUID\(\)/,
+  );
+  assert.match(bookingUi, /confirmLabel:\s*"Reschedule booking"/);
+  assert.match(
+    bookingUi,
+    /actionType:\s*"booking:check-in",\s*resourceId:\s*booking\.bookingId/,
+  );
+  assert.match(
+    bookingUi,
+    /actionType:\s*"booking:cancel",\s*resourceId:\s*booking\.bookingId,\s*payload:\s*\{ reason:/,
+  );
+  assert.match(bookingUi, /aria-label=\{`Cancel booking \$\{booking\.id\}`\}/);
+  assert.match(
+    bookingUi,
+    /booking\.status === "confirmed" && booking\.bookingType === "regular"[\s\S]*?disabled=\{!can\("booking:check-in"\) \|\| booking\.payment !== "paid"\}[\s\S]*?actionType:\s*"booking:check-in"/,
+  );
+  assert.match(
+    bookingUi,
+    /!isPreview && booking\.status === "confirmed" && booking\.payment === "paid"[\s\S]*?>\s*Move\s*<\/button>/,
+  );
+  assert.match(
+    bookingUi,
+    /disabled=\{!can\("booking:cancel"\) \|\| booking\.status === "completed" \|\| booking\.status === "checked_in"\}/,
+  );
+  assert.doesNotMatch(
+    bookingUi,
+    /booking\.status === "checked_in"[\s\S]{0,300}actionType:\s*"booking:(?:update|cancel)"/,
+  );
+
+  assert.match(
+    client,
+    /"create-manual-booking",\s*accessToken,\s*input/,
+  );
+  assert.match(
+    client,
+    /"reschedule-booking",\s*accessToken,\s*\{ action:\s*"reschedule", \.\.\.input \}/,
+  );
+  assert.match(client, /"cancel_tenant_booking"[\s\S]*?p_booking_id:\s*bookingId/);
+  assert.match(
+    client,
+    /"check_in_tenant_booking"[\s\S]*?p_tenant_slug:\s*activeTenant\.identity\.slug,[\s\S]*?p_hostname:\s*managementHostname\(\{ mutation:\s*true \}\),[\s\S]*?p_booking_id:\s*bookingId/,
+  );
+  assert.match(
+    client,
+    /export type BookingReschedulePreview = \{[\s\S]*?booking:\s*\{[\s\S]*?id:\s*string;[\s\S]*?reference:\s*string;[\s\S]*?status:\s*string;[\s\S]*?paymentStatus:\s*string;[\s\S]*?options:\s*Array<\{[\s\S]*?additionalAmount:\s*number;[\s\S]*?paymentRequired:\s*boolean;[\s\S]*?amountPolicy:\s*"preserve_original"/,
+  );
+  assert.match(
+    client,
+    /previewBookingReschedule\([\s\S]*?authenticatedFunction<BookingReschedulePreview>\([\s\S]*?"reschedule-booking"[\s\S]*?\{ action:\s*"preview", bookingReference, bookingDate \}/,
+  );
+
+  assert.match(
+    managementAdapter,
+    /function assertNoSensitiveIdentifiers\([\s\S]*?normalized === "tenantid"[\s\S]*?normalized === "ptenantid"[\s\S]*?normalized\.includes\("servicerole"\)[\s\S]*?LIVE_PAYLOAD_FIELD_FORBIDDEN/,
+  );
+  assert.match(
+    managementAdapter,
+    /function manualBookingPayload\([\s\S]*?assertAllowedKeys\(payload, new Set\(\[[\s\S]*?"courtId", "bookingDate", "startTime", "durationHours", "customer", "payment", "clientRequestId"[\s\S]*?requiredUuidV4\(payload\.clientRequestId, "MANUAL_BOOKING_REQUEST_ID_INVALID"\)/,
+  );
+  assert.match(
+    managementAdapter,
+    /function rescheduleBookingPayload\([\s\S]*?const bookingId = requiredUuid\(payload\.bookingId,[\s\S]*?bookingId !== requiredUuid\(resourceId,[\s\S]*?BOOKING_IDENTIFIER_MISMATCH[\s\S]*?const bookingReference = safeActionText\(payload\.bookingReference,[\s\S]*?requiredUuidV4\(payload\.idempotencyKey, "RESCHEDULE_IDEMPOTENCY_KEY_INVALID"\)/,
+  );
+  assert.match(
+    managementAdapter,
+    /publicReason:\s*safeActionText\(payload\.publicReason, 3, 500, "RESCHEDULE_REASON_INVALID"\)/,
+  );
+  assert.match(
+    managementAdapter,
+    /safeActionText\(payload\.internalNote, 3, 1_000, "RESCHEDULE_NOTE_INVALID"\)/,
+  );
+  assert.match(
+    bookingUi,
+    /Customer-facing reason<\/span><input required minLength=\{3\} maxLength=\{500\}/,
+  );
+  assert.match(
+    bookingUi,
+    /Internal note <small>optional<\/small><\/span><input minLength=\{3\} maxLength=\{1000\}/,
+  );
+
+  const previewValidatorStart = managementAdapter.indexOf(
+    "function invalidReschedulePreview(",
+  );
+  const previewValidatorEnd = managementAdapter.indexOf(
+    "function safeActionText(",
+    previewValidatorStart,
+  );
+  assert.ok(
+    previewValidatorStart >= 0 && previewValidatorEnd > previewValidatorStart,
+  );
+  const previewValidator = managementAdapter.slice(
+    previewValidatorStart,
+    previewValidatorEnd,
+  );
+  assert.match(
+    previewValidator,
+    /new PlatformRequestError\(\s*502,\s*"RESCHEDULE_PREVIEW_INVALID"/,
+  );
+  assert.match(
+    previewValidator,
+    /value\(booking, \["id"\]\)\.toLowerCase\(\) !== expected\.bookingId[\s\S]*?value\(booking, \["reference"\]\)\.toUpperCase\(\) !== expected\.bookingReference/,
+  );
+  assert.match(
+    previewValidator,
+    /value\(booking, \["status"\]\) !== "confirmed"[\s\S]*?value\(booking, \["paymentStatus"\]\) !== "paid"[\s\S]*?policies\.amountPolicy !== "preserve_original"/,
+  );
+  assert.match(
+    previewValidator,
+    /reasonCodes\.length !== RESCHEDULE_REASONS\.size[\s\S]*?policies\.notificationDefault !== true[\s\S]*?!Array\.isArray\(envelope\.options\)/,
+  );
+  assert.match(
+    previewValidator,
+    /option\.paymentRequired !== \(amounts\.additionalAmount > 0\)[\s\S]*?invalidReschedulePreview\(\)/,
+  );
+
+  const performPreviewStart = managementAdapter.indexOf(
+    'if (action.type === "booking:update")',
+  );
+  const performPreviewEnd = managementAdapter.indexOf(
+    'if (action.type === "booking:cancel")',
+    performPreviewStart,
+  );
+  assert.ok(performPreviewStart >= 0 && performPreviewEnd > performPreviewStart);
+  const performPreview = managementAdapter.slice(
+    performPreviewStart,
+    performPreviewEnd,
+  );
+  assert.match(
+    performPreview,
+    /await previewBookingReschedule\([\s\S]*?validatedReschedulePreviewOption\(preview, \{[\s\S]*?bookingId:\s*requiredUuid\(action\.resourceId,[\s\S]*?bookingReference:\s*payload\.bookingReference,[\s\S]*?startTime:\s*payload\.newStartTime/,
+  );
+  assert.match(
+    performPreview,
+    /if \(!selectedOption\.available\)[\s\S]*?"RESCHEDULE_TIME_UNAVAILABLE"/,
+  );
+  assert.match(
+    performPreview,
+    /selectedOption\.paymentRequired \|\| selectedOption\.additionalAmount > 0[\s\S]*?"RESCHEDULE_ADDITIONAL_PAYMENT_REQUIRED"[\s\S]*?await rescheduleBooking/,
+  );
+  assert.match(
+    managementAdapter,
+    /function cancelBookingPayload\([\s\S]*?assertAllowedKeys\(payload, new Set\(\["reason"\]\)[\s\S]*?CANCEL_BOOKING_REASON_INVALID/,
+  );
+  assert.match(
+    managementAdapter,
+    /action\.type === "booking:check-in"[\s\S]*?assertNoPayload\(action\.payload\)[\s\S]*?requiredUuid\(action\.resourceId, "BOOKING_ID_INVALID"\)/,
+  );
+  assert.doesNotMatch(
+    managementAdapter,
+    /(?:createManualBooking|rescheduleBooking|cancelTenantBooking|checkInTenantBooking)\([^)]*\b(?:context\.tenantSlug|tenantId|tenant_id)\b/,
+  );
+});
+
+test("keeps booking Rules editable with CAS and makes Launch an authoritative owner workflow", async () => {
+  const [client, manage, managementAdapter, manageCss] = await Promise.all([
+    readFile(files.client, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  assert.match(
+    client,
+    /getTenantPolicy\([\s\S]*?"tenant-activation-settings"[\s\S]*?\{ action:\s*"getPolicy" \}/,
+  );
+  assert.match(
+    client,
+    /saveTenantPolicy\([\s\S]*?managementHostname\(\{ mutation:\s*true \}\)[\s\S]*?action:\s*options\.publish \? "publishPolicy" : "updatePolicy"[\s\S]*?expectedRevision:\s*options\.expectedRevision,[\s\S]*?policy:\s*options\.policy/,
+  );
+  assert.match(
+    client,
+    /error\.code === "POLICY_REVISION_STALE" \|\| error\.status === 409[\s\S]*?"POLICY_STALE_REFRESH_REQUIRED"[\s\S]*?Refresh before saving or publishing/,
+  );
+
+  assert.match(
+    managementAdapter,
+    /canReadManagerSettings\s*\?\s*getTenantPolicy\(session\.access_token\)\.catch\(\(\) => null\)/,
+  );
+  assert.match(
+    managementAdapter,
+    /policyStatus:\s*policyResult === null \? "unavailable" : "available"/,
+  );
+  assert.match(
+    managementAdapter,
+    /action\.type === "policy:update" \|\| action\.type === "policy:publish"[\s\S]*?assertVenueManager\(authority\)[\s\S]*?await getTenantPolicy\(session\.access_token\)[\s\S]*?!current\.permissions\.canManagePolicy[\s\S]*?POLICY_UPDATE_ACCESS_DENIED[\s\S]*?!current\.permissions\.canPublishPolicy[\s\S]*?POLICY_PUBLISH_ACCESS_DENIED[\s\S]*?saveTenantPolicy\(session\.access_token,[\s\S]*?publish:\s*action\.type === "policy:publish",[\s\S]*?expectedRevision:\s*policy\.expectedRevision/,
+  );
+  assert.match(
+    managementAdapter,
+    /function policyActionPayload\([\s\S]*?assertAllowedKeys\(payload, new Set\(\["expectedRevision", "policy"\]\)[\s\S]*?Number\.isFinite\(new Date\(expectedRevision\)\.getTime\(\)\)[\s\S]*?assertAllowedKeys\(policy, new Set\(\["title", "intro", "content"\]\)[\s\S]*?normalizedPolicyText\(policy\.title, 3, 180,[\s\S]*?normalizedPolicyText\(policy\.intro, 10, 1_200,[\s\S]*?normalizedPolicyText\(policy\.content, 20, 30_000/,
+  );
+
+  const rulesStart = manage.indexOf('{section === "rules" &&');
+  const rulesEnd = manage.indexOf("function SettingsView(", rulesStart);
+  assert.ok(rulesStart >= 0 && rulesEnd > rulesStart);
+  const rulesSource = manage.slice(rulesStart, rulesEnd);
+  assert.match(rulesSource, /<h2>Booking rules<\/h2>/);
+  assert.match(rulesSource, /minLength=\{3\} maxLength=\{180\}/);
+  assert.match(rulesSource, /minLength=\{10\} maxLength=\{1200\}/);
+  assert.match(rulesSource, /minLength=\{20\} maxLength=\{30000\}/);
+  assert.match(rulesSource, /<strong>Safe concurrent editing\.<\/strong>/);
+  assert.match(
+    rulesSource,
+    /confirmLabel:\s*"Save draft",\s*actionType:\s*"policy:update",\s*payload:\s*\{ expectedRevision:\s*snapshot\.configuration\.policy!\.revision, policy:\s*policyDraft \}/,
+  );
+  assert.match(
+    rulesSource,
+    /confirmLabel:\s*"Publish rules",\s*actionType:\s*"policy:publish",\s*payload:\s*\{ expectedRevision:\s*snapshot\.configuration\.policy!\.revision, policy:\s*policyDraft \}/,
+  );
+  assert.match(
+    rulesSource,
+    /Policy service unavailable[\s\S]*?Rules could not be loaded safely\.[\s\S]*?Refresh before editing/,
+  );
+
+  assert.match(manage, /\{ id:\s*"launch", label:\s*"Launch", short:\s*"GO" \}/);
+  assert.match(manage, /title:\s*"Launch Dinktopia"/);
+  assert.match(
+    manage,
+    /const visibleNavItems = NAV_ITEMS\.filter\(\(item\) =>\s*item\.id !== "launch" \|\| snapshot\?\.session\.isSystemOwner === true\s*\)/,
+  );
+  const launchStart = manage.indexOf("function LaunchView(");
+  const launchEnd = manage.indexOf("function AccessView(", launchStart);
+  assert.ok(launchStart >= 0 && launchEnd > launchStart);
+  const launchSource = manage.slice(launchStart, launchEnd);
+  assert.match(
+    launchSource,
+    /if \(!snapshot\.session\.isSystemOwner\)[\s\S]*?<PermissionPanel[^>]*view="launch"/,
+  );
+  assert.match(launchSource, /Authoritative readiness/);
+  assert.match(
+    launchSource,
+    /item\.id !== "setup-status" && item\.id !== "public-booking"/,
+  );
+  assert.match(
+    launchSource,
+    /const ready = launchChecks\.length > 0 && launchChecks\.every\(\(item\) => item\.complete\)/,
+  );
+  assert.match(
+    launchSource,
+    /item\.id === "email"[\s\S]*?openSettings\("business"\)[\s\S]*?>Configure email<\/button>/,
+  );
+  assert.match(
+    launchSource,
+    /item\.id === "policy"[\s\S]*?openSettings\("rules"\)[\s\S]*?>Write rules<\/button>/,
+  );
+  assert.match(
+    managementAdapter,
+    /launchRequirementsV2Required:\s*record\(settings\?\.readiness\)\?\.launchRequirementsV2Required === true/,
+  );
+  const readinessStart = managementAdapter.indexOf("function liveSetup(");
+  const readinessEnd = managementAdapter.indexOf(
+    "function deriveLiveSchedule(",
+    readinessStart,
+  );
+  assert.ok(readinessStart >= 0 && readinessEnd > readinessStart);
+  const readinessSource = managementAdapter.slice(readinessStart, readinessEnd);
+  assert.match(
+    readinessSource,
+    /\.\.\.\(booleanValue\(readiness, "launchRequirementsV2Required"\)\s*\?\s*\[[\s\S]*?"email"[\s\S]*?"emailConfigured"[\s\S]*?"policy"[\s\S]*?"policyConfigured"[\s\S]*?: \[\]\)/,
+  );
+  assert.match(
+    launchSource,
+    /const launchChecks = snapshot\.setup\.filter/,
+  );
+  assert.match(
+    launchSource,
+    /actionType:\s*"activation:update"[\s\S]*?platformBilling:\s*\{ feeMode:\s*billing\.feeMode, feeAmount:\s*billingAmount \}/,
+  );
+  assert.match(launchSource, /<h2>Billing rule<\/h2>/);
+  assert.match(
+    launchSource,
+    /actionType:\s*"remittance:update"[\s\S]*?accountName:\s*destination\.accountName,[\s\S]*?accountReference:\s*destination\.accountReference,[\s\S]*?dueDay/,
+  );
+  assert.match(launchSource, /<h2>Destination<\/h2>/);
+  assert.match(
+    launchSource,
+    /publicBookingIsLive \? "Dinktopia is live"[\s\S]*?disabled=\{publicBookingIsLive \|\| !ready\}[\s\S]*?actionType:\s*"tenant:publish"[\s\S]*?publicBookingIsLive \? "Already live" : "Go live"/,
+  );
+  assert.match(
+    launchSource,
+    /className=\{publicBookingIsLive \|\| ready \? styles\.openTag : styles\.needsTag\}[\s\S]*?publicBookingIsLive \? "Live" : ready \? "Ready to launch" : "Setup required"/,
+  );
+  assert.match(
+    managementAdapter,
+    /action\.type === "remittance:update"[\s\S]*?!authority\.isSystemOwner[\s\S]*?PLATFORM_OWNER_REQUIRED[\s\S]*?saveRemittanceDestination/,
+  );
+  assert.match(
+    managementAdapter,
+    /action\.type === "tenant:publish"[\s\S]*?assertNoPayload\(action\.payload\)[\s\S]*?!authority\.isSystemOwner[\s\S]*?canActivatePublicBooking[\s\S]*?activateTenantInitially/,
+  );
+  assert.match(
+    client,
+    /getRemittanceDestination\([\s\S]*?"tenant-remittance-asset"[\s\S]*?"get-destination"/,
+  );
+  assert.match(
+    client,
+    /saveRemittanceDestination\([\s\S]*?managementHostname\(\{ mutation:\s*true \}\)[\s\S]*?"tenant-remittance-asset"[\s\S]*?"save-destination"/,
+  );
+
+  const compactCss = cssBlock(manageCss, "@media (max-width: 680px)");
+  assert.match(
+    compactCss,
+    /\.launchEditorGrid\s*\{[^}]*grid-template-columns:\s*1fr/s,
+  );
+  const phoneCss = cssBlock(manageCss, "@media (max-width: 430px)");
+  assert.match(
+    phoneCss,
+    /\.compactFields,\s*\.launchEditorGrid \.compactFields\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
 });
 
 test("protects live business and payment settings from stale or unsafe writes", async () => {

@@ -1,18 +1,28 @@
 import { activeTenant } from "../tenants/registry";
 import { normalizeTwoBandSchedule } from "../lib/operating-hours";
 import {
+  PlatformRequestError,
   activateTenantInitially,
   applySharedCourtSchedule,
+  cancelTenantBooking,
+  checkInTenantBooking,
+  createManualBooking,
   currentOwnerSession,
   getActivationSettings,
   getBlockedDateAccess,
   getManagerCourts,
   getManagerSession,
+  getRemittanceDestination,
+  getTenantPolicy,
   listManagerBlocks,
   listManagerBookings,
   manageBlockedDates,
   manageTenantCourt,
   platformMode,
+  previewBookingReschedule,
+  rescheduleBooking,
+  saveRemittanceDestination,
+  saveTenantPolicy,
   updateActivationSettings,
   updateBusinessSettings,
 } from "../lib/platform/client";
@@ -52,6 +62,9 @@ export type BookingPaymentStatus =
   | "unknown";
 
 export type Booking = {
+  bookingId: string;
+  bookingType: "regular" | "event";
+  reference: string;
   id: string;
   customer: string;
   initials: string;
@@ -63,6 +76,33 @@ export type Booking = {
   amount: number;
   status: BookingStatus;
   payment: BookingPaymentStatus;
+  courtId: string;
+  bookingDate: string | null;
+  startTime: string | null;
+};
+
+export type TenantPolicyConfiguration = {
+  permissions: { canManagePolicy: boolean; canPublishPolicy: boolean };
+  draft: { title: string; intro: string; content: string } | null;
+  publishedPolicy: {
+    version: string;
+    title: string;
+    intro: string;
+    content: string;
+    ownerApproved: true;
+  } | null;
+  revision: string | null;
+  publishedRevision: string | null;
+  policyConfigured: boolean;
+};
+
+export type RemittanceDestination = {
+  method: "gcash" | "maya" | "bank_transfer" | "other";
+  accountName: string;
+  accountReference: string;
+  dueDay: number;
+  instructions: string | null;
+  qrUrl: string | null;
 };
 
 export type Customer = {
@@ -155,6 +195,12 @@ export type LiveConfiguration = {
     canManagePlatformBilling: boolean;
     canActivatePublicBooking: boolean;
   };
+  toolAvailability: Partial<Record<ManagementCapability, boolean>>;
+  policy: TenantPolicyConfiguration | null;
+  policyStatus: "available" | "unavailable";
+  remittanceDestination: RemittanceDestination | null;
+  remittanceStatus: "available" | "missing" | "unavailable";
+  launchRequirementsV2Required: boolean;
 };
 
 export type ScheduleSlot = {
@@ -269,6 +315,9 @@ export const previewSnapshot: ManagementSnapshot = {
   })),
   bookings: [
     {
+      bookingId: "11111111-1111-4111-8111-111111111111",
+      bookingType: "regular",
+      reference: "DT-2848",
       id: "DT-2848",
       customer: "Arielle Santos",
       initials: "AS",
@@ -280,8 +329,14 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 400,
       status: "confirmed",
       payment: "paid",
+      courtId: activeTenant.previewCourts[0].id,
+      bookingDate: "2026-08-08",
+      startTime: "18:00",
     },
     {
+      bookingId: "22222222-2222-4222-8222-222222222222",
+      bookingType: "regular",
+      reference: "DT-2849",
       id: "DT-2849",
       customer: "Miguel Tan",
       initials: "MT",
@@ -293,8 +348,14 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 800,
       status: "awaiting_payment",
       payment: "unpaid",
+      courtId: activeTenant.previewCourts[1].id,
+      bookingDate: "2026-08-08",
+      startTime: "19:00",
     },
     {
+      bookingId: "33333333-3333-4333-8333-333333333333",
+      bookingType: "regular",
+      reference: "DT-2850",
       id: "DT-2850",
       customer: "Bea Cruz",
       initials: "BC",
@@ -306,8 +367,14 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 400,
       status: "checked_in",
       payment: "paid",
+      courtId: activeTenant.previewCourts[0].id,
+      bookingDate: "2026-08-08",
+      startTime: "20:00",
     },
     {
+      bookingId: "44444444-4444-4444-8444-444444444444",
+      bookingType: "regular",
+      reference: "DT-2841",
       id: "DT-2841",
       customer: "Nico de Leon",
       initials: "ND",
@@ -319,8 +386,14 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 600,
       status: "completed",
       payment: "paid",
+      courtId: activeTenant.previewCourts[1].id,
+      bookingDate: "2026-08-08",
+      startTime: "15:00",
     },
     {
+      bookingId: "55555555-5555-4555-8555-555555555555",
+      bookingType: "regular",
+      reference: "DT-2854",
       id: "DT-2854",
       customer: "Thea Lim",
       initials: "TL",
@@ -332,6 +405,9 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 300,
       status: "confirmed",
       payment: "paid",
+      courtId: activeTenant.previewCourts[1].id,
+      bookingDate: "2026-08-09",
+      startTime: "09:00",
     },
   ],
   schedule: [
@@ -540,6 +616,23 @@ export const previewSnapshot: ManagementSnapshot = {
       canManagePlatformBilling: false,
       canActivatePublicBooking: false,
     },
+    toolAvailability: {},
+    policy: {
+      permissions: { canManagePolicy: true, canPublishPolicy: true },
+      draft: {
+        title: "Dinktopia booking rules",
+        intro: "Please review these rules before booking.",
+        content: "Bookings are subject to live availability. Paid changes require venue assistance.",
+      },
+      publishedPolicy: null,
+      revision: null,
+      publishedRevision: null,
+      policyConfigured: false,
+    },
+    policyStatus: "available",
+    remittanceDestination: null,
+    remittanceStatus: "missing",
+    launchRequirementsV2Required: false,
   },
 };
 
@@ -573,6 +666,8 @@ export const managementAdapter: ManagementAdapter = {
       activationResult,
       courtResult,
       blockAccessResult,
+      policyResult,
+      remittanceResult,
     ] = await Promise.all([
       listManagerBookings(session.access_token, { activeOnly: true, limit: 100 }),
       listManagerBlocks(session.access_token, { limit: 100 }),
@@ -585,6 +680,12 @@ export const managementAdapter: ManagementAdapter = {
       canReadManagerSettings
         ? getBlockedDateAccess(session.access_token).catch(() => null)
         : Promise.resolve(null),
+      canReadManagerSettings
+        ? getTenantPolicy(session.access_token).catch(() => null)
+        : Promise.resolve(null),
+      canReadManagerSettings
+        ? getRemittanceDestination(session.access_token).catch(() => null)
+        : Promise.resolve(null),
     ]);
 
     const bookingRows = bookingResult.bookings;
@@ -596,14 +697,9 @@ export const managementAdapter: ManagementAdapter = {
     const activationPermissions = activationPermissionState(settings);
     const businessPayments = businessPaymentConfiguration(settings);
     const blockAccess = record(blockAccessResult);
-    const capabilities = liveCapabilities({
-      session: serverSession,
-      canManageVenueSettings:
-        courtResult !== null && activationPermissions.canManageVenueSettings,
-      canManageBlocks: blockAccess?.canManage === true,
-      canActivatePublicBooking:
-        activationPermissions.canActivatePublicBooking,
-    });
+    const capabilities = authorityCapabilities(serverSession);
+    const policy = tenantPolicyConfiguration(policyResult);
+    const remittanceDestination = remittanceDestinationConfiguration(remittanceResult);
     const tenantSettings = record(settings?.tenant);
     const responseSlug = tenantSettings
       ? value(tenantSettings, ["slug"])
@@ -650,6 +746,28 @@ export const managementAdapter: ManagementAdapter = {
             ? "editable"
             : "incomplete",
         activationPermissions,
+        toolAvailability: {
+          "booking:create": true,
+          "booking:update": true,
+          "booking:cancel": true,
+          "booking:check-in": true,
+          "schedule:block": blockAccess?.canManage === true,
+          "customer:view": true,
+          "report:view": true,
+          "settings:update": courtResult !== null &&
+            activationPermissions.canManageVenueSettings,
+          "tenant:publish": activationPermissions.canActivatePublicBooking,
+        },
+        policy,
+        policyStatus: policyResult === null ? "unavailable" : "available",
+        remittanceDestination,
+        remittanceStatus: remittanceResult === null
+          ? "unavailable"
+          : remittanceDestination
+            ? "available"
+            : "missing",
+        launchRequirementsV2Required:
+          record(settings?.readiness)?.launchRequirementsV2Required === true,
       },
     };
   },
@@ -671,6 +789,101 @@ export const managementAdapter: ManagementAdapter = {
     const authority = normalizeManagerSession(
       await getManagerSession(session.access_token),
     );
+
+    if (
+      action.type === "booking:create" || action.type === "booking:update" ||
+      action.type === "booking:cancel" || action.type === "booking:check-in"
+    ) {
+      if (action.type === "booking:create") {
+        assertBookingManager(authority, "create");
+        await createManualBooking(
+          session.access_token,
+          manualBookingPayload(action.payload),
+        );
+        return { ok: true, message: "The paid manual booking was created." };
+      }
+      if (action.type === "booking:update") {
+        assertBookingManager(authority, "reschedule");
+        const payload = rescheduleBookingPayload(action.payload, action.resourceId);
+        const preview = await previewBookingReschedule(
+          session.access_token,
+          payload.bookingReference,
+          payload.newDate,
+        );
+        const selectedOption = validatedReschedulePreviewOption(preview, {
+          bookingId: requiredUuid(action.resourceId, "BOOKING_ID_INVALID"),
+          bookingReference: payload.bookingReference,
+          startTime: payload.newStartTime,
+        });
+        if (!selectedOption.available) {
+          throw new PlatformRequestError(
+            409,
+            "RESCHEDULE_TIME_UNAVAILABLE",
+            "That time is no longer available. Refresh and choose another hour.",
+          );
+        }
+        if (selectedOption.paymentRequired || selectedOption.additionalAmount > 0) {
+          throw new PlatformRequestError(
+            409,
+            "RESCHEDULE_ADDITIONAL_PAYMENT_REQUIRED",
+            "This move costs more. Cancel it and create a new paid booking, or choose a time at the same or lower rate.",
+          );
+        }
+        await rescheduleBooking(session.access_token, payload);
+        return { ok: true, message: "The booking was rescheduled and availability was rechecked." };
+      }
+      if (action.type === "booking:cancel") {
+        assertBookingManager(authority, "cancel");
+        const payload = cancelBookingPayload(action.payload);
+        await cancelTenantBooking(
+          session.access_token,
+          requiredUuid(action.resourceId, "BOOKING_ID_INVALID"),
+          payload.reason,
+        );
+        return { ok: true, message: "The booking was cancelled. Any required refund remains visible to the owner." };
+      }
+      assertBookingManager(authority, "check-in");
+      assertNoPayload(action.payload);
+      await checkInTenantBooking(
+        session.access_token,
+        requiredUuid(action.resourceId, "BOOKING_ID_INVALID"),
+      );
+      return { ok: true, message: "The player was checked in." };
+    }
+
+    if (action.type === "policy:update" || action.type === "policy:publish") {
+      assertVenueManager(authority);
+      const current = tenantPolicyConfiguration(
+        await getTenantPolicy(session.access_token),
+      );
+      if (!current || !current.permissions.canManagePolicy) {
+        throw new Error("POLICY_UPDATE_ACCESS_DENIED");
+      }
+      if (action.type === "policy:publish" && !current.permissions.canPublishPolicy) {
+        throw new Error("POLICY_PUBLISH_ACCESS_DENIED");
+      }
+      const policy = policyActionPayload(action.payload);
+      await saveTenantPolicy(session.access_token, {
+        publish: action.type === "policy:publish",
+        expectedRevision: policy.expectedRevision,
+        policy: policy.policy,
+      });
+      return {
+        ok: true,
+        message: action.type === "policy:publish"
+          ? "The customer booking rules are published."
+          : "The customer booking rules were saved as a draft.",
+      };
+    }
+
+    if (action.type === "remittance:update") {
+      if (!authority.isSystemOwner) throw new Error("PLATFORM_OWNER_REQUIRED");
+      await saveRemittanceDestination(
+        session.access_token,
+        remittanceDestinationPayload(action.payload),
+      );
+      return { ok: true, message: "The platform remittance destination was saved." };
+    }
 
     if (
       action.type === "court:create" || action.type === "court:update" ||
@@ -784,6 +997,8 @@ type VerifiedManagerSession = Omit<ManagementSession, "capabilities">;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_V4_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const WHOLE_HOUR_PATTERN = /^(?:[01]\d|2[0-3]):00$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
@@ -873,12 +1088,97 @@ function assertVenueManager(session: VerifiedManagerSession): void {
   }
 }
 
+function assertBookingManager(
+  session: VerifiedManagerSession,
+  action: "create" | "reschedule" | "cancel" | "check-in",
+): void {
+  const manager = session.isSystemOwner || session.membershipRole === "owner" ||
+    session.membershipRole === "admin";
+  const staffWrite = action === "cancel" || action === "check-in";
+  if (!manager && !(staffWrite && session.membershipRole === "staff")) {
+    throw new Error("BOOKING_ACTION_ACCESS_DENIED");
+  }
+}
+
 function activationPermissionState(settings: JsonObject | null) {
   const permissions = record(settings?.permissions);
   return {
     canManageVenueSettings: permissions?.canManageVenueSettings === true,
     canManagePlatformBilling: permissions?.canManagePlatformBilling === true,
     canActivatePublicBooking: permissions?.canActivatePublicBooking === true,
+  };
+}
+
+function policyText(candidate: unknown, maximum: number): string | null {
+  if (typeof candidate !== "string") return null;
+  const result = candidate.trim();
+  return result && result.length <= maximum && !/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(result)
+    ? result
+    : null;
+}
+
+function tenantPolicyConfiguration(result: unknown): TenantPolicyConfiguration | null {
+  const envelope = record(result);
+  const policy = record(envelope?.policy);
+  if (!policy) return null;
+  const permissions = record(policy.permissions);
+  const normalizeCopy = (candidate: unknown) => {
+    if (candidate === null) return null;
+    const row = record(candidate);
+    const title = policyText(row?.title, 180);
+    const intro = policyText(row?.intro, 1_200);
+    const content = policyText(row?.content, 30_000);
+    return title && intro && content ? { title, intro, content } : null;
+  };
+  const draft = normalizeCopy(policy.draft);
+  const rawPublished = policy.publishedPolicy;
+  const publishedCopy = normalizeCopy(rawPublished);
+  const publishedRow = record(rawPublished);
+  const version = value(publishedRow ?? {}, ["version"]);
+  const ownerApproved = publishedRow?.ownerApproved === true;
+  const publishedPolicy = publishedCopy && version && ownerApproved
+    ? { ...publishedCopy, version, ownerApproved: true as const }
+    : null;
+  const nullableRevision = (candidate: unknown) => candidate === null
+    ? null
+    : typeof candidate === "string" && Number.isFinite(new Date(candidate).getTime())
+      ? candidate
+      : null;
+  return {
+    permissions: {
+      canManagePolicy: permissions?.canManagePolicy === true,
+      canPublishPolicy: permissions?.canPublishPolicy === true,
+    },
+    draft,
+    publishedPolicy,
+    revision: nullableRevision(policy.revision),
+    publishedRevision: nullableRevision(policy.publishedRevision),
+    policyConfigured: policy.policyConfigured === true,
+  };
+}
+
+function remittanceDestinationConfiguration(result: unknown): RemittanceDestination | null {
+  const envelope = record(result);
+  const row = record(envelope?.destination);
+  if (!row) return null;
+  const method = value(row, ["method"]);
+  const accountName = value(row, ["accountName", "account_name"]);
+  const accountReference = value(row, ["accountReference", "account_reference"]);
+  const dueDay = exactInteger(row, ["dueDay", "due_day"]);
+  const instructions = nullableResponseText(row, "instructions");
+  const qrUrl = nullableResponseText(row, "qrUrl");
+  if (
+    (method !== "gcash" && method !== "maya" && method !== "bank_transfer" &&
+      method !== "other") || accountName.length < 2 || accountReference.length < 4 ||
+    dueDay === null || dueDay < 1 || dueDay > 28 || !instructions.ok || !qrUrl.ok
+  ) return null;
+  return {
+    method,
+    accountName,
+    accountReference,
+    dueDay,
+    instructions: instructions.value,
+    qrUrl: qrUrl.value,
   };
 }
 
@@ -989,19 +1289,36 @@ function businessPaymentConfiguration(
   };
 }
 
-function liveCapabilities(options: {
-  session: VerifiedManagerSession;
-  canManageVenueSettings: boolean;
-  canManageBlocks: boolean;
-  canActivatePublicBooking: boolean;
-}): ManagementCapability[] {
-  const capabilities: ManagementCapability[] = ["customer:view", "report:view"];
-  if (options.canManageVenueSettings) capabilities.push("settings:update");
-  if (options.canManageBlocks) capabilities.push("schedule:block");
-  if (options.session.isSystemOwner && options.canActivatePublicBooking) {
-    capabilities.push("tenant:publish");
+function authorityCapabilities(session: VerifiedManagerSession): ManagementCapability[] {
+  if (session.isSystemOwner) {
+    return [
+      "booking:create",
+      "booking:update",
+      "booking:cancel",
+      "booking:check-in",
+      "schedule:block",
+      "customer:view",
+      "report:view",
+      "settings:update",
+      "tenant:publish",
+    ];
   }
-  return capabilities;
+  if (session.membershipRole === "owner" || session.membershipRole === "admin") {
+    return [
+      "booking:create",
+      "booking:update",
+      "booking:cancel",
+      "booking:check-in",
+      "schedule:block",
+      "customer:view",
+      "report:view",
+      "settings:update",
+    ];
+  }
+  if (session.membershipRole === "staff") {
+    return ["booking:cancel", "booking:check-in", "customer:view"];
+  }
+  return [];
 }
 
 function exactInteger(row: JsonObject, keys: string[]): number | null {
@@ -1094,6 +1411,12 @@ function requiredUuid(candidate: unknown, errorCode: string): string {
   return id;
 }
 
+function requiredUuidV4(candidate: unknown, errorCode: string): string {
+  const id = typeof candidate === "string" ? candidate.trim().toLowerCase() : "";
+  if (!UUID_V4_PATTERN.test(id)) throw new Error(errorCode);
+  return id;
+}
+
 function assertAllowedKeys(
   row: JsonObject,
   allowed: ReadonlySet<string>,
@@ -1147,6 +1470,279 @@ function assertJsonSafe(candidate: unknown, errorCode: string): void {
     if (entry === undefined) throw new Error(errorCode);
     assertJsonSafe(entry, errorCode);
   });
+}
+
+const MANUAL_PAYMENT_METHODS = new Set([
+  "cash", "gcash", "maya", "bank_transfer", "bdo", "bpi", "gotyme", "pnb", "other",
+]);
+const RESCHEDULE_REASONS = new Set([
+  "customer_request", "weather", "court_maintenance", "schedule_conflict", "admin_correction", "other",
+]);
+
+function invalidReschedulePreview(): never {
+  throw new PlatformRequestError(
+    502,
+    "RESCHEDULE_PREVIEW_INVALID",
+    "The server returned an incomplete reschedule preview. Refresh before moving this booking.",
+  );
+}
+
+function previewMoney(candidate: unknown): number {
+  const raw = typeof candidate === "number" || typeof candidate === "string"
+    ? String(candidate).trim()
+    : "";
+  if (!/^\d{1,10}(?:\.\d{1,2})?$/.test(raw)) invalidReschedulePreview();
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0) invalidReschedulePreview();
+  return parsed;
+}
+
+function validatedReschedulePreviewOption(
+  candidate: unknown,
+  expected: { bookingId: string; bookingReference: string; startTime: string },
+) {
+  const envelope = record(candidate);
+  const booking = record(envelope?.booking);
+  const policies = record(envelope?.policies);
+  const reasonCodes = Array.isArray(policies?.reasonCodes)
+    ? policies.reasonCodes.map((entry) => record(entry))
+    : [];
+  const returnedReasonValues = new Set(reasonCodes.map((entry) =>
+    entry ? value(entry, ["value"]) : ""
+  ));
+  const durationHours = booking ? numberValue(booking, ["durationHours"]) : null;
+  const bookingStartsAt = booking ? value(booking, ["startsAt"]) : "";
+  const bookingEndsAt = booking ? value(booking, ["endsAt"]) : "";
+  if (
+    envelope?.ok !== true || !booking || !policies ||
+    value(booking, ["id"]).toLowerCase() !== expected.bookingId ||
+    value(booking, ["reference"]).toUpperCase() !== expected.bookingReference ||
+    !UUID_PATTERN.test(value(booking, ["courtId"])) ||
+    !value(booking, ["courtName"]) ||
+    !Number.isFinite(new Date(bookingStartsAt).getTime()) ||
+    !Number.isFinite(new Date(bookingEndsAt).getTime()) ||
+    !DATE_PATTERN.test(value(booking, ["localBookingDate"])) ||
+    !Number.isSafeInteger(durationHours) || durationHours! < 1 || durationHours! > 18 ||
+    value(booking, ["status"]) !== "confirmed" ||
+    value(booking, ["paymentStatus"]) !== "paid" ||
+    !value(booking, ["customerName"]) ||
+    (booking.customerEmail !== null && typeof booking.customerEmail !== "string") ||
+    value(booking, ["currency"]) !== activeTenant.identity.currency ||
+    policies.sameCourtOnly !== true || policies.sameDurationOnly !== true ||
+    policies.amountPolicy !== "preserve_original" ||
+    reasonCodes.length !== RESCHEDULE_REASONS.size ||
+    [...RESCHEDULE_REASONS].some((reason) => !returnedReasonValues.has(reason)) ||
+    reasonCodes.some((entry) => !entry || !value(entry, ["label"])) ||
+    policies.notificationDefault !== true ||
+    typeof policies.notificationAvailable !== "boolean" ||
+    !Array.isArray(envelope.options)
+  ) invalidReschedulePreview();
+  previewMoney(booking.subtotalAmount);
+  previewMoney(booking.serviceFeeAmount);
+  previewMoney(booking.totalAmount);
+
+  const option = envelope.options
+    .map((entry) => record(entry))
+    .find((entry) => entry && value(entry, ["startTime"]) === expected.startTime);
+  if (!option) {
+    throw new PlatformRequestError(
+      409,
+      "RESCHEDULE_TIME_UNAVAILABLE",
+      "That time is not offered for this booking. Refresh and choose another hour.",
+    );
+  }
+  const startTime = value(option, ["startTime"]);
+  const endTime = value(option, ["endTime"]);
+  const startsAt = value(option, ["startsAt"]);
+  const endsAt = value(option, ["endsAt"]);
+  const label = value(option, ["label"]);
+  const unavailableReason = option.unavailableReason;
+  if (
+    !WHOLE_HOUR_PATTERN.test(startTime) || !WHOLE_HOUR_PATTERN.test(endTime) ||
+    !Number.isFinite(new Date(startsAt).getTime()) ||
+    !Number.isFinite(new Date(endsAt).getTime()) || !label ||
+    typeof option.available !== "boolean" ||
+    (unavailableReason !== null && typeof unavailableReason !== "string") ||
+    typeof option.paymentRequired !== "boolean"
+  ) invalidReschedulePreview();
+  const amounts = {
+    courtSubtotalAmount: previewMoney(option.courtSubtotalAmount),
+    newSubtotalAmount: previewMoney(option.newSubtotalAmount),
+    newTotalAmount: previewMoney(option.newTotalAmount),
+    originalTotalAmount: previewMoney(option.originalTotalAmount),
+    amountPaid: previewMoney(option.amountPaid),
+    additionalAmount: previewMoney(option.additionalAmount),
+  };
+  if (option.paymentRequired !== (amounts.additionalAmount > 0)) {
+    invalidReschedulePreview();
+  }
+  return {
+    available: option.available,
+    paymentRequired: option.paymentRequired,
+    additionalAmount: amounts.additionalAmount,
+  };
+}
+
+function safeActionText(
+  candidate: unknown,
+  minimum: number,
+  maximum: number,
+  errorCode: string,
+): string {
+  const text = typeof candidate === "string" ? candidate.trim() : "";
+  if (
+    text.length < minimum || text.length > maximum ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
+  ) throw new Error(errorCode);
+  return text;
+}
+
+function validDate(candidate: unknown, errorCode: string): string {
+  const date = safeActionText(candidate, 10, 10, errorCode);
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  if (!match) throw new Error(errorCode);
+  const value = new Date(`${date}T12:00:00Z`);
+  if (!Number.isFinite(value.getTime()) || value.toISOString().slice(0, 10) !== date) {
+    throw new Error(errorCode);
+  }
+  return date;
+}
+
+function manualBookingPayload(candidate: unknown) {
+  const payload = payloadObject(candidate, "MANUAL_BOOKING_INPUT_INVALID");
+  assertAllowedKeys(payload, new Set([
+    "courtId", "bookingDate", "startTime", "durationHours", "customer", "payment", "clientRequestId",
+  ]), "MANUAL_BOOKING_INPUT_INVALID");
+  const customer = payloadObject(payload.customer, "MANUAL_BOOKING_INPUT_INVALID");
+  const payment = payloadObject(payload.payment, "MANUAL_BOOKING_INPUT_INVALID");
+  assertAllowedKeys(customer, new Set(["name", "email", "phone"]), "MANUAL_BOOKING_INPUT_INVALID");
+  assertAllowedKeys(payment, new Set(["method", "reference"]), "MANUAL_BOOKING_INPUT_INVALID");
+  const email = typeof customer.email === "string" ? customer.email.trim().toLowerCase() : "";
+  if (email && (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email) || email.includes(".."))) {
+    throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+  }
+  const phone = safeActionText(customer.phone, 7, 30, "MANUAL_BOOKING_INPUT_INVALID");
+  if (!/^[+0-9][0-9 ()+.-]{6,29}$/.test(phone)) throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+  const method = typeof payment.method === "string" ? payment.method.trim().toLowerCase() : "";
+  if (!MANUAL_PAYMENT_METHODS.has(method)) throw new Error("MANUAL_PAYMENT_METHOD_INVALID");
+  const reference = typeof payment.reference === "string" ? payment.reference.trim() : "";
+  if (method !== "cash" && (reference.length < 4 || reference.length > 100)) {
+    throw new Error("MANUAL_PAYMENT_REFERENCE_REQUIRED");
+  }
+  const durationHours = Number(payload.durationHours);
+  if (!Number.isSafeInteger(durationHours) || durationHours < 1 || durationHours > 18) {
+    throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+  }
+  const startTime = safeActionText(payload.startTime, 5, 5, "MANUAL_BOOKING_INPUT_INVALID");
+  if (!WHOLE_HOUR_PATTERN.test(startTime)) throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+  return {
+    courtId: requiredUuid(payload.courtId, "COURT_ID_INVALID"),
+    bookingDate: validDate(payload.bookingDate, "MANUAL_BOOKING_INPUT_INVALID"),
+    startTime,
+    durationHours,
+    customer: {
+      name: safeActionText(customer.name, 2, 100, "MANUAL_BOOKING_INPUT_INVALID"),
+      email,
+      phone,
+    },
+    payment: { method, reference: method === "cash" ? null : reference },
+    clientRequestId: requiredUuidV4(payload.clientRequestId, "MANUAL_BOOKING_REQUEST_ID_INVALID"),
+  };
+}
+
+function rescheduleBookingPayload(candidate: unknown, resourceId: unknown) {
+  const payload = payloadObject(candidate, "RESCHEDULE_INPUT_INVALID");
+  assertAllowedKeys(payload, new Set([
+    "bookingId", "bookingReference", "newDate", "newStartTime", "reasonCode", "publicReason",
+    "internalNote", "notifyCustomer", "idempotencyKey",
+  ]), "RESCHEDULE_INPUT_INVALID");
+  const bookingId = requiredUuid(payload.bookingId, "BOOKING_ID_INVALID");
+  if (bookingId !== requiredUuid(resourceId, "BOOKING_ID_INVALID")) {
+    throw new Error("BOOKING_IDENTIFIER_MISMATCH");
+  }
+  const bookingReference = safeActionText(payload.bookingReference, 6, 40, "BOOKING_REFERENCE_INVALID").toUpperCase();
+  if (!/^[A-Z0-9][A-Z0-9-]{5,39}$/.test(bookingReference)) throw new Error("BOOKING_REFERENCE_INVALID");
+  const newStartTime = safeActionText(payload.newStartTime, 5, 5, "RESCHEDULE_TIME_INVALID");
+  if (!WHOLE_HOUR_PATTERN.test(newStartTime)) throw new Error("RESCHEDULE_TIME_INVALID");
+  const reasonCode = typeof payload.reasonCode === "string" ? payload.reasonCode.trim() : "";
+  if (!RESCHEDULE_REASONS.has(reasonCode)) throw new Error("RESCHEDULE_REASON_INVALID");
+  const note = payload.internalNote === null || payload.internalNote === undefined || payload.internalNote === ""
+    ? null
+    : safeActionText(payload.internalNote, 3, 1_000, "RESCHEDULE_NOTE_INVALID");
+  if (typeof payload.notifyCustomer !== "boolean") throw new Error("RESCHEDULE_INPUT_INVALID");
+  return {
+    bookingReference,
+    newDate: validDate(payload.newDate, "RESCHEDULE_DATE_INVALID"),
+    newStartTime,
+    reasonCode,
+    publicReason: safeActionText(payload.publicReason, 3, 500, "RESCHEDULE_REASON_INVALID"),
+    internalNote: note,
+    notifyCustomer: payload.notifyCustomer,
+    idempotencyKey: requiredUuidV4(payload.idempotencyKey, "RESCHEDULE_IDEMPOTENCY_KEY_INVALID"),
+  };
+}
+
+function cancelBookingPayload(candidate: unknown) {
+  const payload = payloadObject(candidate, "CANCEL_BOOKING_INPUT_INVALID");
+  assertAllowedKeys(payload, new Set(["reason"]), "CANCEL_BOOKING_INPUT_INVALID");
+  return { reason: safeActionText(payload.reason, 3, 500, "CANCEL_BOOKING_REASON_INVALID") };
+}
+
+function policyActionPayload(candidate: unknown) {
+  const payload = payloadObject(candidate, "POLICY_INPUT_INVALID");
+  assertAllowedKeys(payload, new Set(["expectedRevision", "policy"]), "POLICY_INPUT_INVALID");
+  const expectedRevision = payload.expectedRevision === null
+    ? null
+    : safeActionText(payload.expectedRevision, 20, 40, "POLICY_REVISION_INVALID");
+  if (expectedRevision !== null && !Number.isFinite(new Date(expectedRevision).getTime())) {
+    throw new Error("POLICY_REVISION_INVALID");
+  }
+  const policy = payloadObject(payload.policy, "POLICY_INPUT_INVALID");
+  assertAllowedKeys(policy, new Set(["title", "intro", "content"]), "POLICY_INPUT_INVALID");
+  const normalizedPolicyText = (
+    value: unknown,
+    minimum: number,
+    maximum: number,
+    code: string,
+  ) => safeActionText(
+    typeof value === "string" ? value.replaceAll("\r\n", "\n").replaceAll("\r", "\n") : value,
+    minimum,
+    maximum,
+    code,
+  );
+  return {
+    expectedRevision,
+    policy: {
+      title: normalizedPolicyText(policy.title, 3, 180, "POLICY_TITLE_INVALID"),
+      intro: normalizedPolicyText(policy.intro, 10, 1_200, "POLICY_INTRO_INVALID"),
+      content: normalizedPolicyText(policy.content, 20, 30_000, "POLICY_CONTENT_INVALID"),
+    },
+  };
+}
+
+function remittanceDestinationPayload(candidate: unknown) {
+  const payload = payloadObject(candidate, "REMITTANCE_DESTINATION_INVALID");
+  assertAllowedKeys(payload, new Set([
+    "method", "accountName", "accountReference", "dueDay", "instructions", "removeQr",
+  ]), "REMITTANCE_DESTINATION_INVALID");
+  const method = typeof payload.method === "string" ? payload.method.trim() : "";
+  if (method !== "gcash" && method !== "maya" && method !== "bank_transfer" && method !== "other") {
+    throw new Error("REMITTANCE_DESTINATION_INVALID");
+  }
+  const dueDay = Number(payload.dueDay);
+  if (!Number.isSafeInteger(dueDay) || dueDay < 1 || dueDay > 28) {
+    throw new Error("REMITTANCE_DESTINATION_INVALID");
+  }
+  return {
+    method,
+    accountName: safeActionText(payload.accountName, 2, 160, "REMITTANCE_DESTINATION_INVALID"),
+    accountReference: safeActionText(payload.accountReference, 4, 120, "REMITTANCE_DESTINATION_INVALID"),
+    dueDay,
+    instructions: payload.instructions === null || payload.instructions === undefined || payload.instructions === ""
+      ? null
+      : safeActionText(payload.instructions, 1, 2_000, "REMITTANCE_DESTINATION_INVALID"),
+    removeQr: payload.removeQr === true,
+  };
 }
 
 const COURT_PATCH_KEYS = new Set([
@@ -1561,10 +2157,15 @@ function mapLiveBooking(
   row: JsonObject,
   courtNames: ReadonlyMap<string, string>,
 ): Booking {
-  const id = value(row, ["reference", "booking_reference", "id"]);
+  const bookingId = value(row, ["id"]);
+  const reference = value(row, ["reference", "booking_reference"]);
   const customer = value(row, ["customer_name", "customerName", "name"]);
   const courtId = value(row, ["court_id"]);
-  if (!id || !customer || !courtId) {
+  const bookingType = value(row, ["booking_type", "bookingType"]).toLowerCase();
+  if (
+    !UUID_PATTERN.test(bookingId) || !reference || !customer || !UUID_PATTERN.test(courtId) ||
+    (bookingType !== "regular" && bookingType !== "event")
+  ) {
     throw new Error("LIVE_BOOKING_ROW_INVALID");
   }
   const startsAt = parsedInstant(row, ["starts_at"]);
@@ -1573,7 +2174,10 @@ function mapLiveBooking(
   const phone = value(row, ["customer_phone", "phone", "mobile"]);
   const email = value(row, ["customer_email", "customerEmail"]);
   return {
-    id,
+    bookingId,
+    bookingType,
+    reference,
+    id: reference,
     customer,
     initials: initialsFor(customer),
     phone: phone || email || "Contact unavailable",
@@ -1586,8 +2190,13 @@ function mapLiveBooking(
     time: bookingTimeLabel(startsAt, endsAt),
     duration: durationLabel(startsAt, endsAt),
     amount: bookingAmount(row),
-    status: liveStatus(row),
+    status: value(row, ["checked_in_at"]) ? "checked_in" : liveStatus(row),
     payment: livePaymentStatus(paymentStatus),
+    courtId,
+    bookingDate: DATE_PATTERN.test(value(row, ["local_booking_date"]))
+      ? value(row, ["local_booking_date"])
+      : null,
+    startTime: startsAt ? formatManilaClock(startsAt) : null,
   };
 }
 
@@ -1722,13 +2331,24 @@ function liveSetup(settings: JsonObject | null): SetupItem[] {
       "The platform remittance destination is configured.",
       "Configure the platform remittance destination.",
     ),
-    item(
-      "email",
-      "Booking email",
-      "emailConfigured",
-      "The booking Reply-To address is configured.",
-      "Configure the booking Reply-To address.",
-    ),
+    ...(booleanValue(readiness, "launchRequirementsV2Required")
+      ? [
+          item(
+            "email",
+            "Booking email",
+            "emailConfigured",
+            "The booking Reply-To address is configured.",
+            "Configure the booking Reply-To address.",
+          ),
+          item(
+            "policy",
+            "Customer booking rules",
+            "policyConfigured",
+            "The customer cancellation and reschedule rules are published.",
+            "Write and publish the customer booking rules.",
+          ),
+        ]
+      : []),
     {
       id: "public-booking",
       label: "Public booking gate",
