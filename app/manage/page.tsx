@@ -953,9 +953,8 @@ function BlocksView({
           <label className={styles.field}>
             <span>Court</span>
             <select value={court} onChange={(event) => setCourt(event.target.value)}>
-              <option>Court 01</option>
-              <option>Court 02</option>
-              <option>Both courts</option>
+              {snapshot.courts.map((item) => <option key={item.id}>{item.name}</option>)}
+              <option>All courts</option>
             </select>
           </label>
           <label className={styles.field}>
@@ -1223,7 +1222,7 @@ function SettingsView({
                 </article>
               ))}
             </div>
-            <div className={styles.settingsFooter}><span>2 preview courts</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Courts")}>Save courts</ActionButton></div>
+            <div className={styles.settingsFooter}><span>{snapshot.courts.length} preview courts</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Courts")}>Save courts</ActionButton></div>
           </div>
         )}
         {section === "rates" && (
@@ -1235,7 +1234,7 @@ function SettingsView({
               <label className={styles.field}><span>Minimum duration</span><select defaultValue="1"><option value="1">1 hour</option><option value="2">2 hours</option></select></label>
               <label className={styles.field}><span>Maximum duration</span><select defaultValue="3"><option value="2">2 hours</option><option value="3">3 hours</option></select></label>
             </div>
-            <div className={styles.settingsFooter}><span>Applies to both preview courts</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Rates")}>Save rates</ActionButton></div>
+            <div className={styles.settingsFooter}><span>Applies to all {snapshot.courts.length} preview courts</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Rates")}>Save rates</ActionButton></div>
           </div>
         )}
         {section === "hours" && (

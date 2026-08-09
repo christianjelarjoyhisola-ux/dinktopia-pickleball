@@ -158,24 +158,14 @@ export const previewSnapshot: ManagementSnapshot = {
     mode: "preview",
     lastSynced: "Today, 2:18 PM",
   },
-  courts: [
-    {
-      id: activeTenant.previewCourts[0].id,
-      name: activeTenant.previewCourts[0].name,
-      surface: activeTenant.previewCourts[0].surface,
-      status: "open",
-      rateDay: activeTenant.booking.offPeakHourlyRate,
-      ratePeak: activeTenant.booking.peakHourlyRate,
-    },
-    {
-      id: activeTenant.previewCourts[1].id,
-      name: activeTenant.previewCourts[1].name,
-      surface: activeTenant.previewCourts[1].surface,
-      status: "open",
-      rateDay: activeTenant.booking.offPeakHourlyRate,
-      ratePeak: activeTenant.booking.peakHourlyRate,
-    },
-  ],
+  courts: activeTenant.previewCourts.map((court) => ({
+    id: court.id,
+    name: court.name,
+    surface: court.surface,
+    status: "open",
+    rateDay: activeTenant.booking.offPeakHourlyRate,
+    ratePeak: activeTenant.booking.peakHourlyRate,
+  })),
   bookings: [
     {
       id: "DT-2848",
@@ -310,7 +300,7 @@ export const previewSnapshot: ManagementSnapshot = {
     },
     {
       id: "BLK-039",
-      court: "Both courts",
+      court: "All courts",
       date: "Aug 12, 2026",
       time: "6:00–8:00 AM",
       reason: "Monthly deep clean",
@@ -367,7 +357,7 @@ export const previewSnapshot: ManagementSnapshot = {
     {
       id: "courts",
       label: "Court inventory",
-      detail: "2 preview courts configured",
+      detail: `${activeTenant.previewCourts.length} preview courts configured`,
       complete: true,
     },
     {

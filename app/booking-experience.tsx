@@ -55,11 +55,27 @@ export type AvailabilitySlot = {
   status: SlotStatus;
 };
 
+export type CourtSchedule = {
+  courtId: string;
+  slots: AvailabilitySlot[];
+};
+
+export type BookingSelection = {
+  courtId: string;
+  startHour: number;
+  durationHours: 1;
+  amount: number;
+};
+
+type SelectionDetail = {
+  selection: BookingSelection;
+  court: Court;
+  slot: AvailabilitySlot;
+};
+
 export type AvailabilityRequest = {
   tenantSlug: "dinktopia";
   date: string;
-  courtId: string;
-  durationHours: number;
 };
 
 export type CustomerDetails = {
@@ -80,6 +96,7 @@ export type BookingRecord = {
   amount: number;
   subtotalAmount?: number;
   serviceFeeAmount?: number;
+  items?: BookingSelection[];
   customer: CustomerDetails;
 };
 
@@ -90,6 +107,7 @@ export type BookingHoldRequest = {
   startHour: number;
   durationHours: number;
   amount: number;
+  items: BookingSelection[];
   customer: CustomerDetails;
   policyVersion: string | null;
   turnstileToken?: string;
@@ -108,7 +126,7 @@ export type BookingPaymentRequest = {
 export type BookingAdapter = {
   getAvailability: (
     request: AvailabilityRequest,
-  ) => Promise<AvailabilitySlot[]>;
+  ) => Promise<CourtSchedule[]>;
   createHold: (request: BookingHoldRequest) => Promise<BookingRecord>;
   submitPayment: (request: BookingPaymentRequest) => Promise<BookingRecord>;
   findBooking: (reference: string, email: string) => Promise<BookingRecord | null>;
@@ -129,7 +147,7 @@ const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => 
   name: court.name,
   descriptor: court.surface,
   mood: court.description,
-  color: index === 0 ? "blue" : "coral",
+  color: index % 2 === 0 ? "blue" : "coral",
 }));
 
 const tickerPhrases = ["PLAY MORE", "RALLY OFTEN", "STAY FOCUSED", "NEW HABIT"] as const;
@@ -223,6 +241,63 @@ function formatHour(hour: number) {
   const period = hour >= 12 ? "PM" : "AM";
   const value = hour % 12 || 12;
   return `${value}:00 ${period}`;
+}
+
+function selectionKey(courtId: string, startHour: number) {
+  return `${courtId}:${startHour}`;
+}
+
+function canonicalizeSelection(items: BookingSelection[]) {
+  if (!items.length) return null;
+  const ordered = [...items].sort((left, right) => left.startHour - right.startHour);
+  const courtId = ordered[0].courtId;
+  const isOneConsecutiveCourt = ordered.every(
+    (item, index) =>
+      item.courtId === courtId &&
+      item.durationHours === 1 &&
+      (index === 0 || item.startHour === ordered[index - 1].startHour + 1),
+  );
+  if (!isOneConsecutiveCourt) return null;
+  return {
+    courtId,
+    startHour: ordered[0].startHour,
+    durationHours: ordered.length,
+  };
+}
+
+function groupSelectionDetails(items: SelectionDetail[]) {
+  const ordered = [...items].sort(
+    (left, right) =>
+      left.court.number.localeCompare(right.court.number) ||
+      left.selection.startHour - right.selection.startHour,
+  );
+  return ordered.reduce<Array<{
+    court: Court;
+    startHour: number;
+    endHour: number;
+    courtHours: number;
+    subtotal: number;
+  }>>((groups, item) => {
+    const previous = groups.at(-1);
+    if (
+      previous &&
+      previous.court.id === item.court.id &&
+      previous.endHour === item.selection.startHour
+    ) {
+      previous.endHour += 1;
+      previous.courtHours += 1;
+      previous.subtotal += item.selection.amount;
+      return groups;
+    }
+    groups.push({
+      court: item.court,
+      startHour: item.selection.startHour,
+      endHour: item.selection.startHour + 1,
+      courtHours: 1,
+      subtotal: item.selection.amount,
+    });
+    return groups;
+  }, []);
 }
 
 function getPrice(startHour: number, durationHours: number) {
@@ -328,6 +403,19 @@ function isStoredBookingRecord(value: unknown): value is BookingRecord {
       Number.isFinite(record.subtotalAmount)) &&
     (record.serviceFeeAmount === undefined ||
       Number.isFinite(record.serviceFeeAmount)) &&
+    (record.items === undefined ||
+      (Array.isArray(record.items) &&
+        record.items.length > 0 &&
+        record.items.every(
+          (item) =>
+            typeof item.courtId === "string" &&
+            Number.isFinite(item.startHour) &&
+            item.startHour >= 0 &&
+            item.startHour < 24 &&
+            item.durationHours === 1 &&
+            Number.isFinite(item.amount) &&
+            item.amount >= 0,
+        ))) &&
     (!record.expiresAt ||
       (typeof record.expiresAt === "string" &&
         Number.isFinite(Date.parse(record.expiresAt)))) &&
@@ -372,55 +460,61 @@ const platformAdapter: BookingAdapter = {
       getPlatformAvailability(request.date),
       getTenantBootstrap(),
     ]);
-    const availabilityCourt = response.courts.find((item) => item.id === request.courtId);
-    const publicCourt = tenantBootstrap.courts.find((item) => item.id === request.courtId);
-    if (!availabilityCourt || !publicCourt) {
-      throw new Error("This court is not available in the current tenant schedule.");
-    }
-    const openingHour = Number(publicCourt.opensAt.slice(0, 2));
-    const closingHour = Number(publicCourt.closesAt.slice(0, 2));
-    const publicConfig = publicCourt.publicConfig as
-      | { minimumLeadMinutes?: number }
-      | undefined;
-    const minimumLeadMinutes =
-      publicConfig?.minimumLeadMinutes ?? activeTenant.booking.minimumLeadMinutes;
-
-    return Array.from(
-      { length: closingHour - openingHour - request.durationHours + 1 },
-      (_, index) => index + openingHour,
-    ).map((hour) => {
-      const overlapsBooking = availabilityCourt.unavailable.some((blocked) => {
-        const blockedStart = hourFromTimestamp(blocked.startsAt);
-        const blockedEnd = hourFromTimestamp(blocked.endsAt);
-        return hour < blockedEnd && hour + request.durationHours > blockedStart;
+    return tenantBootstrap.courts.map((publicCourt) => {
+      const availabilityCourt = response.courts.find((item) => item.id === publicCourt.id);
+      if (!availabilityCourt) {
+        throw new Error("The court schedule is incomplete. Refresh before selecting a time.");
+      }
+      const openingHour = Number(publicCourt.opensAt.slice(0, 2));
+      const closingHour = Number(publicCourt.closesAt.slice(0, 2));
+      const publicConfig = publicCourt.publicConfig as
+        | { minimumLeadMinutes?: number }
+        | undefined;
+      const minimumLeadMinutes =
+        publicConfig?.minimumLeadMinutes ?? activeTenant.booking.minimumLeadMinutes;
+      const slots = Array.from(
+        { length: Math.max(0, closingHour - openingHour) },
+        (_, index) => index + openingHour,
+      ).map((hour): AvailabilitySlot => {
+        const overlapsBooking = availabilityCourt.unavailable.some((blocked) => {
+          const blockedStart = hourFromTimestamp(blocked.startsAt);
+          const blockedEnd = hourFromTimestamp(blocked.endsAt);
+          return hour < blockedEnd && hour + 1 > blockedStart;
+        });
+        const overlapsBlock = blockedPeriodOverlaps(
+          response.blockedDates,
+          publicCourt.id,
+          hour,
+          1,
+        );
+        const candidateStartsAt = new Date(
+          `${request.date}T${String(hour).padStart(2, "0")}:00:00+08:00`,
+        ).getTime();
+        const tooSoon =
+          candidateStartsAt < Date.now() + minimumLeadMinutes * 60 * 1000;
+        return {
+          hour,
+          startsAt: formatHour(hour),
+          endsAt: formatHour(hour + 1),
+          price: getConfiguredPrice(publicCourt, hour, 1),
+          status: tooSoon || overlapsBlock || overlapsBooking ? "unavailable" : "available",
+        };
       });
-      const overlapsBlock = blockedPeriodOverlaps(
-        response.blockedDates,
-        request.courtId,
-        hour,
-        request.durationHours,
-      );
-      const popular = (hour + Number(request.date.slice(-2))) % 5 === 0;
-      const candidateStartsAt = new Date(
-        `${request.date}T${String(hour).padStart(2, "0")}:00:00+08:00`,
-      ).getTime();
-      const tooSoon =
-        candidateStartsAt < Date.now() + minimumLeadMinutes * 60 * 1000;
-      return {
-        hour,
-        startsAt: formatHour(hour),
-        endsAt: formatHour(hour + request.durationHours),
-        price: getConfiguredPrice(publicCourt, hour, request.durationHours),
-        status:
-          tooSoon || overlapsBlock || overlapsBooking
-            ? "unavailable"
-            : popular
-              ? "limited"
-              : "available",
-      };
+      return { courtId: publicCourt.id, slots };
     });
   },
   async createHold(request) {
+    const canonicalSelection = canonicalizeSelection(request.items);
+    if (platformMode() === "live" && !canonicalSelection) {
+      throw new Error(
+        "This selection spans separate court sessions. Live checkout will open after the venue enables one atomic group hold; no partial reservations were created.",
+      );
+    }
+    const canonical = canonicalSelection ?? {
+      courtId: request.courtId,
+      startHour: request.startHour,
+      durationHours: request.durationHours,
+    };
     const pendingKey = `dinktopia:pending:${request.clientRequestId}`;
     const probeKey = `dinktopia:storage-probe:${request.clientRequestId}`;
     try {
@@ -435,10 +529,10 @@ const platformAdapter: BookingAdapter = {
     // The server owns idempotency. Replaying this UUID is safer than trusting a
     // cached browser response after an ambiguous network failure.
     const confirmation: BookingConfirmation = await createPlatformBooking({
-      courtId: request.courtId,
+      courtId: canonical.courtId,
       bookingDate: request.date,
-      startTime: `${String(request.startHour).padStart(2, "0")}:00`,
-      durationHours: request.durationHours,
+      startTime: `${String(canonical.startHour).padStart(2, "0")}:00`,
+      durationHours: canonical.durationHours,
       bookingType: "regular",
       customer: {
         name: request.customer.fullName,
@@ -502,12 +596,17 @@ const platformAdapter: BookingAdapter = {
       status: "pending_payment",
       expiresAt: confirmation.expiresAt ?? null,
       date: request.date,
-      courtId: request.courtId,
-      startHour: request.startHour,
-      durationHours: request.durationHours,
-      amount: confirmation.totalAmount,
-      subtotalAmount: confirmation.subtotalAmount,
-      serviceFeeAmount: confirmation.serviceFeeAmount,
+      courtId: canonical.courtId,
+      startHour: canonical.startHour,
+      durationHours: canonical.durationHours,
+      amount: platformMode() === "preview" ? request.amount : confirmation.totalAmount,
+      subtotalAmount: platformMode() === "preview"
+        ? request.items.reduce((sum, item) => sum + item.amount, 0)
+        : confirmation.subtotalAmount,
+      serviceFeeAmount: platformMode() === "preview"
+        ? Math.max(0, request.amount - request.items.reduce((sum, item) => sum + item.amount, 0))
+        : confirmation.serviceFeeAmount,
+      items: request.items,
       customer: request.customer,
     };
 
@@ -809,9 +908,8 @@ export function BookingExperience({
     if (isLive) return previewCourts[0].id;
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
   });
-  const [duration, setDuration] = useState(1);
-  const [selectedSlot, setSelectedSlot] = useState<AvailabilitySlot | null>(null);
-  const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
+  const [selectedSlots, setSelectedSlots] = useState<BookingSelection[]>([]);
+  const [schedule, setSchedule] = useState<CourtSchedule[]>([]);
   const [availabilityState, setAvailabilityState] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -850,8 +948,8 @@ export function BookingExperience({
 
   const displayCourts = useMemo(
     () =>
-      isLive && bootstrap?.courts.length
-        ? displayCourtsFromPlatform(bootstrap.courts)
+      isLive
+        ? displayCourtsFromPlatform(bootstrap?.courts ?? [])
         : previewCourts,
     [bootstrap, isLive],
   );
@@ -861,23 +959,58 @@ export function BookingExperience({
     return displayCourtsFromPlatform(bootstrap?.courts ?? []);
   }, [bootstrap, bootstrapState, isLive]);
   const galleryPhotos = useMemo(() => galleryPhotosFromPlatform(bootstrap), [bootstrap]);
+  const selectedSlotDetails = useMemo(
+    () => selectedSlots
+      .map((selection) => {
+        const court = displayCourts.find((candidate) => candidate.id === selection.courtId);
+        const slot = schedule
+          .find((candidate) => candidate.courtId === selection.courtId)
+          ?.slots.find((candidate) => candidate.hour === selection.startHour);
+        return court && slot ? { selection, court, slot } : null;
+      })
+      .filter((item): item is SelectionDetail => Boolean(item))
+      .sort((left, right) => left.selection.startHour - right.selection.startHour || left.court.number.localeCompare(right.court.number)),
+    [displayCourts, schedule, selectedSlots],
+  );
+  const selectedSlot = selectedSlotDetails[0]?.slot ?? null;
+  const groupedSelections = useMemo(
+    () => groupSelectionDetails(selectedSlotDetails),
+    [selectedSlotDetails],
+  );
   const selectedCourt =
-    displayCourts.find((court) => court.id === selectedCourtId) ?? displayCourts[0];
-  const selectedPublicCourt = bootstrap?.courts.find((court) => court.id === selectedCourtId);
-  const selectedPricing = selectedPublicCourt?.pricingConfig as
+    selectedSlotDetails[0]?.court ??
+    displayCourts.find((court) => court.id === selectedCourtId) ??
+    previewCourts[0];
+  const selectedDateDetails = dates.find((date) => date.iso === selectedDate);
+  const availableCount = schedule.reduce(
+    (count, court) => count + court.slots.filter((slot) => slot.status !== "unavailable").length,
+    0,
+  );
+  const courtSubtotal = selectedSlots.reduce((sum, item) => sum + item.amount, 0);
+  const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
+  const canonicalSelection = canonicalizeSelection(selectedSlots);
+  const canonicalCourt = bootstrap?.courts.find(
+    (court) => court.id === canonicalSelection?.courtId,
+  );
+  const canonicalPricing = canonicalCourt?.pricingConfig as
     | { regular?: { minimumHours?: number; maximumHours?: number } }
     | undefined;
-  const minimumDuration =
-    selectedPricing?.regular?.minimumHours ?? activeTenant.booking.minimumHours;
-  const maximumDuration =
-    selectedPricing?.regular?.maximumHours ?? activeTenant.booking.maximumHours;
-  const durationOptions = Array.from(
-    { length: Math.max(1, maximumDuration - minimumDuration + 1) },
-    (_, index) => minimumDuration + index,
+  const liveSelectionSupported = !isLive || Boolean(
+    canonicalSelection &&
+      canonicalSelection.durationHours >= (canonicalPricing?.regular?.minimumHours ?? 1) &&
+      canonicalSelection.durationHours <= (canonicalPricing?.regular?.maximumHours ?? 18),
   );
-  const selectedDateDetails = dates.find((date) => date.iso === selectedDate);
-  const availableCount = slots.filter((slot) => slot.status !== "unavailable").length;
-  const courtSubtotal = selectedSlot?.price ?? 0;
+  const configuredCourtHourLimit = bootstrap?.tenant.publicConfig.maximumCourtHoursPerCheckout;
+  const maximumCourtHoursPerCheckout =
+    typeof configuredCourtHourLimit === "number" && Number.isFinite(configuredCourtHourLimit)
+      ? Math.min(20, Math.max(1, Math.floor(configuredCourtHourLimit)))
+      : activeTenant.booking.maximumCourtHoursPerCheckout;
+  const selectedKeys = new Set(
+    selectedSlots.map((item) => selectionKey(item.courtId, item.startHour)),
+  );
+  const scheduleHours = Array.from(
+    new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
+  ).sort((left, right) => left - right);
   const securitySiteKey = turnstileSiteKey();
   const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods[0] ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
@@ -895,7 +1028,7 @@ export function BookingExperience({
       : activeTenant.booking.cancellation;
   const policyContent =
     typeof rawPolicy?.content === "string" ? rawPolicy.content : activeTenant.booking.rescheduling;
-  const bookingFee = calculateBookingFee(bootstrap?.bookingFee, courtSubtotal, duration);
+  const bookingFee = calculateBookingFee(bootstrap?.bookingFee, courtSubtotal, selectedSlots.length);
   const total = courtSubtotal + (bookingFee ?? 0);
   const checkoutSlot: AvailabilitySlot | null =
     selectedSlot ??
@@ -915,7 +1048,6 @@ export function BookingExperience({
           status: "available",
         }
       : null);
-  const checkoutDuration = pendingBooking?.durationHours ?? duration;
   const checkoutSubtotal =
     pendingBooking?.subtotalAmount ?? checkoutSlot?.price ?? courtSubtotal;
   const checkoutFee =
@@ -970,19 +1102,6 @@ export function BookingExperience({
           };
           if (typeof publicConfig?.maximumAdvanceDays === "number") {
             setDateHorizon(publicConfig.maximumAdvanceDays);
-          }
-          const pricingConfig = (configuredCourt.pricingConfig ?? {}) as {
-            regular?: { minimumHours?: number; maximumHours?: number };
-          };
-          const minimumHours = pricingConfig.regular?.minimumHours;
-          const maximumHours = pricingConfig.regular?.maximumHours;
-          if (typeof minimumHours === "number") {
-            setDuration((current) => {
-              const atLeastMinimum = Math.max(current, minimumHours);
-              return typeof maximumHours === "number"
-                ? Math.min(atLeastMinimum, maximumHours)
-                : atLeastMinimum;
-            });
           }
         }
         setBootstrapState("ready");
@@ -1103,7 +1222,16 @@ export function BookingExperience({
       bookingAttemptIdRef.current = pointer.clientRequestId;
       setSelectedDate(restored.date);
       setSelectedCourtId(restored.courtId);
-      setDuration(restored.durationHours);
+      setSelectedSlots(
+        restored.items?.length
+          ? restored.items
+          : Array.from({ length: restored.durationHours }, (_, index) => ({
+              courtId: restored.courtId,
+              startHour: restored.startHour + index,
+              durationHours: 1 as const,
+              amount: (restored.subtotalAmount ?? restored.amount) / restored.durationHours,
+            })),
+      );
       setCustomer(restored.customer);
       setAcceptedPolicy(true);
       setPaymentError("");
@@ -1197,11 +1325,10 @@ export function BookingExperience({
     queueMicrotask(() => {
       if (!active) return;
       setAvailabilityState("loading");
-      setSelectedSlot(null);
     });
     if (isLive && bootstrapState !== "ready") {
       queueMicrotask(() => {
-        if (active) setSlots([]);
+        if (active) setSchedule([]);
       });
       return () => {
         active = false;
@@ -1212,28 +1339,42 @@ export function BookingExperience({
       .getAvailability({
         tenantSlug: "dinktopia",
         date: selectedDate,
-        courtId: selectedCourtId,
-        durationHours: duration,
       })
-      .then((nextSlots) => {
+      .then((nextSchedule) => {
         if (!active) return;
-        setSlots(nextSlots);
+        setSchedule(nextSchedule);
+        const openKeys = new Set(
+          nextSchedule.flatMap((court) =>
+            court.slots
+              .filter((slot) => slot.status !== "unavailable")
+              .map((slot) => selectionKey(court.courtId, slot.hour)),
+          ),
+        );
+        setSelectedSlots((current) => {
+          const retained = current.filter((item) =>
+            openKeys.has(selectionKey(item.courtId, item.startHour)),
+          );
+          if (retained.length !== current.length) {
+            setLiveMessage("The schedule changed, so unavailable court-hours were removed from your selection.");
+          }
+          return retained;
+        });
         setAvailabilityState("ready");
       })
       .catch(() => {
         if (!active) return;
-        setSlots([]);
+        setSchedule([]);
         setAvailabilityState("error");
       });
 
     return () => {
       active = false;
     };
-  }, [adapter, availabilityRetry, bootstrapState, duration, isBookingPage, isLive, selectedCourtId, selectedDate]);
+  }, [adapter, availabilityRetry, bootstrapState, isBookingPage, isLive, selectedDate]);
 
   useEffect(() => {
     if (!pendingBooking) bookingAttemptIdRef.current = "";
-  }, [duration, pendingBooking, selectedCourtId, selectedDate, selectedSlot?.hour]);
+  }, [pendingBooking, selectedDate, selectedSlots]);
 
   function scrollToBooking() {
     window.setTimeout(
@@ -1257,21 +1398,45 @@ export function BookingExperience({
 
   function chooseCourt(courtId: string) {
     setSelectedCourtId(courtId);
-    const publicCourt = bootstrap?.courts.find((court) => court.id === courtId);
-    const pricing = publicCourt?.pricingConfig as
-      | { regular?: { minimumHours?: number; maximumHours?: number } }
-      | undefined;
-    const minimum = pricing?.regular?.minimumHours ?? activeTenant.booking.minimumHours;
-    const maximum = pricing?.regular?.maximumHours ?? activeTenant.booking.maximumHours;
-    setDuration((current) => Math.min(maximum, Math.max(minimum, current)));
   }
 
-  function chooseSlot(slot: AvailabilitySlot) {
+  function chooseSlot(court: Court, slot: AvailabilitySlot) {
     if (slot.status === "unavailable") return;
-    setSelectedSlot(slot);
-    setLiveMessage(
-      `${slot.startsAt} to ${slot.endsAt} selected on ${selectedCourt.name}.`,
+    const key = selectionKey(court.id, slot.hour);
+    const isSelected = selectedKeys.has(key);
+    if (!isSelected && selectedSlots.length >= maximumCourtHoursPerCheckout) {
+      setLiveMessage(`You can select up to ${maximumCourtHoursPerCheckout} court-hours per checkout.`);
+      return;
+    }
+    setSelectedCourtId(court.id);
+    setSelectedSlots((current) =>
+      isSelected
+        ? current.filter((item) => selectionKey(item.courtId, item.startHour) !== key)
+        : [...current, {
+            courtId: court.id,
+            startHour: slot.hour,
+            durationHours: 1,
+            amount: slot.price,
+          }],
     );
+    const nextCount = selectedSlots.length + (isSelected ? -1 : 1);
+    setLiveMessage(
+      `${court.name}, ${slot.startsAt} to ${slot.endsAt} ${isSelected ? "removed" : "selected"}. ${nextCount} court-hour${nextCount === 1 ? "" : "s"} selected.`,
+    );
+  }
+
+  function clearSelection() {
+    setSelectedSlots([]);
+    setLiveMessage("Court-hour selection cleared.");
+  }
+
+  function chooseDate(date: string) {
+    if (date === selectedDate) return;
+    if (selectedSlots.length) {
+      setLiveMessage("Clear your selected court-hours before changing the date.");
+      return;
+    }
+    setSelectedDate(date);
   }
 
   function validateDetails() {
@@ -1313,8 +1478,14 @@ export function BookingExperience({
       setPaymentError("Complete the security check before submitting your booking.");
       return;
     }
-    if (!selectedSlot) {
+    if (!selectedSlots.length) {
       setStep(1);
+      return;
+    }
+    if (isLive && !canonicalSelection) {
+      setPaymentError(
+        "Live group checkout is not active yet. Choose adjacent hours on one court, or keep this multi-court plan in preview; no partial reservation will be created.",
+      );
       return;
     }
 
@@ -1322,13 +1493,19 @@ export function BookingExperience({
     try {
       const clientRequestId = bookingAttemptIdRef.current || crypto.randomUUID();
       bookingAttemptIdRef.current = clientRequestId;
+      const primary = canonicalSelection ?? {
+        courtId: selectedSlots[0].courtId,
+        startHour: selectedSlots[0].startHour,
+        durationHours: 1,
+      };
       const booking = await adapter.createHold({
         tenantSlug: "dinktopia",
         date: selectedDate,
-        courtId: selectedCourtId,
-        startHour: selectedSlot.hour,
-        durationHours: duration,
+        courtId: primary.courtId,
+        startHour: primary.startHour,
+        durationHours: primary.durationHours,
         amount: total,
+        items: selectedSlots,
         customer,
         policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
         turnstileToken: turnstileTokenValue || undefined,
@@ -1445,7 +1622,7 @@ export function BookingExperience({
     }
     setPendingBooking(null);
     setConfirmedBooking(null);
-    setSelectedSlot(null);
+    setSelectedSlots([]);
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
@@ -1504,7 +1681,7 @@ export function BookingExperience({
 
   function resetBooking() {
     setStep(1);
-    setSelectedSlot(null);
+    setSelectedSlots([]);
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
@@ -1660,7 +1837,7 @@ export function BookingExperience({
             >
               Manage booking
             </Link>
-            <Link className="button button-small button-lime" href="/courts" onClick={() => setMobileNavOpen(false)}>
+            <Link className="button button-small button-lime" href="/book" onClick={() => setMobileNavOpen(false)}>
               Book a court <span aria-hidden="true">↗</span>
             </Link>
           </nav>
@@ -1681,7 +1858,7 @@ export function BookingExperience({
                 and meet your crew on the bright side of the net.
               </p>
               <div className="hero-actions">
-                <Link className="button button-lime button-large" href="/courts">
+                <Link className="button button-lime button-large" href="/book">
                   Book a court <span aria-hidden="true">→</span>
                 </Link>
                 <a className="text-link" href="#how-it-works">
@@ -1760,7 +1937,7 @@ export function BookingExperience({
               <p>
                 {isLive && bootstrapState !== "ready"
                   ? "Loading configured courts."
-                  : `${isLive ? `${courtDirectoryCourts.length} configured courts` : "Two dedicated preview courts"}, designed for quick games, long rallies, and the happy blur in between.`}
+                  : `${isLive ? `${courtDirectoryCourts.length} configured courts` : `${previewCourts.length} dedicated preview courts`}, designed for quick games, long rallies, and the happy blur in between.`}
               </p>
             </div>
             {isLive && bootstrapState !== "ready" ? (
@@ -1839,7 +2016,7 @@ export function BookingExperience({
               <p>Everything you need, nothing that slows down the rally.</p>
             </div>
             <ol className="how-list">
-              <li><span>01</span><div><h3>Choose your hour</h3><p>See real-time availability for both courts.</p></div></li>
+              <li><span>01</span><div><h3>Build your court plan</h3><p>See every active court and select exact court-hours.</p></div></li>
               <li><span>02</span><div><h3>Bring your crew</h3><p>Book one to three whole hours, up to 30 days ahead.</p></div></li>
               <li><span>03</span><div><h3>Pay, then play</h3><p>Send your GCash receipt and get a booking reference.</p></div></li>
             </ol>
@@ -1915,7 +2092,8 @@ export function BookingExperience({
                               key={date.iso}
                               className={`date-option ${selectedDate === date.iso ? "is-selected" : ""}`}
                               aria-pressed={selectedDate === date.iso}
-                              onClick={() => setSelectedDate(date.iso)}
+                              aria-disabled={selectedSlots.length > 0 && selectedDate !== date.iso}
+                              onClick={() => chooseDate(date.iso)}
                             >
                               <span>{date.isToday ? "Today" : date.day}</span>
                               <strong>{date.date}</strong>
@@ -1923,53 +2101,29 @@ export function BookingExperience({
                             </button>
                           ))}
                         </div>
+                        {selectedSlots.length > 0 && (
+                          <p className="date-selection-note">Clear your court-hours before choosing another date.</p>
+                        )}
                       </fieldset>
 
-                      <div className="choice-row">
-                        <fieldset className="booking-fieldset">
-                          <legend>Choose a court</legend>
-                          <div className="court-choice-list">
-                            {displayCourts.map((court) => (
-                              <label key={court.id} className={`court-choice ${selectedCourtId === court.id ? "is-selected" : ""}`}>
-                                <input
-                                  type="radio"
-                                  name="court"
-                                  value={court.id}
-                                  checked={selectedCourtId === court.id}
-                                  onChange={() => chooseCourt(court.id)}
-                                />
-                                <span className="court-choice-number">{court.number}</span>
-                                <span><strong>{court.name}</strong><small>{court.descriptor}</small></span>
-                                <i aria-hidden="true" />
-                              </label>
-                            ))}
-                          </div>
-                        </fieldset>
-                        <fieldset className="booking-fieldset duration-fieldset">
-                          <legend>How long?</legend>
-                          <div className="duration-control">
-                            {durationOptions.map((hours) => (
-                              <button
-                                type="button"
-                                key={hours}
-                                className={duration === hours ? "is-selected" : ""}
-                                aria-pressed={duration === hours}
-                                onClick={() => setDuration(hours)}
-                              >
-                                <strong>{hours}</strong><span>{hours === 1 ? "hour" : "hours"}</span>
-                              </button>
-                            ))}
-                          </div>
-                          <p className="field-hint">Whole-hour bookings only</p>
-                        </fieldset>
-                      </div>
-
                       <fieldset className="booking-fieldset availability-fieldset">
+                        <legend className="sr-only">Choose court-hours</legend>
+                        <div className="schedule-heading-row">
+                          <h4>Choose court-hours</h4>
+                          <div className="schedule-selection-count" aria-live="polite">
+                            <strong>{selectedSlots.length} of {maximumCourtHoursPerCheckout}</strong>
+                            <span>court-hours</span>
+                            {selectedSlots.length > 0 && <button type="button" onClick={clearSelection}>Clear all</button>}
+                          </div>
+                        </div>
+                        <p className="schedule-help">Tap any open time under the court you want. Select several times or several courts—each cell adds one court-hour.</p>
+                        {selectedSlots.length >= maximumCourtHoursPerCheckout && (
+                          <p className="schedule-limit-note" role="status">Maximum reached. Remove a court-hour before adding another.</p>
+                        )}
                         <div className="availability-legend-row">
-                          <legend>Pick a start time</legend>
                           <div className="slot-legend" aria-label="Availability key">
                             <span><i className="legend-open" />Open</span>
-                            <span><i className="legend-limited" />Popular</span>
+                            <span><i className="legend-limited" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
                           </div>
                         </div>
@@ -1989,16 +2143,16 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {availabilityState === "ready" && availableCount === 0 && (
+                        {availabilityState === "ready" && displayCourts.length > 0 && availableCount === 0 && (
                           <div className="state-card state-empty" role="status">
                             <span className="state-symbol" aria-hidden="true">0</span>
-                            <div><h4>This day is rally-packed.</h4><p>No {duration}-hour starts are open. Try the next date or another court.</p></div>
+                            <div><h4>This day is rally-packed.</h4><p>No court-hours are open. Try the next date.</p></div>
                             <button
                               className="button button-outline"
                               type="button"
                               onClick={() => {
                                 const currentIndex = dates.findIndex((date) => date.iso === selectedDate);
-                                setSelectedDate(dates[Math.min(currentIndex + 1, dates.length - 1)].iso);
+                                chooseDate(dates[Math.min(currentIndex + 1, dates.length - 1)].iso);
                               }}
                             >
                               Check next day
@@ -2006,61 +2160,79 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {availabilityState === "ready" && availableCount > 0 && (
-                          <div className="time-groups">
-                            {[
-                              { label: "Morning", range: [6, 12] },
-                              { label: "Afternoon", range: [12, 16] },
-                              { label: "Evening", range: [16, 22] },
-                            ].map((group) => {
-                              const groupSlots = slots.filter((slot) => slot.hour >= group.range[0] && slot.hour < group.range[1]);
-                              if (!groupSlots.length) return null;
-                              return (
-                                <div className="time-group" key={group.label}>
-                                  <div className="time-group-label"><span>{group.label}</span><i /></div>
-                                  <div className="slot-grid">
-                                    {groupSlots.map((slot) => (
-                                      <button
-                                        type="button"
-                                        key={slot.hour}
-                                        disabled={slot.status === "unavailable"}
-                                        className={`time-slot is-${slot.status} ${selectedSlot?.hour === slot.hour ? "is-selected" : ""}`}
-                                        aria-pressed={selectedSlot?.hour === slot.hour}
-                                        aria-label={
-                                          slot.status === "unavailable"
-                                            ? `${slot.startsAt}, unavailable`
-                                            : `${slot.startsAt} to ${slot.endsAt}, ${peso(slot.price)}${slot.status === "limited" ? ", popular time" : ""}`
-                                        }
-                                        onClick={() => chooseSlot(slot)}
-                                      >
-                                        <span className="slot-dot" aria-hidden="true" />
-                                        <strong>{slot.startsAt.replace(":00", "")}</strong>
-                                        <small>{slot.status === "unavailable" ? "Booked" : peso(slot.price)}</small>
-                                      </button>
-                                    ))}
-                                  </div>
-                                </div>
-                              );
-                            })}
+                        {availabilityState === "ready" && displayCourts.length === 0 && (
+                          <div className="state-card state-empty" role="status">
+                            <span className="state-symbol" aria-hidden="true">0</span>
+                            <div><h4>No courts are published yet.</h4><p>The venue owner can add and activate courts in system settings.</p></div>
+                          </div>
+                        )}
+
+                        {availabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
+                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts`} tabIndex={0}>
+                            <table className="schedule-matrix">
+                              <thead>
+                                <tr>
+                                  <th scope="col">Time</th>
+                                  {displayCourts.map((court) => (
+                                    <th scope="col" key={court.id} className={court.id === selectedCourtId ? "is-current-court" : undefined}>
+                                      <strong>C{Number(court.number)}</strong>
+                                      <span>{court.name}</span>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {scheduleHours.map((hour) => (
+                                  <tr key={hour}>
+                                    <th scope="row"><strong>{formatHour(hour).replace(":00", "")}</strong><span>–{formatHour(hour + 1).replace(":00", "")}</span></th>
+                                    {displayCourts.map((court) => {
+                                      const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
+                                      const key = selectionKey(court.id, hour);
+                                      const isSelected = selectedKeys.has(key);
+                                      const isUnavailable = !slot || slot.status === "unavailable";
+                                      return (
+                                        <td key={court.id}>
+                                          <button
+                                            type="button"
+                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}`}
+                                            aria-pressed={isSelected}
+                                            aria-disabled={isUnavailable}
+                                            aria-label={`${court.name}, ${formatHour(hour)} to ${formatHour(hour + 1)}, ${isUnavailable ? "booked" : `${peso(slot.price)}, ${isSelected ? "selected" : "available"}`}`}
+                                            onClick={() => slot && chooseSlot(court, slot)}
+                                          >
+                                            <strong>{isUnavailable ? "Booked" : peso(slot.price)}</strong>
+                                            <span>{isSelected ? "Selected" : isUnavailable ? "Unavailable" : "Open"}</span>
+                                          </button>
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        )}
+                        {isLive && selectedSlots.length > 0 && !liveSelectionSupported && (
+                          <div className="schedule-live-guard" role="status">
+                            <strong>Group checkout is being prepared</strong>
+                            <p>You can plan multiple courts here, but live checkout currently accepts only adjacent hours on one court. We will never split this into partial reservations.</p>
                           </div>
                         )}
                       </fieldset>
 
                       <div className="booking-mobile-action">
-                        <div>{selectedSlot ? <><small>Total</small><strong>{peso(total)}</strong></> : <span>Choose an open time</span>}</div>
-                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!selectedSlot} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
+                        <div>{selectedSlots.length ? <><small>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</small><strong>{peso(total)}</strong></> : <span>Tap open court-hours</span>}</div>
+                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!selectedSlots.length || !liveSelectionSupported} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
                       </div>
                     </div>
                     <BookingSummary
-                      court={selectedCourt}
+                      selections={selectedSlotDetails}
                       dateLabel={selectedDateDetails?.long ?? selectedDate}
-                      duration={duration}
-                      slot={selectedSlot}
                       subtotal={courtSubtotal}
                       bookingFee={bookingFee ?? 0}
                       total={total}
                       actionLabel="Continue"
-                      actionDisabled={!selectedSlot}
+                      actionDisabled={!selectedSlots.length || !liveSelectionSupported}
                       onAction={() => setStep(2)}
                     />
                   </div>
@@ -2126,11 +2298,11 @@ export function BookingExperience({
                         <button data-testid="details-submit" className="button button-blue" type="submit">Review booking <span aria-hidden="true">→</span></button>
                       </div>
                     </form>
-                    <BookingSummary court={selectedCourt} dateLabel={selectedDateDetails?.long ?? selectedDate} duration={duration} slot={selectedSlot} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
+                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                   </div>
                 )}
 
-                {step === 3 && selectedSlot && (
+                {step === 3 && selectedSlots.length > 0 && (
                   <div className="booking-layout compact-step">
                     <div className="booking-main-card">
                       <div className="booking-card-heading">
@@ -2138,11 +2310,10 @@ export function BookingExperience({
                         <div><h3>One last look</h3><p>{isLive ? "Check the details before heading to payment." : "Check the details before previewing checkout. No real reservation or payment will be created."}</p></div>
                       </div>
                       <div className="review-board">
-                        <div className="review-court-mark"><span>COURT</span><strong>{selectedCourt.number}</strong><small>{selectedCourt.name}</small></div>
+                        <div className="review-court-mark"><span>COURTS</span><strong>{selectedCourtCount}</strong><small>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"}</small></div>
                         <dl>
                           <div><dt>Date</dt><dd>{selectedDateDetails?.long}</dd></div>
-                          <div><dt>Time</dt><dd>{selectedSlot.startsAt}–{selectedSlot.endsAt}</dd></div>
-                          <div><dt>Duration</dt><dd>{duration} {duration === 1 ? "hour" : "hours"}</dd></div>
+                          <div className="review-session-row"><dt>Selected play</dt><dd>{groupedSelections.map((group) => <span key={`${group.court.id}:${group.startHour}`}>{group.court.name} · {formatHour(group.startHour)}–{formatHour(group.endHour)}</span>)}</dd></div>
                           <div><dt>Booked by</dt><dd>{customer.fullName}<small>{customer.email} · {customer.phone}</small></dd></div>
                         </dl>
                         <button className="edit-details-button" type="button" onClick={() => setStep(2)}>Edit details</button>
@@ -2162,10 +2333,10 @@ export function BookingExperience({
                       </label>
                       <div className="step-actions">
                         <button className="button button-ghost" type="button" onClick={() => setStep(2)}><span aria-hidden="true">←</span> Back</button>
-                        <button data-testid="review-to-payment" className="button button-blue" type="button" disabled={!acceptedPolicy} onClick={() => setStep(4)}>{isLive ? "Continue to payment" : "Preview checkout"} <span aria-hidden="true">→</span></button>
+                        <button data-testid="review-to-payment" className="button button-blue" type="button" disabled={!acceptedPolicy || !liveSelectionSupported} onClick={() => setStep(4)}>{isLive ? "Continue to payment" : "Preview checkout"} <span aria-hidden="true">→</span></button>
                       </div>
                     </div>
-                    <BookingSummary court={selectedCourt} dateLabel={selectedDateDetails?.long ?? selectedDate} duration={duration} slot={selectedSlot} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
+                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                   </div>
                 )}
 
@@ -2287,7 +2458,7 @@ export function BookingExperience({
                         </button>}
                       </div>
                     </form>
-                    <BookingSummary court={selectedCourt} dateLabel={selectedDateDetails?.long ?? selectedDate} duration={checkoutDuration} slot={checkoutSlot} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
+                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
                   </div>
                 )}
 
@@ -2346,7 +2517,7 @@ export function BookingExperience({
           <div className="site-container club-note-inner">
             <p className="eyebrow">Welcome to your next favorite habit</p>
             <h2>Serious court.<br /><span>Playful spirit.</span></h2>
-            <Link className="button button-lime button-large" href="/courts">Book a court <span aria-hidden="true">→</span></Link>
+            <Link className="button button-lime button-large" href="/book">Book a court <span aria-hidden="true">→</span></Link>
           </div>
         </section>}
       </main>
@@ -2354,7 +2525,7 @@ export function BookingExperience({
       <footer className="site-footer">
         <div className="site-container footer-grid">
           <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></Link><p>Good games live here.</p></div>
-          <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/courts">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
+          <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
         </div>
@@ -2366,10 +2537,8 @@ export function BookingExperience({
 }
 
 type BookingSummaryProps = {
-  court: Court;
+  selections: SelectionDetail[];
   dateLabel: string;
-  duration: number;
-  slot: AvailabilitySlot | null;
   subtotal: number;
   bookingFee: number;
   total: number;
@@ -2379,10 +2548,8 @@ type BookingSummaryProps = {
 };
 
 function BookingSummary({
-  court,
+  selections,
   dateLabel,
-  duration,
-  slot,
   subtotal,
   bookingFee,
   total,
@@ -2390,20 +2557,32 @@ function BookingSummary({
   actionDisabled,
   onAction,
 }: BookingSummaryProps) {
+  const groups = groupSelectionDetails(selections);
+  const courtCount = new Set(selections.map((item) => item.court.id)).size;
+  const hasSelection = selections.length > 0;
   return (
     <aside className="booking-summary" aria-label="Booking summary">
-      <div className="summary-score"><span>YOUR PLAY</span><strong>{court.number}</strong></div>
-      <div className="summary-heading"><span className="slot-dot" aria-hidden="true" /><p>{slot ? "Ready to reserve" : "Build your booking"}</p></div>
-      <h3>{court.name}</h3>
+      <div className="summary-score"><span>COURT-HOURS</span><strong>{selections.length}</strong></div>
+      <div className="summary-heading"><span className="slot-dot" aria-hidden="true" /><p>{hasSelection ? "Your rally plan" : "Build your booking"}</p></div>
+      <h3>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} selected` : "Choose from the schedule"}</h3>
       <dl>
         <div><dt>Date</dt><dd>{dateLabel}</dd></div>
-        <div><dt>Time</dt><dd>{slot ? `${slot.startsAt}–${slot.endsAt}` : "Choose a start time"}</dd></div>
-        <div><dt>Duration</dt><dd>{duration} {duration === 1 ? "hour" : "hours"}</dd></div>
+        <div><dt>Play</dt><dd>{hasSelection ? `${selections.length} court-hour${selections.length === 1 ? "" : "s"}` : "Tap any open cell"}</dd></div>
       </dl>
+      {groups.length > 0 && (
+        <ul className="summary-sessions" aria-label="Selected sessions">
+          {groups.map((group) => (
+            <li key={`${group.court.id}:${group.startHour}`}>
+              <span><strong>{group.court.name}</strong><small>{formatHour(group.startHour)}–{formatHour(group.endHour)} · {group.courtHours} court-hour{group.courtHours === 1 ? "" : "s"}</small></span>
+              <b>{peso(group.subtotal)}</b>
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="price-breakdown">
-        <div><span>Court booking</span><span>{slot ? peso(subtotal) : "—"}</span></div>
-        <div><span>Booking fee</span><span>{slot ? peso(bookingFee) : "—"}</span></div>
-        <div className="summary-total"><span>Total</span><strong>{slot ? peso(total) : "—"}</strong></div>
+        <div><span>Court booking</span><span>{hasSelection ? peso(subtotal) : "—"}</span></div>
+        <div><span>Booking fee</span><span>{hasSelection ? peso(bookingFee) : "—"}</span></div>
+        <div className="summary-total"><span>Total</span><strong>{hasSelection ? peso(total) : "—"}</strong></div>
       </div>
       {actionLabel && onAction && (
         <button className="button button-lime summary-button" type="button" disabled={actionDisabled} onClick={onAction}>{actionLabel} <span aria-hidden="true">→</span></button>

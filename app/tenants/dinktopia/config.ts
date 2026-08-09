@@ -31,6 +31,7 @@ export type DinktopiaTenantConfig = {
   booking: {
     minimumHours: number;
     maximumHours: number;
+    maximumCourtHoursPerCheckout: number;
     minimumLeadMinutes: number;
     maximumAdvanceDays: number;
     slotMinutes: 60;
@@ -86,6 +87,7 @@ export const dinktopiaConfig = {
   booking: {
     minimumHours: 1,
     maximumHours: 3,
+    maximumCourtHoursPerCheckout: 8,
     minimumLeadMinutes: 60,
     maximumAdvanceDays: 30,
     slotMinutes: 60,
@@ -124,6 +126,22 @@ export const dinktopiaConfig = {
       surface: "Competition surface",
       environment: "Preview configuration",
       description: "A flexible court for doubles sessions, coaching, and club play.",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000103",
+      slug: "preview-court-03",
+      name: "Court 03",
+      surface: "Competition surface",
+      environment: "Preview configuration",
+      description: "A lively court for group bookings, evening rallies, and team play.",
+    },
+    {
+      id: "00000000-0000-4000-8000-000000000104",
+      slug: "preview-court-04",
+      name: "Court 04",
+      surface: "Competition surface",
+      environment: "Preview configuration",
+      description: "A welcoming court for first games, friendly matches, and club events.",
     },
   ],
 } as const satisfies DinktopiaTenantConfig;

@@ -105,28 +105,6 @@ function assertHtmlResponse(response) {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 }
 
-function courtChoiceMarkup(html, courtName) {
-  const choices =
-    html.match(/<label\b[^>]*class="court-choice[^"]*"[\s\S]*?<\/label>/gi) ?? [];
-  const choice = choices.find((candidate) =>
-    documentText(candidate).includes(courtName),
-  );
-  assert.ok(choice, `expected booking choice for ${courtName}`);
-  return choice;
-}
-
-function assertSelectedCourt(html, selectedCourtName) {
-  const court01 = courtChoiceMarkup(html, "Court 01");
-  const court02 = courtChoiceMarkup(html, "Court 02");
-  const selected = selectedCourtName === "Court 02" ? court02 : court01;
-  const unselected = selectedCourtName === "Court 02" ? court01 : court02;
-
-  assert.match(selected, /class="court-choice is-selected"/i);
-  assert.match(selected, /<input\b[^>]*\bchecked(?:="")?/i);
-  assert.doesNotMatch(unselected, /class="court-choice is-selected"/i);
-  assert.doesNotMatch(unselected, /<input\b[^>]*\bchecked(?:="")?/i);
-}
-
 test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   const responses = await Promise.all([
     render("/"),
@@ -163,7 +141,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.match(homeText, /Your next rally starts here\./i);
   assert.match(
     home,
-    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="\/courts")[^>]*>\s*Book a court\b/is,
+    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="\/book")[^>]*>\s*Book a court\b/is,
   );
   assert.match(home, /<a\b(?=[^>]*class="text-link")(?=[^>]*href="#how-it-works")/is);
   assert.doesNotMatch(home, /class="court-discovery section-pad"|class="booking-zone section-pad"/i);
@@ -190,18 +168,190 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.match(courts, /Choose your court\.[\s\S]*Start your rally\./i);
   assert.match(courts, /href="\/book\?court=preview-court-01"/i);
   assert.match(courts, /href="\/book\?court=preview-court-02"/i);
+  assert.match(courts, /href="\/book\?court=preview-court-03"/i);
+  assert.match(courts, /href="\/book\?court=preview-court-04"/i);
   assert.doesNotMatch(courts, /class="hero"|class="booking-zone section-pad"|class="club-gallery/i);
 
   assert.match(selectedBook, /class="booking-zone section-pad"/i);
   assert.match(selectedBook, /Book a court/i);
-  assertSelectedCourt(selectedBook, "Court 02");
-  assertSelectedCourt(invalidBook, "Court 01");
-  assertSelectedCourt(repeatedBook, "Court 01");
   assert.doesNotMatch(selectedBook, /class="hero"|class="court-discovery section-pad"|class="club-gallery/i);
 
   assert.match(manageBook, /Manage your booking/i);
   assert.match(manageBook, /Find booking/i);
   assert.doesNotMatch(manageBook, /class="court-discovery section-pad"|class="club-gallery/i);
+});
+
+test("uses a dynamic multi-select court-hour matrix and fails closed for unsupported live groups", async () => {
+  const [bookResponse, booking, publicCss, config] = await Promise.all([
+    render("/book"),
+    readFile(files.booking, "utf8"),
+    readFile(files.publicCss, "utf8"),
+    readFile(files.config, "utf8"),
+  ]);
+  assertHtmlResponse(bookResponse);
+  const bookHtml = await bookResponse.text();
+  const bookText = documentText(bookHtml);
+
+  assert.match(bookHtml, /<legend\b[^>]*>Choose court-hours<\/legend>/i);
+  assert.match(
+    bookHtml,
+    /class="schedule-selection-count"[^>]*aria-live="polite"/i,
+  );
+  assert.match(bookText, /0 of 8 court-hours/i);
+  assert.match(bookText, /Tap any open time under the court you want\./i);
+  assert.match(bookText, /COURT-HOURS 0[\s\S]*Choose from the schedule/i);
+  assert.doesNotMatch(bookHtml, /<legend>How long\?<\/legend>|class="duration-control"/i);
+
+  const previewStart = config.indexOf("previewCourts: [");
+  const previewEnd = config.indexOf("\n  ],", previewStart);
+  assert.ok(previewStart >= 0 && previewEnd > previewStart);
+  const previewSource = config.slice(previewStart, previewEnd);
+  const previewSlugs = [
+    ...previewSource.matchAll(/slug:\s*"(preview-court-\d+)"/g),
+  ].map((match) => match[1]);
+  const previewIds = [
+    ...previewSource.matchAll(/id:\s*"([^"]+)"/g),
+  ].map((match) => match[1]);
+  assert.deepEqual(previewSlugs, [
+    "preview-court-01",
+    "preview-court-02",
+    "preview-court-03",
+    "preview-court-04",
+  ]);
+  assert.equal(previewIds.length, 4);
+  assert.equal(new Set(previewIds).size, 4);
+
+  assert.match(
+    booking,
+    /const previewCourts:\s*Court\[\]\s*=\s*activeTenant\.previewCourts\.map\(\(court, index\) => \(\{/,
+  );
+  assert.match(booking, /color:\s*index % 2 === 0 \? "blue" : "coral"/);
+  assert.match(
+    booking,
+    /isLive\s*\?\s*displayCourtsFromPlatform\(bootstrap\?\.courts \?\? \[\]\)\s*:\s*previewCourts/s,
+  );
+  assert.match(
+    booking,
+    /return tenantBootstrap\.courts\.map\(\(publicCourt\) => \{[\s\S]*?publicCourt\.opensAt[\s\S]*?publicCourt\.closesAt/s,
+  );
+  assert.doesNotMatch(
+    booking,
+    /Two dedicated preview courts|both courts|2 preview courts|Applies to both preview courts/i,
+  );
+
+  const matrixStart = booking.indexOf('<div className="schedule-scroll"');
+  const matrixEnd = booking.indexOf("{isLive && selectedSlots.length", matrixStart);
+  assert.ok(matrixStart >= 0 && matrixEnd > matrixStart);
+  const matrixSource = booking.slice(matrixStart, matrixEnd);
+  assert.ok(
+    (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length >= 2,
+    "expected both schedule headers and row cells to derive from displayCourts",
+  );
+  assert.match(matrixSource, /scheduleHours\.map\(\(hour\) =>/);
+  assert.match(
+    matrixSource,
+    /schedule\.find\(\(item\) => item\.courtId === court\.id\)\?\.slots\.find\(\(item\) => item\.hour === hour\)/,
+  );
+  assert.match(matrixSource, /const key = selectionKey\(court\.id, hour\)/);
+  assert.match(matrixSource, /const isSelected = selectedKeys\.has\(key\)/);
+  assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
+  assert.match(matrixSource, /onClick=\{\(\) => slot && chooseSlot\(court, slot\)\}/);
+  assert.doesNotMatch(matrixSource, /<strong>C[1-4]<|\[\s*"C1"|\[\s*"Court 01"/);
+
+  const toggleStart = booking.indexOf("function chooseSlot(");
+  const toggleEnd = booking.indexOf("function clearSelection(", toggleStart);
+  assert.ok(toggleStart >= 0 && toggleEnd > toggleStart);
+  const toggleSource = booking.slice(toggleStart, toggleEnd);
+  assert.match(toggleSource, /selectionKey\(court\.id, slot\.hour\)/);
+  assert.match(
+    toggleSource,
+    /current\.filter\(\(item\) => selectionKey\(item\.courtId, item\.startHour\) !== key\)/,
+  );
+  assert.match(
+    toggleSource,
+    /\.\.\.current,[\s\S]*?courtId:\s*court\.id,[\s\S]*?startHour:\s*slot\.hour,[\s\S]*?durationHours:\s*1/s,
+  );
+  assert.doesNotMatch(toggleSource, /setSelectedSlots\(\s*\[/);
+  assert.doesNotMatch(booking, /<legend>How long\?<\/legend>|className="duration-control"/);
+
+  const summaryStart = booking.indexOf("function BookingSummary(");
+  const summaryEnd = booking.indexOf("type ManageBookingProps", summaryStart);
+  assert.ok(summaryStart >= 0 && summaryEnd > summaryStart);
+  const summarySource = booking.slice(summaryStart, summaryEnd);
+  assert.match(summarySource, /groupSelectionDetails\(selections\)/);
+  assert.match(summarySource, /new Set\(selections\.map\(\(item\) => item\.court\.id\)\)\.size/);
+  assert.match(summarySource, /COURT-HOURS/);
+  assert.match(summarySource, /className="summary-sessions" aria-label="Selected sessions"/);
+  assert.match(summarySource, /groups\.map\(\(group\) =>/);
+  assert.match(summarySource, /group\.court\.name/);
+  assert.match(summarySource, /group\.courtHours/);
+
+  const canonicalStart = booking.indexOf("function canonicalizeSelection(");
+  const canonicalEnd = booking.indexOf("function groupSelectionDetails(", canonicalStart);
+  assert.ok(canonicalStart >= 0 && canonicalEnd > canonicalStart);
+  const canonicalSource = booking.slice(canonicalStart, canonicalEnd);
+  assert.match(canonicalSource, /item\.courtId === courtId/);
+  assert.match(canonicalSource, /item\.durationHours === 1/);
+  assert.match(
+    canonicalSource,
+    /item\.startHour === ordered\[index - 1\]\.startHour \+ 1/,
+  );
+  assert.match(canonicalSource, /if \(!isOneConsecutiveCourt\) return null/);
+
+  const holdStart = booking.indexOf("async createHold(");
+  const paymentStart = booking.indexOf("async submitPayment(", holdStart);
+  assert.ok(holdStart >= 0 && paymentStart > holdStart);
+  const holdSource = booking.slice(holdStart, paymentStart);
+  assert.match(
+    holdSource,
+    /if \(platformMode\(\) === "live" && !canonicalSelection\)\s*\{\s*throw new Error\(/s,
+  );
+  assert.match(holdSource, /atomic group hold/);
+  assert.match(holdSource, /no partial reservations were created/);
+  assert.ok(
+    holdSource.indexOf('platformMode() === "live" && !canonicalSelection') <
+      holdSource.indexOf("createPlatformBooking("),
+    "expected unsupported live groups to fail before any hold request",
+  );
+
+  const reserveStart = booking.indexOf("async function reservePaymentHold(");
+  const reserveEnd = booking.indexOf("async function submitPayment(", reserveStart);
+  assert.ok(reserveStart >= 0 && reserveEnd > reserveStart);
+  const reserveSource = booking.slice(reserveStart, reserveEnd);
+  assert.match(
+    reserveSource,
+    /if \(isLive && !canonicalSelection\)\s*\{[\s\S]*?no partial reservation will be created\.[\s\S]*?return;/s,
+  );
+  assert.ok(
+    reserveSource.indexOf("isLive && !canonicalSelection") <
+      reserveSource.indexOf("adapter.createHold("),
+    "expected the UI to reject unsupported live groups before calling its adapter",
+  );
+
+  assert.match(
+    publicCss,
+    /\.schedule-scroll\s*\{[^}]*overflow(?:-x)?:\s*auto/s,
+  );
+  assert.match(
+    publicCss,
+    /\.schedule-matrix[^\{]*\{[^}]*min-width:/s,
+  );
+  assert.match(
+    publicCss,
+    /\.schedule-matrix tbody th\s*\{[^}]*position:\s*sticky[^}]*left:\s*0/s,
+  );
+  const scheduleCellRule = publicCss.match(/\.schedule-cell\s*\{([^}]*)\}/s);
+  assert.ok(scheduleCellRule, "expected schedule-cell styles");
+  const scheduleCellWidth = scheduleCellRule[1].match(/min-width:\s*([0-9.]+)px/);
+  const scheduleCellHeight = scheduleCellRule[1].match(/min-height:\s*([0-9.]+)px/);
+  assert.ok(
+    scheduleCellWidth && Number(scheduleCellWidth[1]) >= 48,
+    "expected every schedule cell to be at least 48px wide",
+  );
+  assert.ok(
+    scheduleCellHeight && Number(scheduleCellHeight[1]) >= 48,
+    "expected every schedule cell to be at least 48px tall",
+  );
 });
 
 test("uses a branded, accessible pickleball loader only for route transitions", async () => {
@@ -691,7 +841,7 @@ test("pins Dinktopia to one fail-closed tenant registry and provisional config",
   assert.match(config, /maximumAdvanceDays:\s*30/);
   assert.match(config, /offPeakHourlyRate:\s*300/);
   assert.match(config, /peakHourlyRate:\s*400/);
-  assert.equal((config.match(/slug:\s*"preview-court-0[12]"/g) ?? []).length, 2);
+  assert.equal((config.match(/slug:\s*"preview-court-0[1-4]"/g) ?? []).length, 4);
 });
 
 test("keeps the browser adapter public-only and tenant UUID free", async () => {
@@ -833,7 +983,6 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(customerHtml, /role="status"[^>]*aria-live="polite"/i);
   assert.match(customerHtml, /<fieldset\b/i);
   assert.match(customerHtml, /<legend>Choose a date<\/legend>/i);
-  assert.match(customerHtml, /<legend>Choose a court<\/legend>/i);
   assert.match(customerHtml, /aria-pressed="true"/i);
 
   assert.match(managerHtml, /aria-label="Management navigation"/i);
