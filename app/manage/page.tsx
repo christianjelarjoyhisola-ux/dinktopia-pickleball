@@ -12,16 +12,24 @@ import {
 import styles from "./manage.module.css";
 import {
   formatPeso,
+  isAllowedCustomerQrUrl,
   managementAdapter,
   previewRoleSessions,
   type Booking,
+  type BookingPaymentStatus,
   type BookingStatus,
+  type BusinessPaymentConfiguration,
   type ManagementCapability,
   type ManagementContext,
   type ManagementSnapshot,
   type TenantRole,
 } from "./management-adapter";
-import { platformMode, signInOwner, signOutOwner } from "../lib/platform/client";
+import {
+  PlatformRequestError,
+  platformMode,
+  signInOwner,
+  signOutOwner,
+} from "../lib/platform/client";
 import { activeTenant } from "../tenants/registry";
 
 type View =
@@ -42,7 +50,14 @@ type ConfirmAction = {
   confirmLabel: string;
   actionType: string;
   resourceId?: string;
+  payload?: unknown;
   tone?: "default" | "danger";
+  onSuccess?: () => void;
+};
+
+type ToastState = {
+  message: string;
+  tone: "success" | "error" | "warning";
 };
 
 const NAV_ITEMS: { id: View; label: string; short: string }[] = [
@@ -57,7 +72,6 @@ const NAV_ITEMS: { id: View; label: string; short: string }[] = [
 ];
 
 const VIEW_CAPABILITY: Partial<Record<View, ManagementCapability>> = {
-  blocks: "schedule:block",
   customers: "customer:view",
   reports: "report:view",
   settings: "settings:update",
@@ -115,17 +129,17 @@ const LIVE_VIEW_COPY: Record<View, { eyebrow: string; title: string; description
   bookings: {
     eyebrow: "Tenant booking register",
     title: "Loaded bookings",
-    description: "Review the active reservations returned for the authenticated tenant session.",
+    description: "Review booking rows returned for the authenticated tenant session.",
   },
   schedule: {
     eyebrow: "Read-only operations",
     title: "Loaded schedule",
-    description: "Review active bookings and court blocks without assuming unavailable inventory.",
+    description: "Review loaded bookings and court blocks without assuming future availability.",
   },
   blocks: {
     eyebrow: "Protected availability",
     title: "Court blocks",
-    description: "Block data and controls appear only when authorized by the shared platform.",
+    description: "Review loaded block records; create and remove controls remain server-authorized.",
   },
   customers: {
     eyebrow: "Protected player data",
@@ -138,9 +152,9 @@ const LIVE_VIEW_COPY: Record<View, { eyebrow: string; title: string; description
     description: "Reporting appears only when the authenticated session is authorized to view it.",
   },
   settings: {
-    eyebrow: "Server-controlled setup",
+    eyebrow: "Server-authorized setup",
     title: "Venue settings",
-    description: "Live configuration stays locked until an authorized write contract is returned.",
+    description: "Configure live court inventory, shared hours and rates within the authenticated session's server permissions.",
   },
   access: {
     eyebrow: "Authenticated session",
@@ -162,6 +176,53 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
   checked_in: "Checked in",
   completed: "Completed",
 };
+
+const PAYMENT_LABEL: Record<BookingPaymentStatus, string> = {
+  unpaid: "Unpaid",
+  pending: "Pending",
+  partial: "Partially paid",
+  paid: "Paid",
+  refunded: "Refunded",
+  rejected: "Rejected",
+  unknown: "Not returned",
+};
+
+const paymentNeedsAttention = (status: BookingPaymentStatus) =>
+  status === "unpaid" || status === "pending" || status === "partial" ||
+  status === "rejected" || status === "unknown";
+
+function manilaCalendarDate(): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: activeTenant.identity.timezone,
+  }).formatToParts(new Date());
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function blockCalendarParts(dateValue: string | null, fallback: string) {
+  const candidate = dateValue ? new Date(`${dateValue}T12:00:00Z`) : null;
+  if (!candidate || !Number.isFinite(candidate.getTime())) {
+    return { month: "DATE", day: "—", year: fallback };
+  }
+  return {
+    month: new Intl.DateTimeFormat("en-PH", {
+      month: "short",
+      timeZone: activeTenant.identity.timezone,
+    }).format(candidate).toUpperCase(),
+    day: new Intl.DateTimeFormat("en-PH", {
+      day: "2-digit",
+      timeZone: activeTenant.identity.timezone,
+    }).format(candidate),
+    year: new Intl.DateTimeFormat("en-PH", {
+      year: "numeric",
+      timeZone: activeTenant.identity.timezone,
+    }).format(candidate),
+  };
+}
 
 const ROLE_TEAM: { name: string; initials: string; role: TenantRole; activity: string }[] = [
   { name: "Alex Rivera", initials: "AR", role: "owner", activity: "Active now" },
@@ -193,6 +254,7 @@ function ActionButton({
   type = "button",
   className,
   ariaLabel,
+  disabledDescriptionId,
 }: {
   children: ReactNode;
   variant?: "primary" | "secondary" | "quiet" | "danger";
@@ -201,6 +263,7 @@ function ActionButton({
   type?: "button" | "submit";
   className?: string;
   ariaLabel?: string;
+  disabledDescriptionId?: string;
 }) {
   return (
     <button
@@ -209,7 +272,7 @@ function ActionButton({
       disabled={disabled}
       onClick={onClick}
       aria-label={ariaLabel}
-      aria-describedby={disabled ? "permission-note" : undefined}
+      aria-describedby={disabled ? disabledDescriptionId : undefined}
     >
       {children}
     </button>
@@ -383,15 +446,16 @@ function OverviewView({
   const progress = snapshot.setup.length
     ? Math.round((completed / snapshot.setup.length) * 100)
     : 0;
-  const nextBookings = snapshot.bookings.slice(0, 3);
+  const loadedBookings = snapshot.bookings.slice(0, 3);
   const isPreview = snapshot.tenant.mode === "preview";
   const readinessItems = isPreview ? snapshot.setup.slice(4) : snapshot.setup;
   const paidRevenue = snapshot.bookings
     .filter((booking) => booking.payment === "paid")
     .reduce((total, booking) => total + booking.amount, 0);
-  const awaitingPayment = snapshot.bookings.find(
-    (booking) => booking.status === "awaiting_payment",
+  const paymentAttention = snapshot.bookings.find((booking) =>
+    paymentNeedsAttention(booking.payment)
   );
+  const paidCount = snapshot.bookings.filter((booking) => booking.payment === "paid").length;
 
   return (
     <>
@@ -403,9 +467,9 @@ function OverviewView({
         {isPreview ? (
           <MetricCard label="Courts" value={String(snapshot.courts.length)} note="Provisional court inventory" />
         ) : (
-          <MetricCard label="Active blocks" value={String(snapshot.blocks.length)} note="Tenant-scoped blocks in the current result" />
+          <MetricCard label="Loaded blocks" value={String(snapshot.blocks.length)} note="Tenant-scoped rows in the current result" />
         )}
-        <MetricCard label="Bookings" value={String(snapshot.bookings.length)} note={`${snapshot.bookings.filter((booking) => booking.payment === "paid").length} paid · ${snapshot.bookings.filter((booking) => booking.payment === "unpaid").length} awaiting payment`} />
+        <MetricCard label="Bookings" value={String(snapshot.bookings.length)} note={`${paidCount} paid · ${snapshot.bookings.length - paidCount} other payment states`} />
         <MetricCard label="Players" value={String(snapshot.customers.length)} note={isPreview ? "Preview customer profiles" : "Derived from the loaded bookings"} />
       </section>
 
@@ -413,15 +477,15 @@ function OverviewView({
         <article className={styles.panel}>
           <div className={styles.panelHeading}>
             <div>
-              <p className={styles.eyebrow}>{isPreview ? "Preview court flow" : "Latest court flow"}</p>
-              <h2>Next on court</h2>
+              <p className={styles.eyebrow}>{isPreview ? "Preview court flow" : "Tenant booking result"}</p>
+              <h2>{isPreview ? "Next on court" : "Recently loaded bookings"}</h2>
             </div>
             <button className={styles.textButton} type="button" onClick={() => goTo("schedule")}>
               Full schedule <span aria-hidden="true">→</span>
             </button>
           </div>
           <div className={styles.nextList}>
-            {nextBookings.map((booking, index) => (
+            {loadedBookings.map((booking, index) => (
               <article className={styles.nextBooking} key={booking.id}>
                 <div className={styles.nextTime}>
                   <strong>{booking.time.split("–")[0]}</strong>
@@ -441,7 +505,6 @@ function OverviewView({
                     className={styles.rowAction}
                     disabled={!can("booking:check-in") || booking.status === "checked_in"}
                     aria-label={`Check in ${booking.customer}`}
-                    aria-describedby={!can("booking:check-in") ? "permission-note" : undefined}
                     onClick={() =>
                       request({
                         title: `Check in ${booking.customer}?`,
@@ -457,10 +520,10 @@ function OverviewView({
                 )}
               </article>
             ))}
-            {nextBookings.length === 0 && (
+            {loadedBookings.length === 0 && (
               <div className={styles.statePanel} role="status">
-                <p className={styles.eyebrow}>No active bookings</p>
-                <h3>The next reservation will appear here.</h3>
+                <p className={styles.eyebrow}>{isPreview ? "No active bookings" : "No bookings returned"}</p>
+                <h3>{isPreview ? "The next reservation will appear here." : "No booking rows were returned for this query."}</h3>
               </div>
             )}
           </div>
@@ -469,7 +532,7 @@ function OverviewView({
             <span>
               {isPreview
                 ? `${snapshot.courts.length} ${snapshot.courts.length === 1 ? "court" : "courts"} loaded`
-                : `${snapshot.bookings.length} active ${snapshot.bookings.length === 1 ? "booking" : "bookings"} loaded`}
+                : `${snapshot.bookings.length} booking ${snapshot.bookings.length === 1 ? "row" : "rows"} loaded`}
             </span>
             <span>·</span>
             <span>{isPreview ? "Provisional schedule" : "Server-scoped tenant results"}</span>
@@ -521,15 +584,15 @@ function OverviewView({
         <div>
           <span className={styles.focusIndex}>01</span>
           <p className={styles.eyebrow}>{isPreview ? "Owner focus" : "Tenant attention"}</p>
-          <h2 id="focus-title">{awaitingPayment ? "A payment needs review" : "Setup remains protected"}</h2>
-          <p>{awaitingPayment ? `${awaitingPayment.customer} has an unpaid ${awaitingPayment.duration} reservation.` : "Complete the remaining readiness checks before public booking is activated."}</p>
+          <h2 id="focus-title">{paymentAttention ? "A payment state needs review" : "Setup remains protected"}</h2>
+          <p>{paymentAttention ? `${paymentAttention.customer}'s loaded booking is marked ${PAYMENT_LABEL[paymentAttention.payment].toLowerCase()}.` : "Complete the remaining readiness checks before public booking is activated."}</p>
         </div>
         <ActionButton
           variant="secondary"
-          disabled={!can("booking:update")}
+          disabled={isPreview && !can("booking:update")}
           onClick={() => goTo("bookings")}
         >
-          {awaitingPayment ? "Review payment" : "Review bookings"}
+          {paymentAttention ? "Review payment state" : "Review bookings"}
         </ActionButton>
       </section>
     </>
@@ -628,7 +691,7 @@ function BookingsView({
                   <td data-label="Payment">
                     <strong>{formatPeso(booking.amount)}</strong>
                     <span className={cx(styles.paymentLabel, booking.payment === "paid" && styles.paid)}>
-                      {booking.payment}
+                      {PAYMENT_LABEL[booking.payment]}
                     </span>
                   </td>
                   <td data-label="Status"><StatusPill status={booking.status} /></td>
@@ -726,7 +789,7 @@ function ScheduleView({
       <section className={styles.panel} aria-labelledby="live-schedule-title">
         <div className={styles.panelHeading}>
           <div>
-            <p className={styles.eyebrow}>Read-only tenant result</p>
+            <p className={styles.eyebrow}>Server-authorized tenant result</p>
             <h2 id="live-schedule-title">Loaded schedule entries</h2>
           </div>
           <span className={styles.countBadge}>{loadedEntries}</span>
@@ -755,8 +818,8 @@ function ScheduleView({
                 </div>
                 <Avatar initials="BL" tone={snapshot.bookings.length + index} />
                 <div className={styles.nextIdentity}>
-                  <strong>{block.reason}</strong>
-                  <span>{block.court} · {block.createdBy}</span>
+                  <strong>{block.publicLabel}</strong>
+                  <span>{block.court} · {block.internalReason ? `Private note: ${block.internalReason}` : "No private note returned"}</span>
                 </div>
                 <span className={styles.previewTag}>Block</span>
               </article>
@@ -765,7 +828,7 @@ function ScheduleView({
         ) : (
           <div className={styles.inlineEmpty} role="status">
             <span aria-hidden="true">00</span>
-            <h3>No active schedule entries were returned</h3>
+            <h3>No schedule rows were returned</h3>
             <p>The workspace does not substitute preview reservations or court blocks.</p>
           </div>
         )}
@@ -773,7 +836,7 @@ function ScheduleView({
           <span className={styles.livePulse} aria-hidden="true" />
           <span>Tenant-scoped reads</span>
           <span>·</span>
-          <span>Schedule writes remain locked</span>
+          <span>Use Court blocks or Venue settings for authorized writes</span>
         </div>
       </section>
     );
@@ -881,47 +944,129 @@ function BlocksView({
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
 }) {
-  const [court, setCourt] = useState("Court 01");
-  const [date, setDate] = useState("2026-08-10");
-  const [from, setFrom] = useState("12:00");
-  const [to, setTo] = useState("13:00");
-  const [reason, setReason] = useState("Court maintenance");
+  const isLive = snapshot.tenant.mode === "live";
+  const canManage = can("schedule:block");
+  const minimumDate = isLive ? manilaCalendarDate() : "2026-08-08";
+  const [scope, setScope] = useState<"" | "all" | "court">("");
+  const [courtId, setCourtId] = useState("");
+  const [date, setDate] = useState(isLive ? "" : "2026-08-10");
+  const [from, setFrom] = useState(isLive ? "" : "12:00");
+  const [to, setTo] = useState(isLive ? "" : "13:00");
+  const [publicLabel, setPublicLabel] = useState(isLive ? "" : "Maintenance");
+  const [reason, setReason] = useState(isLive ? "" : "Court maintenance");
+  const selectedCourt = snapshot.courts.find((item) => item.id === courtId);
+  const courtLabel = scope === "all" ? "all courts" : selectedCourt?.name ?? "one court";
+  const formComplete = Boolean(
+    scope && (scope === "all" || selectedCourt) && date && date >= minimumDate &&
+    from && to && publicLabel && to > from,
+  );
+  const accessExpiry = snapshot.configuration.blockAccessExpiresAt
+    ? new Date(snapshot.configuration.blockAccessExpiresAt)
+    : null;
+  const accessExpiryLabel = accessExpiry && Number.isFinite(accessExpiry.getTime())
+    ? new Intl.DateTimeFormat("en-PH", {
+        dateStyle: "medium",
+        timeStyle: "short",
+        timeZone: activeTenant.identity.timezone,
+      }).format(accessExpiry)
+    : null;
+  const accessMessage = snapshot.session.isSystemOwner
+    ? "System Owner block access is permanent; this account has no tenant membership."
+    : snapshot.configuration.blockAccessStatus === "unavailable"
+      ? "Block-management access could not be verified for this load. Existing records remain readable."
+      : accessExpiryLabel
+        ? `${canManage ? "Temporary write access expires" : "The last returned grant expiry is"} ${accessExpiryLabel}.`
+        : canManage
+          ? "The server returned block-management access without an expiry."
+          : "No current write grant was returned. Existing records remain readable.";
 
-  if (snapshot.tenant.mode === "live") {
-    return (
-      <section className={styles.panel} aria-labelledby="live-blocks-title">
-        <div className={styles.panelHeading}>
-          <div>
-            <p className={styles.eyebrow}>Read-only tenant result</p>
-            <h2 id="live-blocks-title">Loaded court blocks</h2>
-          </div>
-          <span className={styles.countBadge}>{snapshot.blocks.length}</span>
+  const resetBlockForm = () => {
+    setScope("");
+    setCourtId("");
+    setDate("");
+    setFrom("");
+    setTo("");
+    setPublicLabel("");
+    setReason("");
+  };
+
+  const blockList = (
+    <>
+      <div className={styles.panelHeading}>
+        <div>
+          <p className={styles.eyebrow}>Loaded tenant result</p>
+          <h2 id="loaded-blocks-title">Loaded block records</h2>
         </div>
-        {snapshot.blocks.length ? (
-          <div className={styles.blockList}>
-            {snapshot.blocks.map((block, index) => (
-              <article className={styles.blockItem} key={block.id}>
-                <Avatar initials="BL" tone={index} />
+        <span className={styles.countBadge}>{snapshot.blocks.length}</span>
+      </div>
+      <p className={styles.blockAccessMeta} role="status">{accessMessage}</p>
+      {snapshot.blocks.length ? (
+        <div className={styles.blockList}>
+          {snapshot.blocks.map((block) => {
+            const calendar = blockCalendarParts(block.dateValue, block.date);
+            return (
+              <article
+                className={styles.blockItem}
+                key={block.id}
+                aria-label={`${block.publicLabel} block for ${block.court} on ${block.date}`}
+              >
+                <time className={styles.blockDate} dateTime={block.dateValue ?? undefined}>
+                  <span>{calendar.month}</span>
+                  <strong>{calendar.day}</strong>
+                  <small>{calendar.year}</small>
+                </time>
                 <div className={styles.blockInfo}>
-                  <strong>{block.reason}</strong>
-                  <span>{block.court} · {block.date} · {block.time}</span>
-                  <small>{block.createdBy}</small>
+                  <strong>{block.publicLabel}</strong>
+                  <span>{block.court} · {block.time}</span>
+                  <small className={styles.blockMeta}>
+                    {block.internalReason
+                      ? `Private note: ${block.internalReason}`
+                      : "No private note returned"}
+                  </small>
+                  <small className={styles.blockMeta}>
+                    {block.createdBy ?? "Creator not returned by the API"}
+                  </small>
                 </div>
+                {canManage && (
+                  <button
+                    type="button"
+                    className={styles.removeButton}
+                    aria-label={`Remove ${block.publicLabel} block record for ${block.court} on ${block.date}`}
+                    onClick={() => request({
+                      title: "Remove this block record?",
+                      detail: `${block.publicLabel} for ${block.court} on ${block.date}, ${block.time}, will be deleted. Other bookings or blocks may still affect availability.`,
+                      confirmLabel: "Remove block record",
+                      actionType: "schedule:unblock",
+                      resourceId: block.id,
+                      tone: "danger",
+                    })}
+                  >
+                    Remove record
+                  </button>
+                )}
               </article>
-            ))}
-          </div>
-        ) : (
-          <div className={styles.inlineEmpty} role="status">
-            <span aria-hidden="true">00</span>
-            <h3>No active court blocks were returned</h3>
-            <p>No preview maintenance windows are shown in this live session.</p>
-          </div>
-        )}
+            );
+          })}
+        </div>
+      ) : (
+        <div className={styles.inlineEmpty} role="status">
+          <span aria-hidden="true">00</span>
+          <h3>No block records were returned</h3>
+          <p>The live workspace does not substitute preview closures.</p>
+        </div>
+      )}
+    </>
+  );
+
+  if (isLive && !canManage) {
+    return (
+      <section className={styles.panel} aria-labelledby="loaded-blocks-title">
+        {blockList}
         <div className={styles.noticeBox}>
           <span aria-hidden="true">i</span>
           <p>
-            <strong>Writes are locked.</strong> Creating or removing blocks stays unavailable until
-            the platform returns an authorized tenant mutation contract.
+            <strong>Read-only for this load.</strong> Creating or removing a block requires a
+            server-issued block-management capability; viewing the loaded tenant result does not.
           </p>
         </div>
       </section>
@@ -934,11 +1079,25 @@ function BlocksView({
         className={cx(styles.panel, styles.blockForm)}
         onSubmit={(event) => {
           event.preventDefault();
+          if (!formComplete) {
+            event.currentTarget.reportValidity();
+            return;
+          }
           request({
-            title: `Block ${court}?`,
-            detail: `${date}, ${from}–${to} for “${reason}”. The server will recheck conflicts before saving.`,
+            title: `Block ${courtLabel}?`,
+            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". The server will recheck conflicts before saving.`,
             confirmLabel: "Create block",
             actionType: "schedule:block",
+            payload: {
+              courtId: scope === "court" ? courtId : null,
+              startDate: date,
+              endDate: date,
+              startsAt: from,
+              endsAt: to,
+              publicLabel,
+              internalReason: reason || null,
+            },
+            onSuccess: resetBlockForm,
           });
         }}
       >
@@ -949,81 +1108,78 @@ function BlocksView({
           </div>
           <span className={styles.stepBadge}>Review first</span>
         </div>
-        <div className={styles.formGrid}>
+        <div className={cx(styles.formGrid, styles.blockScopeGrid)}>
           <label className={styles.field}>
-            <span>Court</span>
-            <select value={court} onChange={(event) => setCourt(event.target.value)}>
-              {snapshot.courts.map((item) => <option key={item.id}>{item.name}</option>)}
-              <option>All courts</option>
+            <span>Block scope</span>
+            <select
+              value={scope}
+              onChange={(event) => {
+                const nextScope = event.target.value as typeof scope;
+                setScope(nextScope);
+                if (nextScope !== "court") setCourtId("");
+              }}
+              required
+            >
+              <option value="" disabled>Choose scope</option>
+              <option value="all">All courts</option>
+              <option value="court">One court</option>
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>Court name</span>
+            <select
+              value={courtId}
+              onChange={(event) => setCourtId(event.target.value)}
+              disabled={scope !== "court"}
+              required={scope === "court"}
+            >
+              <option value="" disabled>{scope === "court" ? "Choose a court" : "Choose one-court scope first"}</option>
+              {snapshot.courts.filter((item) => item.status !== "inactive").map((item) => (
+                <option value={item.id} key={item.id}>{item.name}</option>
+              ))}
             </select>
           </label>
           <label className={styles.field}>
             <span>Date</span>
-            <input type="date" value={date} min="2026-08-08" onChange={(event) => setDate(event.target.value)} />
+            <input type="date" value={date} min={minimumDate} onChange={(event) => setDate(event.target.value)} required />
           </label>
           <label className={styles.field}>
             <span>From</span>
-            <input type="time" value={from} onChange={(event) => setFrom(event.target.value)} />
+            <input type="time" step={3600} value={from} onChange={(event) => setFrom(event.target.value)} required />
           </label>
           <label className={styles.field}>
             <span>To</span>
-            <input type="time" value={to} onChange={(event) => setTo(event.target.value)} />
+            <input type="time" step={3600} value={to} onChange={(event) => setTo(event.target.value)} required />
           </label>
           <label className={cx(styles.field, styles.fieldWide)}>
-            <span>Reason</span>
-            <input value={reason} maxLength={80} onChange={(event) => setReason(event.target.value)} />
-            <small>Visible to your operations team, not customers.</small>
+            <span>Customer-facing label</span>
+            <select value={publicLabel} onChange={(event) => setPublicLabel(event.target.value)} required>
+              <option value="" disabled>Choose a label</option>
+              <option>Reserved</option>
+              <option>Private Event</option>
+              <option>Maintenance</option>
+              <option>Closed</option>
+            </select>
+          </label>
+          <label className={cx(styles.field, styles.fieldWide)}>
+            <span>Private operations note</span>
+            <input value={reason} maxLength={200} onChange={(event) => setReason(event.target.value)} />
+            <small>This note stays in the protected tenant workspace.</small>
           </label>
         </div>
         <div className={styles.noticeBox}>
           <span aria-hidden="true">i</span>
           <p><strong>Conflict-safe.</strong> A final availability check runs before the block is created. Existing paid bookings are never silently displaced.</p>
         </div>
-        <ActionButton type="submit" disabled={!can("schedule:block")}>
+        {!formComplete && (
+          <p className={styles.inlineError}>Choose a scope, future date, time range, and public label before review.</p>
+        )}
+        <ActionButton type="submit" disabled={!canManage}>
           Review court block
         </ActionButton>
       </form>
 
-      <aside className={styles.panel} aria-labelledby="active-blocks-title">
-        <div className={styles.panelHeading}>
-          <div>
-            <p className={styles.eyebrow}>Upcoming</p>
-            <h2 id="active-blocks-title">Active blocks</h2>
-          </div>
-          <span className={styles.countBadge}>{snapshot.blocks.length}</span>
-        </div>
-        <div className={styles.blockList}>
-          {snapshot.blocks.map((block) => (
-            <article className={styles.blockItem} key={block.id}>
-              <div className={styles.blockDate}>
-                <span>AUG</span>
-                <strong>{block.date.match(/\d+/)?.[0]}</strong>
-              </div>
-              <div className={styles.blockInfo}>
-                <strong>{block.reason}</strong>
-                <span>{block.court} · {block.time}</span>
-                <small>{block.createdBy}</small>
-              </div>
-              <button
-                type="button"
-                className={styles.removeButton}
-                disabled={!can("schedule:block")}
-                aria-label={`Remove block ${block.id}`}
-                onClick={() => request({
-                  title: "Remove this court block?",
-                  detail: `${block.court} will become bookable again on ${block.date}, ${block.time}.`,
-                  confirmLabel: "Remove block",
-                  actionType: "schedule:unblock",
-                  resourceId: block.id,
-                  tone: "danger",
-                })}
-              >
-                Remove
-              </button>
-            </article>
-          ))}
-        </div>
-      </aside>
+      <aside className={styles.panel} aria-labelledby="loaded-blocks-title">{blockList}</aside>
     </section>
   );
 }
@@ -1067,7 +1223,7 @@ function CustomersView({ snapshot }: { snapshot: ManagementSnapshot }) {
                   <span>{customer.contact}</span>
                 </div>
                 <div><span className={styles.mobileLabel}>Visits</span><strong>{customer.visits}</strong><small>bookings</small></div>
-                <div><span className={styles.mobileLabel}>Value</span><strong>{formatPeso(customer.lifetimeValue)}</strong><small>lifetime</small></div>
+                <div><span className={styles.mobileLabel}>Value</span><strong>{formatPeso(customer.lifetimeValue)}</strong><small>loaded paid value</small></div>
                 <div><span className={styles.mobileLabel}>Last visit</span><strong>{customer.lastVisit}</strong><small>{customer.note ?? "No private note"}</small></div>
                 <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`}>→</button>
               </article>
@@ -1085,7 +1241,7 @@ function ReportsView({ snapshot }: { snapshot: ManagementSnapshot }) {
   if (snapshot.tenant.mode === "live") {
     const paid = snapshot.bookings.filter((booking) => booking.payment === "paid");
     const gross = paid.reduce((total, booking) => total + booking.amount, 0);
-    const unpaid = snapshot.bookings.filter((booking) => booking.payment === "unpaid");
+    const otherPaymentStates = snapshot.bookings.filter((booking) => booking.payment !== "paid");
     return (
       <>
         <section className={styles.reportHero}>
@@ -1101,7 +1257,7 @@ function ReportsView({ snapshot }: { snapshot: ManagementSnapshot }) {
             <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Current result</p><h2>Booking summary</h2></div></div>
             <div className={styles.customerMetrics}>
               <div><span>Paid</span><strong>{paid.length}</strong><small>{formatPeso(gross)}</small></div>
-              <div><span>Awaiting payment</span><strong>{unpaid.length}</strong><small>Requires owner review</small></div>
+              <div><span>Other payment states</span><strong>{otherPaymentStates.length}</strong><small>Pending, partial, refunded, rejected, unpaid, or unknown</small></div>
               <div><span>Players</span><strong>{snapshot.customers.length}</strong><small>Derived from loaded bookings</small></div>
             </div>
           </article>
@@ -1170,6 +1326,529 @@ function ReportsView({ snapshot }: { snapshot: ManagementSnapshot }) {
   );
 }
 
+type CourtDraft = {
+  name: string;
+  slug: string;
+  description: string;
+  status: "active" | "inactive" | "maintenance";
+  sortOrder: string;
+};
+
+type NewCourtDraft = {
+  name: string;
+  slug: string;
+  description: string;
+  status: "" | CourtDraft["status"];
+  sortOrder: string;
+  opensAt: string;
+  peakStartsAt: string;
+  closesAt: string;
+  dayRate: string;
+  peakRate: string;
+  minimumHours: string;
+  maximumHours: string;
+  minimumLeadMinutes: string;
+  maximumAdvanceDays: string;
+};
+
+const emptyNewCourt: NewCourtDraft = {
+  name: "",
+  slug: "",
+  description: "",
+  status: "",
+  sortOrder: "",
+  opensAt: "",
+  peakStartsAt: "",
+  closesAt: "",
+  dayRate: "",
+  peakRate: "",
+  minimumHours: "",
+  maximumHours: "",
+  minimumLeadMinutes: "",
+  maximumAdvanceDays: "",
+};
+
+function courtDraftsFor(snapshot: ManagementSnapshot): Record<string, CourtDraft> {
+  return Object.fromEntries(snapshot.courts.map((court) => [court.id, {
+    name: court.name,
+    slug: court.slug,
+    description: court.description,
+    status: court.status,
+    sortOrder: String(court.sortOrder),
+  }]));
+}
+
+function courtDraftError(draft: CourtDraft): string | null {
+  if (!draft.name.trim() || draft.name.trim().length > 120) {
+    return "Display name must contain 1 to 120 characters.";
+  }
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(draft.slug)) {
+    return "Slug must use lowercase letters, numbers, and single hyphens.";
+  }
+  const sortOrder = Number(draft.sortOrder);
+  if (
+    draft.sortOrder.trim() === "" || !Number.isSafeInteger(sortOrder) ||
+    sortOrder < 0 || sortOrder > 10_000
+  ) return "Sort order must be a whole number from 0 to 10,000.";
+  return null;
+}
+
+function newCourtDraftError(draft: NewCourtDraft): string | null {
+  const baseError = courtDraftError({
+    name: draft.name,
+    slug: draft.slug,
+    description: draft.description,
+    status: draft.status || "inactive",
+    sortOrder: draft.sortOrder,
+  });
+  if (baseError) return baseError;
+  if (!draft.status) return "Choose the court's initial status.";
+  const wholeHour = /^(?:[01]\d|2[0-3]):00$/;
+  if (
+    !wholeHour.test(draft.opensAt) || !wholeHour.test(draft.peakStartsAt) ||
+    !wholeHour.test(draft.closesAt)
+  ) return "Opening, rate boundary, and closing times must be whole hours.";
+  const closingEnd = draft.closesAt === "00:00" ? "24:00" : draft.closesAt;
+  if (!(draft.opensAt < draft.peakStartsAt && draft.peakStartsAt < closingEnd)) {
+    return "Times must run in order: opening, rate boundary, then closing.";
+  }
+  const dayRate = Number(draft.dayRate);
+  const peakRate = Number(draft.peakRate);
+  if (
+    !Number.isFinite(dayRate) || dayRate <= 0 ||
+    !Number.isFinite(peakRate) || peakRate <= 0
+  ) return "Both hourly rates must be greater than zero.";
+  const minimumHours = Number(draft.minimumHours);
+  const maximumHours = Number(draft.maximumHours);
+  if (
+    draft.minimumHours.trim() === "" || draft.maximumHours.trim() === "" ||
+    !Number.isSafeInteger(minimumHours) || !Number.isSafeInteger(maximumHours) ||
+    minimumHours < 1 || maximumHours < minimumHours
+  ) return "Maximum hours must be a whole number at least as large as minimum hours.";
+  const minimumLeadMinutes = Number(draft.minimumLeadMinutes);
+  const maximumAdvanceDays = Number(draft.maximumAdvanceDays);
+  if (
+    draft.minimumLeadMinutes.trim() === "" || draft.maximumAdvanceDays.trim() === "" ||
+    !Number.isSafeInteger(minimumLeadMinutes) || minimumLeadMinutes < 0 ||
+    !Number.isSafeInteger(maximumAdvanceDays) || maximumAdvanceDays < 1
+  ) return "Lead minutes and advance days must be valid whole-number limits.";
+  return null;
+}
+
+type PaymentMethodDraft = Omit<
+  BusinessPaymentConfiguration["paymentMethods"][number],
+  "sortOrder"
+> & { sortOrder: string };
+
+type BusinessDraft = {
+  displayName: string;
+  contactPhone: string;
+  facebookUrl: string;
+  tagline: string;
+  eventBookingEnabled: boolean;
+  replyToEmail: string;
+  emailEnabled: boolean;
+  paymentMethods: PaymentMethodDraft[];
+};
+
+function businessDraftFor(
+  configuration: BusinessPaymentConfiguration | null,
+): BusinessDraft | null {
+  if (!configuration) return null;
+  return {
+    displayName: configuration.business.displayName,
+    contactPhone: configuration.business.contactPhone ?? "",
+    facebookUrl: configuration.business.facebookUrl ?? "",
+    tagline: configuration.business.tagline ?? "",
+    eventBookingEnabled: configuration.business.eventBookingEnabled,
+    replyToEmail: configuration.venue.replyToEmail ?? "",
+    emailEnabled: configuration.venue.emailEnabled,
+    paymentMethods: configuration.paymentMethods.map((method) => ({
+      ...method,
+      sortOrder: String(method.sortOrder),
+    })),
+  };
+}
+
+function businessDraftError(draft: BusinessDraft): string | null {
+  if (draft.displayName.trim().length < 2 || draft.displayName.trim().length > 120) {
+    return "Business display name must contain 2 to 120 characters.";
+  }
+  if (
+    draft.contactPhone.trim() &&
+    (draft.contactPhone.trim().length < 7 || draft.contactPhone.trim().length > 40 ||
+      !/^[0-9+(). -]+$/.test(draft.contactPhone.trim()))
+  ) return "Contact phone must contain 7 to 40 phone characters.";
+  if (
+    draft.facebookUrl.trim() &&
+    !/^https:\/\/(?:www\.|web\.|m\.)?facebook\.com\/\S+$/i.test(draft.facebookUrl.trim())
+  ) return "Facebook URL must be a complete facebook.com HTTPS address.";
+  if (draft.tagline.length > 180 || /[\u0000-\u001f\u007f]/.test(draft.tagline)) {
+    return "Tagline must be 180 characters or fewer and contain no control characters.";
+  }
+  if (
+    draft.emailEnabled && !draft.replyToEmail.trim()
+  ) return "Reply-To email is required when booking emails are enabled.";
+  if (
+    draft.replyToEmail.trim() &&
+    (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.replyToEmail.trim()) ||
+      draft.replyToEmail.includes(".."))
+  ) return "Reply-To must be a valid email address.";
+  if (draft.paymentMethods.length > 10) return "At most 10 payment methods can be saved.";
+  const seenCodes = new Set<string>();
+  for (const [index, method] of draft.paymentMethods.entries()) {
+    const code = method.methodCode.trim().toLowerCase();
+    const sortOrder = Number(method.sortOrder);
+    if (!/^[a-z][a-z0-9_-]{1,39}$/.test(code)) {
+      return `Payment method ${index + 1} needs a unique 2–40 character code.`;
+    }
+    if (seenCodes.has(code)) return "Payment method codes must be unique.";
+    seenCodes.add(code);
+    if (method.displayName.trim().length < 2 || method.displayName.trim().length > 80) {
+      return `Payment method ${index + 1} needs a 2–80 character display name.`;
+    }
+    if (method.accountName.trim().length < 2 || method.accountName.trim().length > 120) {
+      return `Payment method ${index + 1} needs a 2–120 character account name.`;
+    }
+    if (method.accountNumber.trim().length < 3 || method.accountNumber.trim().length > 120) {
+      return `Payment method ${index + 1} needs a 3–120 character account number.`;
+    }
+    if (method.instructions && method.instructions.length > 1_000) {
+      return `Payment method ${index + 1} instructions must be 1,000 characters or fewer.`;
+    }
+    if (method.qrUrl) {
+      if (!isAllowedCustomerQrUrl(method.qrUrl.trim())) {
+        return `Payment method ${index + 1} QR URL must be an approved shared-platform public-storage asset.`;
+      }
+    }
+    if (
+      method.sortOrder.trim() === "" || !Number.isSafeInteger(sortOrder) ||
+      sortOrder < 0 || sortOrder > 1_000
+    ) return `Payment method ${index + 1} sort order must be 0 to 1,000.`;
+  }
+  return null;
+}
+
+function LiveSettingsView({
+  snapshot,
+  can,
+  request,
+}: {
+  snapshot: ManagementSnapshot;
+  can: (capability: ManagementCapability) => boolean;
+  request: (action: ConfirmAction) => void;
+}) {
+  const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
+  const [courtDrafts, setCourtDrafts] = useState(() => courtDraftsFor(snapshot));
+  const [newCourt, setNewCourt] = useState<NewCourtDraft>(emptyNewCourt);
+  const [newCourtAttempted, setNewCourtAttempted] = useState(false);
+  const [scheduleDraft, setScheduleDraft] = useState(
+    snapshot.configuration.sharedSchedule,
+  );
+  const [businessDraft, setBusinessDraft] = useState(() =>
+    businessDraftFor(snapshot.configuration.businessPayments)
+  );
+
+  const setCourtField = <Key extends keyof CourtDraft>(
+    courtId: string,
+    key: Key,
+    fieldValue: CourtDraft[Key],
+  ) => setCourtDrafts((current) => ({
+    ...current,
+    [courtId]: { ...current[courtId], [key]: fieldValue },
+  }));
+
+  const setNewCourtField = <Key extends keyof NewCourtDraft>(
+    key: Key,
+    fieldValue: NewCourtDraft[Key],
+  ) => setNewCourt((current) => ({ ...current, [key]: fieldValue }));
+
+  const setBusinessField = <Key extends keyof Omit<BusinessDraft, "paymentMethods">>(
+    key: Key,
+    fieldValue: BusinessDraft[Key],
+  ) => setBusinessDraft((current) => current ? { ...current, [key]: fieldValue } : current);
+
+  const setPaymentField = <Key extends keyof PaymentMethodDraft>(
+    index: number,
+    key: Key,
+    fieldValue: PaymentMethodDraft[Key],
+  ) => setBusinessDraft((current) => current ? {
+    ...current,
+    paymentMethods: current.paymentMethods.map((method, methodIndex) =>
+      methodIndex === index ? { ...method, [key]: fieldValue } : method
+    ),
+  } : current);
+
+  const twoBandSchedule = scheduleDraft?.bands.length === 2;
+  const scheduleDraftIsValid = Boolean(
+    scheduleDraft && twoBandSchedule &&
+    scheduleDraft.bands[0]?.start === scheduleDraft.opensAt &&
+    scheduleDraft.bands[0]?.end === scheduleDraft.bands[1]?.start &&
+    scheduleDraft.bands[1]?.end === (scheduleDraft.closesAt === "00:00" ? "24:00" : scheduleDraft.closesAt) &&
+    scheduleDraft.bands[0].start < scheduleDraft.bands[0].end &&
+    scheduleDraft.bands[1].start < scheduleDraft.bands[1].end &&
+    scheduleDraft.bands.every((band) => Number.isFinite(band.hourlyRate) && band.hourlyRate > 0),
+  );
+  const saveSchedule = () => {
+    if (!scheduleDraft || !scheduleDraftIsValid) return;
+    request({
+      title: "Save the shared schedule?",
+      detail: `Every day, ${scheduleDraft.opensAt}–${scheduleDraft.closesAt}; ${formatPeso(scheduleDraft.bands[0]!.hourlyRate)}/hour until ${scheduleDraft.bands[0]!.end}, then ${formatPeso(scheduleDraft.bands[1]!.hourlyRate)}/hour. This replaces hours and rates on every Dinktopia court atomically.`,
+      confirmLabel: "Save shared schedule",
+      actionType: "settings:schedule",
+      payload: scheduleDraft,
+    });
+  };
+
+  const saveBusiness = () => {
+    if (!businessDraft || businessDraftError(businessDraft)) return;
+    request({
+      title: "Save business and payment settings?",
+      detail: `${businessDraft.displayName.trim()} with ${businessDraft.paymentMethods.length} payment ${businessDraft.paymentMethods.length === 1 ? "method" : "methods"}. The payment-method list is replaced in full; platform billing, remittance, and public activation are not changed.`,
+      confirmLabel: "Save business & payments",
+      actionType: "business:update",
+      payload: {
+        expectedRevision: snapshot.configuration.businessPayments!.revision,
+        displayName: businessDraft.displayName.trim(),
+        contactPhone: businessDraft.contactPhone.trim() || null,
+        facebookUrl: businessDraft.facebookUrl.trim() || null,
+        tagline: businessDraft.tagline.trim() || null,
+        eventBookingEnabled: businessDraft.eventBookingEnabled,
+        venue: {
+          replyToEmail: businessDraft.replyToEmail.trim() || null,
+          emailEnabled: businessDraft.emailEnabled,
+        },
+        paymentMethods: businessDraft.paymentMethods.map((method) => ({
+          methodCode: method.methodCode.trim().toLowerCase(),
+          displayName: method.displayName.trim(),
+          accountName: method.accountName.trim(),
+          accountNumber: method.accountNumber.trim(),
+          instructions: method.instructions?.trim() || null,
+          qrUrl: method.qrUrl?.trim() || null,
+          isActive: method.isActive,
+          sortOrder: Number(method.sortOrder),
+        })),
+      },
+    });
+  };
+
+  return (
+    <section className={styles.settingsLayout}>
+      <nav className={styles.settingsNav} aria-label="Venue settings sections">
+        {(["courts", "schedule", "business", "rules"] as const).map((item, index) => (
+          <button type="button" key={item} className={section === item ? styles.settingsActive : undefined} onClick={() => setSection(item)} aria-current={section === item ? "page" : undefined}>
+            <span>0{index + 1}</span>{item[0].toUpperCase() + item.slice(1)}
+          </button>
+        ))}
+      </nav>
+      <div className={styles.panel}>
+        {section === "courts" && (
+          <div className={styles.settingsSection}>
+            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Live inventory</p><h2>Courts</h2></div><span className={styles.previewTag}>Server records</span></div>
+            <p className={styles.sectionIntro}>Each save targets one server-returned court UUID. Tenant scope is still derived from the fixed Dinktopia slug and registered origin.</p>
+            <div className={styles.courtSettingList}>
+              {snapshot.courts.map((court, index) => {
+                const draft = courtDrafts[court.id];
+                if (!draft) return null;
+                const sortOrder = Number(draft.sortOrder);
+                const draftError = courtDraftError(draft);
+                const headingId = `court-${court.id}-title`;
+                const errorId = `court-${court.id}-error`;
+                return (
+                  <form
+                    key={court.id}
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      if (draftError) {
+                        event.currentTarget.reportValidity();
+                        return;
+                      }
+                      request({
+                        title: `Save ${court.name}?`,
+                        detail: `${draft.name.trim()} · ${draft.status} · sort ${sortOrder}. Schedule, pricing, and public booking limits remain untouched.`,
+                        confirmLabel: `Save ${court.name}`,
+                        actionType: "court:update",
+                        resourceId: court.id,
+                        payload: {
+                          name: draft.name,
+                          slug: draft.slug,
+                          description: draft.description || null,
+                          status: draft.status,
+                          sortOrder,
+                        },
+                      });
+                    }}
+                  >
+                    <article className={styles.courtEditorCard} aria-labelledby={headingId}>
+                      <span className={styles.courtMarker}>{String(index + 1).padStart(2, "0")}</span>
+                      <div className={styles.courtCardHeading}>
+                        <h3 id={headingId}>{court.name}</h3>
+                        <p>Live court record</p>
+                      </div>
+                      <label className={cx(styles.field, styles.courtNameField)}><span>Display name</span><input required aria-invalid={!draft.name.trim() || draft.name.trim().length > 120} aria-describedby={draftError ? errorId : undefined} value={draft.name} maxLength={120} onChange={(event) => setCourtField(court.id, "name", event.target.value)} /></label>
+                      <label className={cx(styles.field, styles.courtSlugField)}><span>Slug</span><input required aria-invalid={!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(draft.slug)} aria-describedby={draftError ? errorId : undefined} value={draft.slug} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" onChange={(event) => setCourtField(court.id, "slug", event.target.value)} /></label>
+                      <label className={cx(styles.field, styles.courtDescriptionField)}><span>Description</span><input value={draft.description} onChange={(event) => setCourtField(court.id, "description", event.target.value)} /></label>
+                      <label className={cx(styles.field, styles.courtStatusField)}><span>Status</span><select value={draft.status} onChange={(event) => setCourtField(court.id, "status", event.target.value as CourtDraft["status"])}><option value="active">Active</option><option value="maintenance">Maintenance</option><option value="inactive">Inactive</option></select></label>
+                      <label className={cx(styles.field, styles.courtOrderField)}><span>Sort order</span><input required aria-invalid={draft.sortOrder.trim() === "" || !Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 10_000} aria-describedby={draftError ? errorId : undefined} type="number" min="0" max="10000" step="1" value={draft.sortOrder} onChange={(event) => setCourtField(court.id, "sortOrder", event.target.value)} /></label>
+                      <div className={styles.courtCardActions}>
+                        {draftError && <p id={errorId} className={styles.fieldError} role="alert">{draftError}</p>}
+                        <ActionButton type="submit" disabled={!can("settings:update")} ariaLabel={`Save ${court.name} court settings`}>Save court</ActionButton>
+                        <ActionButton variant="danger" disabled={!can("settings:update")} ariaLabel={`Delete ${court.name} court`} onClick={() => request({ title: `Permanently delete ${court.name}?`, detail: "If no protected booking or open-play dependency blocks deletion, the court and its associated block records will be deleted. This cannot be undone.", confirmLabel: `Delete ${court.name}`, actionType: "court:delete", resourceId: court.id, tone: "danger" })}>Delete court</ActionButton>
+                      </div>
+                    </article>
+                  </form>
+                );
+              })}
+            </div>
+            {!snapshot.courts.length && <div className={styles.inlineEmpty} role="status"><span aria-hidden="true">00</span><h3>No live courts configured</h3><p>Add the first court using confirmed venue values below. Preview inventory is never copied into production.</p></div>}
+            <details className={styles.newCourtDetails}>
+              <summary className={styles.newCourtSummary}>
+                <span className={styles.newCourtSummaryText}>Add a court<small>Enter confirmed hours, rates, and booking limits.</small></span>
+              </summary>
+              <form
+                className={cx(styles.formGrid, styles.newCourtForm)}
+                onInvalid={() => setNewCourtAttempted(true)}
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  setNewCourtAttempted(true);
+                  const error = newCourtDraftError(newCourt);
+                  if (error) {
+                    event.currentTarget.reportValidity();
+                    return;
+                  }
+                  const closingBandEnd = newCourt.closesAt === "00:00" ? "24:00" : newCourt.closesAt;
+                  request({
+                    title: `Create ${newCourt.name.trim()}?`,
+                    detail: `${newCourt.status} · ${newCourt.opensAt}–${newCourt.closesAt} · PHP ${newCourt.dayRate}/${newCourt.peakRate} per hour · ${newCourt.minimumHours}–${newCourt.maximumHours} hour bookings.`,
+                    confirmLabel: `Create ${newCourt.name.trim()}`,
+                    actionType: "court:create",
+                    payload: {
+                      name: newCourt.name,
+                      slug: newCourt.slug,
+                      description: newCourt.description || null,
+                      status: newCourt.status,
+                      sortOrder: Number(newCourt.sortOrder),
+                      opensAt: newCourt.opensAt,
+                      closesAt: newCourt.closesAt,
+                      currency: snapshot.tenant.currency,
+                      pricingConfig: { regular: {
+                        minimumHours: Number(newCourt.minimumHours),
+                        maximumHours: Number(newCourt.maximumHours),
+                        bands: [
+                          { start: newCourt.opensAt, end: newCourt.peakStartsAt, hourlyRate: Number(newCourt.dayRate) },
+                          { start: newCourt.peakStartsAt, end: closingBandEnd, hourlyRate: Number(newCourt.peakRate) },
+                        ],
+                      } },
+                      publicConfig: {
+                        minimumLeadMinutes: Number(newCourt.minimumLeadMinutes),
+                        maximumAdvanceDays: Number(newCourt.maximumAdvanceDays),
+                      },
+                    },
+                    onSuccess: () => {
+                      setNewCourt(emptyNewCourt);
+                      setNewCourtAttempted(false);
+                    },
+                  });
+                }}
+              >
+              <label className={styles.field}><span>Display name</span><input required maxLength={120} value={newCourt.name} onChange={(event) => setNewCourtField("name", event.target.value)} /></label>
+              <label className={styles.field}><span>Slug</span><input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={newCourt.slug} onChange={(event) => setNewCourtField("slug", event.target.value)} /></label>
+              <label className={styles.field}><span>Description</span><input value={newCourt.description} onChange={(event) => setNewCourtField("description", event.target.value)} /></label>
+              <label className={styles.field}><span>Status</span><select required value={newCourt.status} onChange={(event) => setNewCourtField("status", event.target.value as NewCourtDraft["status"])}><option value="" disabled>Choose status</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option><option value="active">Active</option></select></label>
+              <label className={styles.field}><span>Sort order</span><input required type="number" min="0" max="10000" step="1" value={newCourt.sortOrder} onChange={(event) => setNewCourtField("sortOrder", event.target.value)} /></label>
+              <label className={styles.field}><span>Opens</span><input required type="time" step={3600} value={newCourt.opensAt} onChange={(event) => setNewCourtField("opensAt", event.target.value)} /></label>
+              <label className={styles.field}><span>Peak starts</span><input required type="time" step={3600} value={newCourt.peakStartsAt} onChange={(event) => setNewCourtField("peakStartsAt", event.target.value)} /></label>
+              <label className={styles.field}><span>Closes</span><input required type="time" step={3600} value={newCourt.closesAt} onChange={(event) => setNewCourtField("closesAt", event.target.value)} /></label>
+              <label className={styles.field}><span>Day rate / hour</span><input required type="number" min="0.01" step="0.01" value={newCourt.dayRate} onChange={(event) => setNewCourtField("dayRate", event.target.value)} /></label>
+              <label className={styles.field}><span>Peak rate / hour</span><input required type="number" min="0.01" step="0.01" value={newCourt.peakRate} onChange={(event) => setNewCourtField("peakRate", event.target.value)} /></label>
+              <label className={styles.field}><span>Minimum hours</span><input required type="number" min="1" step="1" value={newCourt.minimumHours} onChange={(event) => setNewCourtField("minimumHours", event.target.value)} /></label>
+              <label className={styles.field}><span>Maximum hours</span><input required type="number" min="1" step="1" value={newCourt.maximumHours} onChange={(event) => setNewCourtField("maximumHours", event.target.value)} /></label>
+              <label className={styles.field}><span>Minimum lead minutes</span><input required type="number" min="0" step="1" value={newCourt.minimumLeadMinutes} onChange={(event) => setNewCourtField("minimumLeadMinutes", event.target.value)} /></label>
+              <label className={styles.field}><span>Maximum advance days</span><input required type="number" min="1" step="1" value={newCourt.maximumAdvanceDays} onChange={(event) => setNewCourtField("maximumAdvanceDays", event.target.value)} /></label>
+              {newCourtAttempted && newCourtDraftError(newCourt) && <p className={cx(styles.inlineError, styles.fieldWide)} role="alert">{newCourtDraftError(newCourt)}</p>}
+              <ActionButton type="submit" disabled={!can("settings:update")}>Review new court</ActionButton>
+              </form>
+            </details>
+          </div>
+        )}
+        {section === "schedule" && (
+          <div className={styles.settingsSection}>
+            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>PHP · Asia/Manila · Every court</p><h2>Shared schedule</h2></div><span className={styles.previewTag}>Atomic update</span></div>
+            {scheduleDraft && twoBandSchedule ? (
+              <div className={styles.sharedScheduleEditor}>
+                <div className={styles.sharedScheduleRow}>
+                  <div className={styles.scheduleDayLabel}><strong>Every day</strong><span>One shared daily window</span></div>
+                  <label className={styles.field}><span>Opens</span><input required type="time" step={3600} value={scheduleDraft.opensAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, opensAt: event.target.value, bands: [{ ...scheduleDraft.bands[0]!, start: event.target.value }, scheduleDraft.bands[1]!] })} /></label>
+                  <label className={styles.field}><span>Rate boundary</span><input required type="time" step={3600} value={scheduleDraft.bands[0]!.end} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, end: event.target.value }, { ...scheduleDraft.bands[1]!, start: event.target.value }] })} /></label>
+                  <label className={styles.field}><span>Closes</span><input required type="time" step={3600} value={scheduleDraft.closesAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, closesAt: event.target.value, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, end: event.target.value === "00:00" ? "24:00" : event.target.value }] })} /></label>
+                  <label className={styles.field}><span>First rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.bands[0]!.hourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, hourlyRate: Number(event.target.value) }, scheduleDraft.bands[1]!] })} /></div></label>
+                  <label className={styles.field}><span>Second rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.bands[1]!.hourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, hourlyRate: Number(event.target.value) }] })} /></div></label>
+                </div>
+                <div className={styles.businessBoundary}><h3>Booking durations are unchanged</h3><p>This shared-schedule contract changes only whole-hour operating windows and rate bands.</p></div>
+                {!scheduleDraftIsValid && <p className={styles.inlineError} role="alert">Opening, boundary, closing, and both positive rates must form one continuous two-band day.</p>}
+                <div className={styles.scheduleSaveRow}><span>Applies to all {snapshot.courts.length} live courts</span><ActionButton disabled={!can("settings:update") || !scheduleDraftIsValid} onClick={saveSchedule}>Save shared schedule</ActionButton></div>
+              </div>
+            ) : <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Shared editor unavailable</p><h3>No uniform two-band live schedule was returned.</h3><p>Create the first court or use the platform workspace for schedules with more than two bands. No preview values are substituted.</p></div>}
+          </div>
+        )}
+        {section === "business" && (
+          <div className={styles.settingsSection}>
+            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Customer-facing configuration</p><h2>Business & payments</h2></div><span className={styles.previewTag}>Authoritative list</span></div>
+            {businessDraft ? (
+              <form onSubmit={(event) => { event.preventDefault(); if (!businessDraftError(businessDraft)) saveBusiness(); }}>
+                <div className={styles.businessGrid}>
+                  <label className={styles.field}><span>Business display name</span><input required minLength={2} maxLength={120} value={businessDraft.displayName} onChange={(event) => setBusinessField("displayName", event.target.value)} /></label>
+                  <label className={styles.field}><span>Contact phone</span><input minLength={7} maxLength={40} pattern="[0-9+(). -]+" value={businessDraft.contactPhone} onChange={(event) => setBusinessField("contactPhone", event.target.value)} /></label>
+                  <label className={styles.field}><span>Facebook URL</span><input type="url" maxLength={500} value={businessDraft.facebookUrl} onChange={(event) => setBusinessField("facebookUrl", event.target.value)} /></label>
+                  <label className={styles.field}><span>Reply-To email</span><input type="email" required={businessDraft.emailEnabled} maxLength={254} value={businessDraft.replyToEmail} onChange={(event) => setBusinessField("replyToEmail", event.target.value)} /></label>
+                  <label className={cx(styles.field, styles.fieldWide)}><span>Tagline</span><input maxLength={180} value={businessDraft.tagline} onChange={(event) => setBusinessField("tagline", event.target.value)} /></label>
+                  <label className={styles.switchLabel}><input type="checkbox" checked={businessDraft.eventBookingEnabled} onChange={(event) => setBusinessField("eventBookingEnabled", event.target.checked)} /><span aria-hidden="true" />Event booking shown</label>
+                  <label className={styles.switchLabel}><input type="checkbox" checked={businessDraft.emailEnabled} onChange={(event) => setBusinessField("emailEnabled", event.target.checked)} /><span aria-hidden="true" />Booking emails enabled</label>
+                </div>
+                <div className={styles.businessBoundary}><h3>Public activation and remittance stay separate</h3><p>Saving here does not change public booking, global/platform billing, platform remittance, or policy text.</p></div>
+                <div className={styles.paymentMethodHeading}><h3>Customer payment methods</h3><ActionButton variant="secondary" disabled={businessDraft.paymentMethods.length >= 10} onClick={() => setBusinessDraft((current) => current ? { ...current, paymentMethods: [...current.paymentMethods, { methodCode: "", displayName: "", accountName: "", accountNumber: "", instructions: null, qrUrl: null, isActive: true, sortOrder: String(current.paymentMethods.length) }] } : current)}>Add payment method</ActionButton></div>
+                <div className={styles.paymentMethodList}>
+                  {businessDraft.paymentMethods.map((method, index) => (
+                    <article className={styles.paymentMethodCard} key={`payment-method-${index}`} aria-label={`Payment method ${index + 1}`}>
+                      <div className={styles.paymentMethodFields}>
+                        <label className={styles.field}><span>Method code</span><input required pattern="[a-z][a-z0-9_-]{1,39}" value={method.methodCode} onChange={(event) => setPaymentField(index, "methodCode", event.target.value)} /></label>
+                        <label className={styles.field}><span>Public name</span><input required minLength={2} maxLength={80} value={method.displayName} onChange={(event) => setPaymentField(index, "displayName", event.target.value)} /></label>
+                        <label className={styles.field}><span>Account name</span><input required minLength={2} maxLength={120} value={method.accountName} onChange={(event) => setPaymentField(index, "accountName", event.target.value)} /></label>
+                        <label className={styles.field}><span>Account number</span><input required minLength={3} maxLength={120} value={method.accountNumber} onChange={(event) => setPaymentField(index, "accountNumber", event.target.value)} /></label>
+                        <label className={styles.field}><span>Instructions</span><input maxLength={1000} value={method.instructions ?? ""} onChange={(event) => setPaymentField(index, "instructions", event.target.value || null)} /></label>
+                        <label className={styles.field}><span>QR image URL</span><input type="url" maxLength={500} value={method.qrUrl ?? ""} onChange={(event) => setPaymentField(index, "qrUrl", event.target.value || null)} /></label>
+                        <label className={styles.field}><span>Sort order</span><input required type="number" min="0" max="1000" step="1" value={method.sortOrder} onChange={(event) => setPaymentField(index, "sortOrder", event.target.value)} /></label>
+                        <label className={styles.switchLabel}><input type="checkbox" checked={method.isActive} onChange={(event) => setPaymentField(index, "isActive", event.target.checked)} /><span aria-hidden="true" />Active for customers</label>
+                      </div>
+                      <div className={styles.paymentMethodActions}><ActionButton variant="danger" ariaLabel={`Remove payment method ${index + 1} from this draft`} onClick={() => setBusinessDraft((current) => current ? { ...current, paymentMethods: current.paymentMethods.filter((_, methodIndex) => methodIndex !== index) } : current)}>Remove from draft</ActionButton></div>
+                    </article>
+                  ))}
+                  {!businessDraft.paymentMethods.length && <p className={styles.sectionIntro}>No payment methods are configured. Add a verified customer payment destination before activation.</p>}
+                </div>
+                {businessDraftError(businessDraft) && <p className={styles.inlineError} role="alert">{businessDraftError(businessDraft)}</p>}
+                <div className={styles.billingBoundary}><h3>Platform billing</h3><p>{snapshot.configuration.businessPayments?.platformBilling ? `${snapshot.configuration.businessPayments.platformBilling.feeMode.replaceAll("_", " ")} · ${snapshot.configuration.businessPayments.platformBilling.feeAmount} · ${snapshot.configuration.businessPayments.platformBilling.isConfigured ? "configured" : "not configured"}. Read-only here.` : "Not returned to this role. It is not editable here."}</p></div>
+                <div className={styles.settingsFooter}><span>Payment methods are saved as one complete replacement list.</span><ActionButton type="submit" disabled={!can("settings:update") || Boolean(businessDraftError(businessDraft))}>Save business & payments</ActionButton></div>
+              </form>
+            ) : <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Editing unavailable</p><h3>Business and payment settings were not complete for this load.</h3><p>{snapshot.configuration.businessPaymentsStatus === "unavailable" ? "Refresh the workspace before retrying; no permission conclusion is inferred from a failed read." : "The response was missing fields required to round-trip the full payment-method list safely. Nothing is editable here."}</p></div>}
+          </div>
+        )}
+        {section === "rules" && (
+          <div className={styles.settingsSection}>
+            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Customer policy</p><h2>Booking rules</h2></div><span className={styles.needsTag}>Write unavailable</span></div>
+            <div className={styles.ruleList} aria-disabled="true">
+              <label className={styles.field}><span>Advance notice</span><input disabled value="Configured per court; not editable in this section" readOnly /></label>
+              <label className={styles.field}><span>Booking horizon</span><input disabled value="Configured per court; not editable in this section" readOnly /></label>
+              <label className={styles.field}><span>Cancellation policy</span><textarea disabled value="Policy publishing is not connected on this page." readOnly rows={3} /></label>
+              <label className={styles.field}><span>Rescheduling policy</span><textarea disabled value="Policy publishing is not connected on this page." readOnly rows={3} /></label>
+            </div>
+            <div className={styles.noticeBox}><span aria-hidden="true">!</span><p><strong>No live action is sent.</strong> The page has no server contract for publishing policy text, so these controls remain disabled.</p></div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SettingsView({
   snapshot,
   can,
@@ -1182,13 +1861,16 @@ function SettingsView({
   const [section, setSection] = useState<"courts" | "rates" | "hours" | "rules">("courts");
   if (snapshot.tenant.mode === "live") {
     return (
-      <section className={styles.panel} aria-labelledby="live-settings-title">
-        <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Server-controlled setup</p><h2 id="live-settings-title">Live settings are write-locked</h2></div><span className={styles.needsTag}>Setup required</span></div>
-        <p>Courts, rates, hours, payment details and public rules remain protected until an owner is provisioned and the shared platform returns an authorized write contract.</p>
-        <ul className={styles.readinessList}>
-          {snapshot.setup.map((item) => <li key={item.id}><span className={styles.todoMark} aria-hidden="true">{item.complete ? "✓" : ""}</span><div><strong>{item.label}</strong><span>{item.detail}</span></div></li>)}
-        </ul>
-      </section>
+      <LiveSettingsView
+        key={JSON.stringify([
+          snapshot.courts,
+          snapshot.configuration.sharedSchedule,
+          snapshot.configuration.businessPayments,
+        ])}
+        snapshot={snapshot}
+        can={can}
+        request={request}
+      />
     );
   }
   const save = (label: string) => request({
@@ -1266,7 +1948,17 @@ function SettingsView({
   );
 }
 
-function AccessView({ role, capabilities, isPreview }: { role: TenantRole; capabilities: ManagementCapability[]; isPreview: boolean }) {
+function AccessView({
+  role,
+  capabilities,
+  isPreview,
+  session,
+}: {
+  role: TenantRole;
+  capabilities: ManagementCapability[];
+  isPreview: boolean;
+  session?: ManagementSnapshot["session"];
+}) {
   return (
     <section className={styles.accessGrid}>
       <article className={styles.panel}>
@@ -1286,10 +1978,10 @@ function AccessView({ role, capabilities, isPreview }: { role: TenantRole; capab
       <aside className={cx(styles.panel, styles.capabilityPanel)}>
         <p className={styles.eyebrow}>{isPreview ? "Current preview session" : "Current authenticated session"}</p>
         <div className={styles.sessionRole}>
-          <span>{isPreview ? ROLE_LABEL[role].slice(0, 2).toUpperCase() : "—"}</span>
+          <span>{ROLE_LABEL[role].slice(0, 2).toUpperCase()}</span>
           <div>
-            <h2>{isPreview ? ROLE_LABEL[role] : "Role not exposed"}</h2>
-            <p>{isPreview ? `${capabilities.length} preview capabilities` : "No authoritative capabilities returned"}</p>
+            <h2>{isPreview ? ROLE_LABEL[role] : session?.isSystemOwner ? "System Owner" : `Tenant ${ROLE_LABEL[role]}`}</h2>
+            <p>{isPreview ? `${capabilities.length} preview capabilities` : session?.isSystemOwner ? `${capabilities.length} server capabilities · no tenant membership` : `${capabilities.length} server capabilities · ${session?.membershipRole ?? "no"} membership`}</p>
           </div>
         </div>
         <ul className={styles.capabilityList}>
@@ -1322,6 +2014,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
               width={2046}
               height={769}
               sizes="180px"
+              unoptimized
               priority
             />
           </span>
@@ -1331,7 +2024,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
         <span className={styles.liveTag}>Live connection</span>
         <p className={styles.eyebrow}>Management access</p>
         <h1 id="manager-sign-in-title">Welcome back.</h1>
-        <p className={styles.signInIntro}>Sign in with an account already assigned to the Dinktopia tenant. Access is verified by the shared platform.</p>
+        <p className={styles.signInIntro}>Sign in with a System Owner account or an account authorized for Dinktopia. Access is verified by the shared platform.</p>
         <form
           onSubmit={async (event) => {
             event.preventDefault();
@@ -1369,15 +2062,19 @@ export default function ManagePage() {
   const [authRequired, setAuthRequired] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmPending, setConfirmPending] = useState(false);
+  const [refreshPending, setRefreshPending] = useState(false);
   const [accountPending, setAccountPending] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<ToastState | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const context = useMemo<ManagementContext>(() => ({
     tenantSlug: activeTenant.identity.slug,
-    role,
-    capabilities: isPreview ? previewRoleSessions[role] : [],
-  }), [isPreview, role]);
+    role: isPreview ? role : snapshot?.session.role ?? "host",
+    capabilities: isPreview
+      ? previewRoleSessions[role]
+      : snapshot?.session.capabilities ?? [],
+  }), [isPreview, role, snapshot]);
+  const sessionRole = context.role;
 
   const can = (capability: ManagementCapability) => context.capabilities.includes(capability);
 
@@ -1407,7 +2104,7 @@ export default function ManagePage() {
 
   useEffect(() => {
     if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 4200);
+    const timer = window.setTimeout(() => setToast(null), toast.tone === "success" ? 5_000 : 9_000);
     return () => window.clearTimeout(timer);
   }, [toast]);
 
@@ -1420,7 +2117,7 @@ export default function ManagePage() {
       await signOutOwner();
       window.location.reload();
     } catch {
-      setToast("The session could not be cleared. Refresh and try signing out again.");
+      setToast({ message: "The session could not be cleared. Refresh and try signing out again.", tone: "error" });
       setAccountPending(false);
     }
   };
@@ -1432,11 +2129,48 @@ export default function ManagePage() {
       const result = await managementAdapter.perform(context, {
         type: confirmAction.actionType,
         resourceId: confirmAction.resourceId,
+        payload: confirmAction.payload,
       });
-      setToast(result.message);
+      confirmAction.onSuccess?.();
+      if (!isPreview) {
+        setRefreshPending(true);
+        try {
+          const refreshed = await managementAdapter.load(context);
+          setSnapshot(refreshed);
+        } catch {
+          setToast({
+            message: `${result.message} The follow-up refresh failed, so refresh the workspace before making another change.`,
+            tone: "warning",
+          });
+          setConfirmAction(null);
+          return;
+        } finally {
+          setRefreshPending(false);
+        }
+      }
+      setToast({ message: result.message, tone: "success" });
       setConfirmAction(null);
-    } catch {
-      setToast("This action was not sent. Refresh your authorized tenant session and try again.");
+    } catch (error) {
+      if (error instanceof PlatformRequestError) {
+        setToast({
+          message: error.code === "SETTINGS_STALE_REFRESH_REQUIRED"
+            ? error.message
+            : `The server rejected this change: ${error.message}`,
+          tone: error.code === "SETTINGS_STALE_REFRESH_REQUIRED"
+            ? "warning"
+            : "error",
+        });
+      } else if (error instanceof TypeError) {
+        setToast({
+          message: "We couldn't confirm the change because the connection ended. The server may have applied it; refresh before retrying.",
+          tone: "warning",
+        });
+      } else {
+        setToast({
+          message: "The change was blocked before server confirmation. Refresh the authorized workspace and review the entered values.",
+          tone: "error",
+        });
+      }
       setConfirmAction(null);
     } finally {
       setConfirmPending(false);
@@ -1447,6 +2181,11 @@ export default function ManagePage() {
   const requiredCapability = VIEW_CAPABILITY[view];
   const viewPermitted = !requiredCapability || can(requiredCapability);
   const completedSetup = snapshot?.setup.filter((item) => item.complete).length ?? 0;
+  const activationPrerequisitesReady = Boolean(
+    snapshot?.setup.length && snapshot.setup
+      .filter((item) => item.id !== "setup-status" && item.id !== "public-booking")
+      .every((item) => item.complete),
+  );
 
   const renderView = () => {
     if (!snapshot) return <DashboardSkeleton />;
@@ -1454,7 +2193,7 @@ export default function ManagePage() {
     if (previewState === "empty" || previewState === "error" || previewState === "restricted") {
       return <StatePanel kind={previewState} role={role} isPreview onRestore={() => setPreviewState("ready")} />;
     }
-    if (!viewPermitted) return <PermissionPanel role={role} view={view} isPreview={isPreview} />;
+    if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     switch (view) {
       case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={setView} request={request} />;
       case "bookings": return <BookingsView bookings={snapshot.bookings} can={can} request={request} goTo={setView} isPreview={isPreview} />;
@@ -1463,7 +2202,7 @@ export default function ManagePage() {
       case "customers": return <CustomersView snapshot={snapshot} />;
       case "reports": return <ReportsView snapshot={snapshot} />;
       case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} />;
-      case "access": return <AccessView role={role} capabilities={context.capabilities} isPreview={isPreview} />;
+      case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} />;
     }
   };
 
@@ -1495,6 +2234,7 @@ export default function ManagePage() {
               width={2046}
               height={769}
               sizes="180px"
+              unoptimized
               priority
             />
           </span>
@@ -1534,8 +2274,8 @@ export default function ManagePage() {
             )}
           </div>
           <div className={styles.userCard}>
-            <Avatar initials={isPreview ? "AR" : "AU"} tone={0} />
-            <div><strong>{isPreview ? "Alex Rivera" : "Authenticated user"}</strong><span>{isPreview ? `${ROLE_LABEL[role]} preview session` : "Switch account securely"}</span></div>
+            <Avatar initials={isPreview ? "AR" : snapshot?.session.isSystemOwner ? "SO" : "TM"} tone={0} />
+            <div><strong>{isPreview ? "Alex Rivera" : snapshot?.session.displayName ?? "Authenticated user"}</strong><span>{isPreview ? `${ROLE_LABEL[role]} preview session` : `${ROLE_LABEL[sessionRole]} server session`}</span></div>
             <button
               type="button"
               disabled={isPreview || accountPending}
@@ -1560,6 +2300,7 @@ export default function ManagePage() {
                 width={2046}
                 height={769}
                 sizes="136px"
+                unoptimized
                 priority
               />
             </span>
@@ -1597,7 +2338,7 @@ export default function ManagePage() {
               <label><span>Role</span><select value={role} onChange={(event) => setRole(event.target.value as TenantRole)}>{(Object.keys(ROLE_LABEL) as TenantRole[]).map((item) => <option value={item} key={item}>{ROLE_LABEL[item]}</option>)}</select></label>
               <label><span>State</span><select value={previewState} onChange={(event) => setPreviewState(event.target.value as PreviewState)}><option value="ready">Ready</option><option value="loading">Loading</option><option value="empty">Empty</option><option value="error">Error</option><option value="restricted">Restricted</option></select></label>
             </div>
-          ) : <span className={styles.liveReadOnly}>Live reads · writes gated</span>}
+          ) : <span className={styles.liveReadOnly}>Live · writes capability-gated</span>}
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
@@ -1611,11 +2352,13 @@ export default function ManagePage() {
               {isPreview && <button type="button" className={styles.iconButton} aria-label="Preview search control">⌕</button>}
               {isPreview && <button type="button" className={styles.iconButton} aria-label="Preview notifications">◎<span>2</span></button>}
               {isPreview && view === "overview" && <ActionButton disabled={!can("booking:create")} onClick={() => setView("schedule")}><span aria-hidden="true">＋</span> New booking</ActionButton>}
-              {isPreview && view === "settings" && (
+              {view === "settings" && (
                 <ActionButton
                   variant="secondary"
-                  disabled={!can("tenant:publish") || completedSetup < 8}
-                  onClick={() => request({ title: "Request live activation?", detail: "A final tenant, payment and policy review is required before public bookings can open.", confirmLabel: "Request activation", actionType: "tenant:publish" })}
+                  disabled={
+                    !can("tenant:publish") || !activationPrerequisitesReady
+                  }
+                  onClick={() => request({ title: isPreview ? "Request live activation?" : "Activate public booking?", detail: isPreview ? "A final tenant, payment and policy review is required before public bookings can open." : "The platform will recheck every launch prerequisite atomically. Only the global System Owner can complete initial activation.", confirmLabel: isPreview ? "Request activation" : "Activate Dinktopia", actionType: "tenant:publish" })}
                 >
                   Go live
                 </ActionButton>
@@ -1623,7 +2366,6 @@ export default function ManagePage() {
             </div>
           </header>
 
-          <p id="permission-note" className={styles.srOnly}>This action is unavailable for the current tenant session or setup status.</p>
           {renderView()}
           <footer className={styles.pageFooter}>
             <span>Dinktopia tenant {isPreview ? "preview" : "workspace"}</span><span>Asia/Manila · PHP</span><span>Server policy remains authoritative</span>
@@ -1633,8 +2375,10 @@ export default function ManagePage() {
 
       <dialog
         ref={dialogRef}
-        className={styles.confirmDialog}
+        className={cx(styles.confirmDialog, confirmPending && styles.dialogBusy)}
         aria-labelledby="confirm-title"
+        aria-describedby="confirm-description"
+        aria-busy={confirmPending}
         onCancel={(event) => { event.preventDefault(); if (!confirmPending) setConfirmAction(null); }}
         onClose={() => { if (!confirmPending) setConfirmAction(null); }}
       >
@@ -1644,18 +2388,29 @@ export default function ManagePage() {
             <span className={cx(styles.dialogMark, confirmAction.tone === "danger" && styles.dialogDanger)} aria-hidden="true">{confirmAction.tone === "danger" ? "!" : "✓"}</span>
             <p className={styles.eyebrow}>Confirm before continuing</p>
             <h2 id="confirm-title">{confirmAction.title}</h2>
-            <p>{confirmAction.detail}</p>
-            <div className={styles.dialogSummary}><span>Tenant</span><strong>Dinktopia</strong><span>Mode</span><strong>{isPreview ? "Preview · no live write" : "Live · write unavailable"}</strong></div>
+            <p id="confirm-description">{confirmAction.detail}</p>
+            <div className={styles.dialogSummary}><span>Tenant</span><strong>Dinktopia</strong><span>Mode</span><strong>{isPreview ? "Preview · no live write" : "Live · server-authorized write"}</strong></div>
             <div className={styles.dialogActions}>
               <ActionButton variant="quiet" disabled={confirmPending} onClick={() => setConfirmAction(null)}>Go back</ActionButton>
-              <ActionButton variant={confirmAction.tone === "danger" ? "danger" : "primary"} disabled={confirmPending} onClick={performConfirmedAction}>{confirmPending ? "Working…" : confirmAction.confirmLabel}</ActionButton>
+              <ActionButton variant={confirmAction.tone === "danger" ? "danger" : "primary"} disabled={confirmPending} onClick={performConfirmedAction}>{refreshPending ? "Refreshing workspace…" : confirmPending ? "Saving…" : confirmAction.confirmLabel}</ActionButton>
             </div>
           </div>
         )}
       </dialog>
 
-      <div className={cx(styles.toast, toast && styles.toastVisible)} role="status" aria-live="polite">
-        <span aria-hidden="true">✓</span>{toast}
+      <div
+        className={cx(
+          styles.toast,
+          toast && styles.toastVisible,
+          toast?.tone === "success" && styles.toastSuccess,
+          toast?.tone === "error" && styles.toastError,
+          toast?.tone === "warning" && styles.toastWarning,
+        )}
+        role={toast ? (toast.tone === "success" ? "status" : "alert") : undefined}
+        aria-live={toast ? (toast.tone === "success" ? "polite" : "assertive") : "off"}
+      >
+        <span className={styles.toastIcon} aria-hidden="true">{toast?.tone === "success" ? "✓" : toast?.tone === "warning" ? "!" : "×"}</span>
+        <span className={styles.toastMessage}>{toast?.message}</span>
       </div>
     </div>
   );

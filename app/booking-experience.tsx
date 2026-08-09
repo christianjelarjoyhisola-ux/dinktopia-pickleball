@@ -110,6 +110,7 @@ export type BookingHoldRequest = {
   amount: number;
   items: BookingSelection[];
   customer: CustomerDetails;
+  policyAccepted: boolean;
   policyVersion: string | null;
   turnstileToken?: string;
   clientRequestId: string;
@@ -260,8 +261,8 @@ type SelectionAction =
       courtName: string;
       startsAt: string;
       endsAt: string;
-      maximum: number;
       liveMode: boolean;
+      liveMaximumHours?: number;
     }
   | { type: "replace"; items: BookingSelection[] }
   | { type: "retain-open"; openKeys: Set<string> }
@@ -306,11 +307,16 @@ function selectionReducer(state: SelectionState, action: SelectionAction): Selec
     (item) => selectionKey(item.courtId, item.startHour) === key,
   );
 
-  if (!isSelected && items.length >= action.maximum) {
+  if (
+    action.liveMode &&
+    !isSelected &&
+    action.liveMaximumHours !== undefined &&
+    items.length >= action.liveMaximumHours
+  ) {
     return {
       ...state,
       items,
-      announcement: `You can select up to ${action.maximum} court-hours per checkout.`,
+      announcement: `This court allows up to ${action.liveMaximumHours} consecutive hours per booking.`,
     };
   }
 
@@ -442,6 +448,21 @@ function getConfiguredPrice(
     },
     0,
   );
+}
+
+function getMinimumConfiguredHourlyRate(courts: PublicCourt[]) {
+  const rates = courts.flatMap((court) => {
+    const pricingConfig = court.pricingConfig as
+      | { regular?: { bands?: Array<{ hourlyRate?: number }> } }
+      | undefined;
+    return (pricingConfig?.regular?.bands ?? [])
+      .map((band) => band.hourlyRate)
+      .filter(
+        (rate): rate is number =>
+          typeof rate === "number" && Number.isFinite(rate) && rate > 0,
+      );
+  });
+  return rates.length ? Math.min(...rates) : null;
 }
 
 function blockedPeriodOverlaps(
@@ -606,6 +627,9 @@ const platformAdapter: BookingAdapter = {
     });
   },
   async createHold(request) {
+    if (!request.policyAccepted) {
+      throw new Error("Accept the booking and cancellation rules before we hold your slot.");
+    }
     const canonicalSelection = canonicalizeSelection(request.items);
     if (platformMode() === "live" && !canonicalSelection) {
       throw new Error(
@@ -641,7 +665,7 @@ const platformAdapter: BookingAdapter = {
         email: request.customer.email,
         phone: request.customer.phone,
       },
-      policyAccepted: true,
+      policyAccepted: request.policyAccepted,
       policyVersion: request.policyVersion,
       clientRequestId: request.clientRequestId,
       turnstileToken: request.turnstileToken,
@@ -969,6 +993,7 @@ type TurnstileApi = {
     container: HTMLElement,
     options: {
       sitekey: string;
+      action: "booking_create";
       theme: "light";
       callback: (token: string) => void;
       "expired-callback": () => void;
@@ -1001,10 +1026,11 @@ export function BookingExperience({
   const bookingSectionRef = useRef<HTMLElement>(null);
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
   const turnstileWidgetRef = useRef<string | null>(null);
+  const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const bookingAttemptIdRef = useRef("");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
-  const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
   const [selectedCourtId, setSelectedCourtId] = useState(() => {
     if (isLive) return previewCourts[0].id;
@@ -1066,6 +1092,16 @@ export function BookingExperience({
     return displayCourtsFromPlatform(bootstrap?.courts ?? []);
   }, [bootstrap, bootstrapState, isLive]);
   const galleryPhotos = useMemo(() => galleryPhotosFromPlatform(bootstrap), [bootstrap]);
+  const startingHourlyRate = useMemo(
+    () =>
+      isLive
+        ? getMinimumConfiguredHourlyRate(bootstrap?.courts ?? [])
+        : Math.min(
+            activeTenant.booking.offPeakHourlyRate,
+            activeTenant.booking.peakHourlyRate,
+          ),
+    [bootstrap, isLive],
+  );
   const selectedSlotDetails = useMemo(
     () => selectedSlots
       .map((selection) => {
@@ -1103,15 +1139,9 @@ export function BookingExperience({
       canonicalSelection.durationHours >= (canonicalPricing?.regular?.minimumHours ?? 1) &&
       canonicalSelection.durationHours <= (canonicalPricing?.regular?.maximumHours ?? 18),
   );
-  const configuredCourtHourLimit = bootstrap?.tenant.publicConfig.maximumCourtHoursPerCheckout;
-  const maximumCourtHoursPerCheckout =
-    typeof configuredCourtHourLimit === "number" && Number.isFinite(configuredCourtHourLimit)
-      ? Math.min(20, Math.max(1, Math.floor(configuredCourtHourLimit)))
-      : activeTenant.booking.maximumCourtHoursPerCheckout;
   const selectedKeys = new Set(
     selectedSlots.map((item) => selectionKey(item.courtId, item.startHour)),
   );
-  const selectionAtLimit = selectedSlots.length >= maximumCourtHoursPerCheckout;
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
@@ -1355,7 +1385,7 @@ export function BookingExperience({
         }
         setPendingBooking(null);
         setConfirmedBooking(restored);
-        setStep(5);
+        setStep(4);
         setLiveMessage(
           restored.status === "confirmed"
             ? `Booking ${restored.reference} is confirmed.`
@@ -1366,7 +1396,7 @@ export function BookingExperience({
 
       setConfirmedBooking(null);
       setPendingBooking(restored);
-      setStep(4);
+      setStep(3);
       setLiveMessage(
         restored.status === "pending_payment"
           ? `Saved hold ${restored.reference} was verified and restored.`
@@ -1387,13 +1417,20 @@ export function BookingExperience({
   }, [pendingBooking?.expiresAt]);
 
   useEffect(() => {
-    if (!isBookingPage || !isLive || step !== 4 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
+    if (step !== 3 || !pendingBooking) return;
+    const frame = window.requestAnimationFrame(() => paymentHeadingRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [pendingBooking, step]);
+
+  useEffect(() => {
+    if (!isBookingPage || !isLive || step !== 2 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
     let disposed = false;
     const container = turnstileContainerRef.current;
     const renderWidget = () => {
       if (disposed || !window.turnstile || turnstileWidgetRef.current) return;
       turnstileWidgetRef.current = window.turnstile.render(container, {
         sitekey: securitySiteKey,
+        action: "booking_create",
         theme: "light",
         callback: (token) => setTurnstileTokenValue(token),
         "expired-callback": () => setTurnstileTokenValue(""),
@@ -1507,6 +1544,17 @@ export function BookingExperience({
 
   function chooseSlot(court: Court, slot: AvailabilitySlot) {
     if (slot.status === "unavailable") return;
+    const publicCourt = bootstrap?.courts.find((candidate) => candidate.id === court.id);
+    const pricingConfig = publicCourt?.pricingConfig as
+      | { regular?: { maximumHours?: number } }
+      | undefined;
+    const configuredMaximum = pricingConfig?.regular?.maximumHours;
+    const liveMaximumHours =
+      isLive && typeof configuredMaximum === "number" && Number.isFinite(configuredMaximum)
+        ? Math.min(18, Math.max(1, Math.floor(configuredMaximum)))
+        : isLive
+          ? 18
+          : undefined;
     dispatchSelection({
       type: "toggle",
       item: {
@@ -1518,8 +1566,8 @@ export function BookingExperience({
       courtName: court.name,
       startsAt: slot.startsAt,
       endsAt: slot.endsAt,
-      maximum: maximumCourtHoursPerCheckout,
       liveMode: isLive,
+      liveMaximumHours,
     });
   }
 
@@ -1552,17 +1600,29 @@ export function BookingExperience({
       errors.phone = "Enter a valid Philippine mobile number.";
     }
     setDetailErrors(errors);
+    const firstInvalidField = (["name", "email", "phone"] as const).find((field) => {
+      if (field === "name") return Boolean(errors.fullName);
+      return Boolean(errors[field]);
+    });
+    if (firstInvalidField) {
+      window.requestAnimationFrame(() => document.getElementById(`${formId}-${firstInvalidField}`)?.focus());
+    }
     return Object.keys(errors).length === 0;
   }
 
-  function submitDetails(event: FormEvent<HTMLFormElement>) {
+  async function submitDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (validateDetails()) setStep(3);
+    await reservePaymentHold();
   }
 
-  async function reservePaymentHold(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function reservePaymentHold() {
     setPaymentError("");
+    if (!validateDetails()) return;
+    if (!acceptedPolicy) {
+      setPaymentError("Accept the booking and cancellation rules before we hold your slot.");
+      window.requestAnimationFrame(() => document.getElementById(`${formId}-policy`)?.focus());
+      return;
+    }
     if (bootstrapState === "error") {
       setPaymentError("Booking setup could not be loaded. Refresh the page before trying again.");
       return;
@@ -1612,12 +1672,14 @@ export function BookingExperience({
         amount: total,
         items: selectedSlots,
         customer,
+        policyAccepted: acceptedPolicy,
         policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
         turnstileToken: turnstileTokenValue || undefined,
         clientRequestId,
       });
       setPendingBooking(booking);
       setHoldNow(Date.now());
+      setStep(3);
       setLiveMessage(
         isLive
           ? `Booking ${booking.reference} is held while payment is submitted.`
@@ -1693,7 +1755,7 @@ export function BookingExperience({
       });
       setConfirmedBooking(booking);
       setPendingBooking(null);
-      setStep(5);
+      setStep(4);
       setLiveMessage(
         !isLive
           ? `Preview checkout ${booking.reference} is complete. No payment was sent.`
@@ -1833,7 +1895,7 @@ export function BookingExperience({
     }
   }
 
-  const stepLabels = ["Choose", "Details", "Review", "Pay"];
+  const stepLabels = ["Choose", "Details", "Payment"];
   const gallerySection = (
     <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
       <div className="site-container">
@@ -1900,6 +1962,7 @@ export function BookingExperience({
               width={2046}
               height={769}
               sizes="(max-width: 390px) 128px, (max-width: 779px) 132px, 164px"
+              unoptimized
               priority
             />
           </Link>
@@ -1952,7 +2015,7 @@ export function BookingExperience({
         {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
-              <p className="eyebrow"><span aria-hidden="true">●</span> Dinktopia Pickleball Club</p>
+              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>Welcome to your next favorite habit</span></p>
               <h1>
                 Your next rally
                 <span>starts here.</span>
@@ -1971,8 +2034,8 @@ export function BookingExperience({
               </div>
               <ul className="hero-proof" aria-label="Booking highlights">
                 <li><strong>{displayCourts.length}</strong><span>{isLive ? "bookable courts" : "preview courts"}</span></li>
-                <li><strong>6–10</strong><span>daily play hours</span></li>
-                <li><strong>60 min</strong><span>minimum notice</span></li>
+                <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>per court-hour</span></li>
+                <li><strong>24/7</strong><span>live availability</span></li>
               </ul>
             </div>
 
@@ -2164,10 +2227,10 @@ export function BookingExperience({
               </div>
             ) : mode === "book" ? (
               <div className="booking-shell">
-                {step < 5 && (
+                {step < 4 && (
                   <>
                     <p className="booking-step-summary">
-                      <span>Step {step} of 4</span>
+                      <span>Step {step} of {stepLabels.length}</span>
                       <strong>{stepLabels[step - 1]}</strong>
                     </p>
                     <ol className="booking-progress" aria-label="Booking progress">
@@ -2211,7 +2274,7 @@ export function BookingExperience({
                             </button>
                           ))}
                         </div>
-                        <p className="date-selection-note">Changing the date clears selected court-hours.</p>
+                        {selectedSlots.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours.</p>}
                       </fieldset>
 
                       <fieldset className="booking-fieldset availability-fieldset">
@@ -2222,24 +2285,21 @@ export function BookingExperience({
                             <h4>Pick your court and time</h4>
                             <p className="schedule-help">
                               {isLive
-                                ? "Choose consecutive hours on one court. Tap a selected time again to remove it."
-                                : "Each tap adds one hour. Mix courts and times, then tap again to remove a choice."}
+                                ? "Choose consecutive hours on one court. Tap again to remove."
+                                : "Tap an open time to add it. Tap again to remove."}
                             </p>
                           </div>
-                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} of ${maximumCourtHoursPerCheckout} court-hours selected`}>
+                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}>
                             <span className="schedule-count-number">{selectedSlots.length}</span>
                             <span>selected</span>
-                            <small>of {maximumCourtHoursPerCheckout}</small>
+                            <small>court-hours</small>
                             <button className={selectedSlots.length ? undefined : "is-placeholder"} type="button" disabled={!selectedSlots.length} aria-hidden={!selectedSlots.length} tabIndex={selectedSlots.length ? 0 : -1} onClick={clearSelection}>Clear</button>
                           </div>
                         </div>
-                        {selectionAtLimit && (
-                          <p className="schedule-limit-note" role="status">You reached the {maximumCourtHoursPerCheckout}-hour limit. Selected times stay active so you can remove them.</p>
-                        )}
                         <div className="availability-legend-row">
                           <div className="slot-legend" aria-label="Availability key">
                             <span><i className="legend-open" />Open</span>
-                            <span><i className="legend-limited" />Selected</span>
+                            <span><i className="legend-selected" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
                           </div>
                           <span className="schedule-scroll-hint">Scroll sideways to see more courts <span aria-hidden="true">→</span></span>
@@ -2309,22 +2369,19 @@ export function BookingExperience({
                                       const isClosed = !slot;
                                       const isBooked = slot?.status === "unavailable";
                                       const isUnavailable = isClosed || isBooked;
-                                      const isLimitBlocked = selectionAtLimit && !isSelected && !isUnavailable;
-                                      const isDisabled = isUnavailable || isLimitBlocked;
+                                      const isDisabled = isUnavailable;
                                       const stateLabel = isClosed
                                         ? "closed"
                                         : isBooked
                                           ? "booked"
-                                          : isLimitBlocked
-                                            ? `selection limit of ${maximumCourtHoursPerCheckout} reached`
-                                            : isSelected
-                                              ? "selected"
-                                              : "available";
+                                          : isSelected
+                                            ? "selected"
+                                            : "available";
                                       return (
                                         <td key={court.id}>
                                           <button
                                             type="button"
-                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}${isLimitBlocked ? " is-limit-blocked" : ""}`}
+                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={isDisabled}
                                             aria-label={`${court.name}, ${formatHour(hour)} to ${formatHour(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
@@ -2332,7 +2389,7 @@ export function BookingExperience({
                                           >
                                             <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
                                             <strong>{isClosed ? "Closed" : isBooked ? "Booked" : peso(slot.price)}</strong>
-                                            <span className="schedule-cell-state">{isSelected ? "Added" : isLimitBlocked ? "Limit" : isUnavailable ? stateLabel : "Open"}</span>
+                                            <span className="schedule-cell-state">{isSelected ? "Added" : isUnavailable ? stateLabel : "Open"}</span>
                                           </button>
                                         </td>
                                       );
@@ -2353,7 +2410,7 @@ export function BookingExperience({
 
                       {selectedSlots.length > 0 && (
                         <div className="booking-mobile-action" role="region" aria-label="Selected court-hours">
-                          <div><small>{selectionAtLimit ? `Maximum ${maximumCourtHoursPerCheckout} hrs` : `${selectedSlots.length} hr${selectedSlots.length === 1 ? "" : "s"} · ${selectedCourtCount} court${selectedCourtCount === 1 ? "" : "s"}`}</small><strong>{peso(total)}</strong></div>
+                          <div><small>{selectedSlots.length} hr{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</small><strong>{peso(total)}</strong></div>
                           <button className="mobile-selection-clear" type="button" onClick={clearSelection}>Clear</button>
                           <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!liveSelectionSupported} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
                         </div>
@@ -2373,13 +2430,14 @@ export function BookingExperience({
                 )}
 
                 {step === 2 && (
-                  <div className="booking-layout compact-step">
-                    <form className="booking-main-card" onSubmit={submitDetails} noValidate>
+                  <div className="booking-layout compact-step booking-details-step">
+                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
+                    <form className="booking-main-card booking-details-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
                       <div className="booking-card-heading">
                         <span className="step-chip">STEP 02</span>
-                        <div><h3>Who&apos;s rallying?</h3><p>We&apos;ll send booking updates to these details.</p></div>
+                        <div><h3>Who&apos;s rallying?</h3><p>For booking updates.</p></div>
                       </div>
-                      <div className="guest-note"><span aria-hidden="true">◎</span><div><strong>No account needed</strong><p>Book as a guest. Your reference and email are all you need later.</p></div></div>
+                      <div className="guest-note"><span aria-hidden="true">◎</span><div><strong>Guest checkout</strong><p>No account needed.</p></div></div>
                       <div className="form-grid">
                         <div className="form-field form-field-wide">
                           <label htmlFor={`${formId}-name`}>Full name</label>
@@ -2423,66 +2481,75 @@ export function BookingExperience({
                           {detailErrors.phone && <span className="field-error" id={fieldErrorId(formId, "phone")}>{detailErrors.phone}</span>}
                         </div>
                       </div>
-                      <label className="check-row">
+                      <label className="check-row booking-updates-choice">
                         <input type="checkbox" checked={customer.updates} onChange={(event) => setCustomer({ ...customer, updates: event.target.checked })} />
-                        <span><strong>Send me practical booking updates</strong><small>Receipts, court changes, and reminders only.</small></span>
+                        <span><strong>Booking updates</strong><small>Receipts, court changes, and reminders.</small></span>
                       </label>
+                      <div className="details-hold-gate">
+                        <div className="policy-grid">
+                          <details className="policy-disclosure">
+                            <summary><span aria-hidden="true">↺</span><strong>{policyTitle}</strong><small>View policy</small></summary>
+                            <p>{policyIntro}</p>
+                          </details>
+                          <details className="policy-disclosure">
+                            <summary><span aria-hidden="true">◷</span><strong>Rescheduling</strong><small>View policy</small></summary>
+                            <p>{policyContent}</p>
+                          </details>
+                        </div>
+                        {isLive && !policyVersion && (
+                          <div className="payment-error" role="alert">
+                            <span aria-hidden="true">!</span><div><strong>Policy setup is incomplete</strong><p>New bookings stay unavailable until the venue publishes its current booking policy.</p></div>
+                          </div>
+                        )}
+                        <label className={`check-row policy-check ${!acceptedPolicy ? "needs-check" : ""}`}>
+                          <input id={`${formId}-policy`} type="checkbox" checked={acceptedPolicy} disabled={isLive && !policyVersion} onChange={(event) => setAcceptedPolicy(event.target.checked)} />
+                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required before we hold your slot.</small></span>
+                        </label>
+                        {isLive && (
+                          <div className="security-boundary details-security-boundary">
+                            <div><strong>Security check</strong><p>Verify once before we hold the court.</p></div>
+                            {securitySiteKey ? (
+                              <><div ref={turnstileContainerRef} className="turnstile-container" /><span className={turnstileTokenValue ? "security-ready" : "security-waiting"}>{turnstileTokenValue ? "Verified" : "Verification required"}</span></>
+                            ) : (
+                              <div className="payment-error" role="alert"><span aria-hidden="true">!</span><div><strong>Live booking is paused</strong><p>The venue security check has not been configured.</p></div></div>
+                            )}
+                          </div>
+                        )}
+                        {paymentError && (
+                          <div className="payment-error" role="alert">
+                            <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slot</strong><p>{paymentError}</p></div>
+                          </div>
+                        )}
+                      </div>
                       <div className="step-actions">
                         <button className="button button-ghost" type="button" onClick={() => setStep(1)}><span aria-hidden="true">←</span> Back</button>
-                        <button data-testid="details-submit" className="button button-blue" type="submit">Review booking <span aria-hidden="true">→</span></button>
+                        <button
+                          data-testid="hold-and-pay"
+                          className="button button-blue"
+                          type="submit"
+                          disabled={isSubmitting || !acceptedPolicy || !liveSelectionSupported || (isLive && !turnstileTokenValue)}
+                        >
+                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Hold slot &amp; proceed to payment <span aria-hidden="true">→</span></>}
+                        </button>
                       </div>
+                      <p className="hold-helper">No payment is taken when the hold is created.</p>
                     </form>
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                   </div>
                 )}
 
-                {step === 3 && selectedSlots.length > 0 && (
-                  <div className="booking-layout compact-step">
-                    <div className="booking-main-card">
+                {step === 3 && checkoutSlot && pendingBooking && (
+                  <div className="booking-layout compact-step booking-payment-step">
+                    <form className="booking-main-card" onSubmit={submitPayment} aria-busy={isSubmitting} noValidate>
                       <div className="booking-card-heading">
                         <span className="step-chip">STEP 03</span>
-                        <div><h3>One last look</h3><p>{isLive ? "Check the details before heading to payment." : "Check the details before previewing checkout. No real reservation or payment will be created."}</p></div>
-                      </div>
-                      <div className="review-board">
-                        <div className="review-court-mark"><span>COURTS</span><strong>{selectedCourtCount}</strong><small>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"}</small></div>
-                        <dl>
-                          <div><dt>Date</dt><dd>{selectedDateDetails?.long}</dd></div>
-                          <div className="review-session-row"><dt>Selected play</dt><dd>{groupedSelections.map((group) => <span key={`${group.court.id}:${group.startHour}`}>{group.court.name} · {formatHour(group.startHour)}–{formatHour(group.endHour)}</span>)}</dd></div>
-                          <div><dt>Booked by</dt><dd>{customer.fullName}<small>{customer.email} · {customer.phone}</small></dd></div>
-                        </dl>
-                        <button className="edit-details-button" type="button" onClick={() => setStep(2)}>Edit details</button>
-                      </div>
-                      <div className="policy-grid">
-                        <div><span aria-hidden="true">↺</span><h4>{policyTitle}</h4><p>{policyIntro}</p></div>
-                        <div><span aria-hidden="true">◷</span><h4>Rescheduling</h4><p>{policyContent}</p></div>
-                      </div>
-                      {isLive && !policyVersion && (
-                        <div className="payment-error" role="alert">
-                          <span aria-hidden="true">!</span><div><strong>Policy setup is incomplete</strong><p>New bookings stay unavailable until the venue publishes its current booking policy.</p></div>
-                        </div>
-                      )}
-                      <label className={`check-row policy-check ${!acceptedPolicy ? "needs-check" : ""}`}>
-                        <input type="checkbox" checked={acceptedPolicy} disabled={isLive && !policyVersion} onChange={(event) => setAcceptedPolicy(event.target.checked)} />
-                        <span><strong>I agree to the booking and cancellation rules</strong><small>{isLive ? "Full payment is required for confirmation." : "Preview only—no real reservation or payment will be created."}</small></span>
-                      </label>
-                      <div className="step-actions">
-                        <button className="button button-ghost" type="button" onClick={() => setStep(2)}><span aria-hidden="true">←</span> Back</button>
-                        <button data-testid="review-to-payment" className="button button-blue" type="button" disabled={!acceptedPolicy || !liveSelectionSupported} onClick={() => setStep(4)}>{isLive ? "Continue to payment" : "Preview checkout"} <span aria-hidden="true">→</span></button>
-                      </div>
-                    </div>
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
-                  </div>
-                )}
-
-                {step === 4 && checkoutSlot && (
-                  <div className="booking-layout compact-step">
-                    <form className="booking-main-card" onSubmit={pendingBooking ? submitPayment : reservePaymentHold} noValidate>
-                      <div className="booking-card-heading">
-                        <span className="step-chip">STEP 04</span>
                         <div>
-                          <h3>{pendingBooking ? holdExpired ? "Hold unavailable" : !heldPaymentReady ? "Payment temporarily unavailable" : isLive ? `Pay with ${paymentLabel}` : "Preview only—do not pay" : isLive ? "Reserve before you pay" : "Preview the reserve-first flow"}</h3>
-                          <p>{pendingBooking ? holdExpired ? "Payment is disabled because this hold expired or was released." : !heldPaymentReady ? "The hold was verified, but live payment setup is not currently available." : isLive ? "Upload your receipt so the club can verify your payment." : "This checkout is a simulation. No real reservation or payment will be created." : isLive ? "We will atomically hold this exact court and total before showing payment details." : "Create a simulated hold to inspect checkout without reserving a court or sending money."}</p>
+                          <h3 ref={paymentHeadingRef} tabIndex={-1}>{holdExpired ? "Hold unavailable" : !heldPaymentReady ? "Payment temporarily unavailable" : isLive ? `Pay with ${paymentLabel}` : "GCash payment preview"}</h3>
+                          <p>{holdExpired ? "Choose another time to continue." : !heldPaymentReady ? "Payment is paused until setup is verified." : isLive ? "Upload your GCash receipt before the hold expires." : "Use sample GCash details to inspect the receipt flow."}</p>
                         </div>
+                      </div>
+                      <div className="checkout-snapshot" aria-label="Checkout booking summary">
+                        <span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</strong><small>{selectedDateDetails?.long}</small></span>
+                        <b>{peso(checkoutTotal)}</b>
                       </div>
                       {pendingBooking && (
                         <>
@@ -2502,29 +2569,27 @@ export function BookingExperience({
                           </div>
                           {!holdExpired && heldPaymentReady && (
                             <>
-                              <div className="payment-panel">
-                                {paymentQrUrl ? (
+                              <div className={`payment-panel${isLive ? "" : " payment-panel-preview"}`}>
+                                {isLive && paymentQrUrl ? (
                                   <div className="payment-qr payment-qr-live">
                                     {/* The URL is tenant-owned public payment configuration. */}
                                     {/* eslint-disable-next-line @next/next/no-img-element */}
                                     <img src={paymentQrUrl} alt={`${paymentLabel} payment QR code`} />
                                   </div>
-                                ) : (
+                                ) : isLive ? (
                                   <div className="payment-qr" aria-label={`${paymentLabel} QR code placeholder pending venue setup`}>
                                     <div className="qr-pattern" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
                                     <span>{paymentLabel.toUpperCase()}</span>
                                   </div>
+                                ) : (
+                                  <div className="payment-preview-mark" aria-hidden="true"><span>LOCAL</span><strong>PREVIEW</strong></div>
                                 )}
                                 <div className="payment-instructions">
-                                  <span className="setup-badge">{isLive ? "SECURE PAYMENT" : "PAYMENT PREVIEW—DO NOT PAY"}</span>
-                                  <h4>{isLive ? <>Send exactly <strong>{peso(pendingBooking.amount)}</strong></> : <>Preview total <strong>{peso(pendingBooking.amount)}</strong> — do not pay</>}</h4>
-                                  <p>{isLive ? paymentMethod?.instructions ?? "The live QR and account name will appear here when the clubhouse payment profile is activated." : "This panel demonstrates the receipt workflow only. It does not reserve a court or transfer money."}</p>
+                                  <span className="setup-badge">{isLive ? "SECURE PAYMENT" : "PREVIEW · DO NOT PAY"}</span>
+                                  <h4>{isLive ? <>Send exactly <strong>{peso(pendingBooking.amount)}</strong></> : <>Sample total <strong>{peso(pendingBooking.amount)}</strong></>}</h4>
+                                  <p>{isLive ? paymentMethod?.instructions ?? "The live QR and account name will appear here when the clubhouse payment profile is activated." : "Use sample details below. Nothing is sent."}</p>
                                   {isLive && paymentMethod?.accountName && <p className="payment-account"><strong>Account:</strong> {paymentMethod.accountName}{paymentMethod.accountReference ? ` · ${paymentMethod.accountReference}` : paymentMethod.accountNumber ? ` · ${paymentMethod.accountNumber}` : ""}</p>}
-                                  {isLive ? (
-                                    <ol><li>Open {paymentLabel} and scan the club QR.</li><li>Send the exact held total.</li><li>Save your receipt and add it below.</li></ol>
-                                  ) : (
-                                    <ol><li>Do not send money or scan a payment code.</li><li>Use sample details only to preview validation.</li><li>No real reservation or payment is created.</li></ol>
-                                  )}
+                                  {isLive && <ol><li>Open {paymentLabel} and scan the club QR.</li><li>Send the exact held total.</li><li>Save your receipt and add it below.</li></ol>}
                                 </div>
                               </div>
                               <div className="form-grid payment-fields">
@@ -2568,27 +2633,16 @@ export function BookingExperience({
                           <span aria-hidden="true">!</span><div><strong>Payment remains disabled</strong><p>Live payment setup could not be verified. Cancel this unpaid hold or refresh before its expiry.</p></div>
                         </div>
                       )}
-                      {!pendingBooking && (
-                        <div className="security-boundary">
-                          <div><strong>Atomic slot hold</strong><p>{isLive ? "Complete the security check, then reserve the slot before paying." : "Simulation only—no real court is reserved and no payment should be sent."}</p></div>
-                          {isLive && securitySiteKey ? (
-                            <><div ref={turnstileContainerRef} className="turnstile-container" /><span className={turnstileTokenValue ? "security-ready" : "security-waiting"}>{turnstileTokenValue ? "Verified" : "Verification required"}</span></>
-                          ) : isLive ? (
-                            <div className="payment-error" role="alert"><span aria-hidden="true">!</span><div><strong>Live booking is paused</strong><p>The venue security check has not been configured.</p></div></div>
-                          ) : <span className="security-ready">Preview only</span>}
-                        </div>
-                      )}
                       {paymentError && (
                         <div className="payment-error" role="alert">
-                          <span aria-hidden="true">!</span><div><strong>{pendingBooking ? "Payment" : "Reservation"} needs another look</strong><p>{paymentError}</p></div>
+                          <span aria-hidden="true">!</span><div><strong>Payment needs another look</strong><p>{paymentError}</p></div>
                         </div>
                       )}
-                      <p className="secure-note"><span aria-hidden="true">◇</span> {holdExpired ? "Payment is disabled for this unavailable hold." : !isLive ? "This is a simulated checkout. No real court is reserved and no payment should be sent." : pendingBooking && !heldPaymentReady ? "Payment is disabled until live venue configuration is verified." : pendingBooking ? "Your slot is held and becomes confirmed only after payment review." : "Payment details remain hidden until the database reserves your slot."} No card details are collected here.</p>
+                      <p className="secure-note"><span aria-hidden="true">◇</span> {!isLive ? "No card details are collected in preview." : `${holdExpired ? "Payment is disabled for this unavailable hold." : !heldPaymentReady ? "Payment is disabled until live venue configuration is verified." : "Your slot is held and becomes confirmed only after payment review."} No card details are collected here.`}</p>
                       <div className="step-actions">
-                        {!pendingBooking && <button className="button button-ghost" type="button" onClick={() => setStep(3)} disabled={isSubmitting}><span aria-hidden="true">←</span> Back</button>}
-                        {pendingBooking && <button className="button button-ghost" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>}
-                        {!holdExpired && (!pendingBooking || heldPaymentReady) && <button data-testid={pendingBooking ? "submit-receipt" : "reserve-slot"} className="button button-blue" type="submit" disabled={isSubmitting}>
-                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> {pendingBooking ? "Sending receipt…" : isLive ? "Reserving slot…" : "Creating preview…"}</> : <>{pendingBooking ? isLive ? "Submit payment receipt" : "Submit sample receipt" : isLive ? "Reserve this slot" : "Create preview hold"} <span aria-hidden="true">→</span></>}
+                        <button className="button button-ghost" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
+                        {!holdExpired && heldPaymentReady && <button data-testid="submit-receipt" className="button button-blue" type="submit" disabled={isSubmitting}>
+                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>{isLive ? "Submit GCash receipt" : "Submit sample receipt"} <span aria-hidden="true">→</span></>}
                         </button>}
                       </div>
                     </form>
@@ -2596,7 +2650,7 @@ export function BookingExperience({
                   </div>
                 )}
 
-                {step === 5 && confirmedBooking && (
+                {step === 4 && confirmedBooking && (
                   <div className="confirmation-card" role="status">
                     <div className="confirmation-burst" aria-hidden="true"><span>✓</span></div>
                     <p className="eyebrow eyebrow-dark">{!isLive ? "Preview complete" : confirmedBooking.status === "confirmed" ? "Booking confirmed" : "Receipt received"}</p>
@@ -2668,7 +2722,7 @@ export function BookingExperience({
 
       <footer className="site-footer">
         <div className="site-container footer-grid">
-          <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" /></Link><p>Good games live here.</p></div>
+          <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" unoptimized /></Link><p>Good games live here.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
@@ -2707,6 +2761,10 @@ function BookingSummary({
   const hasSelection = selections.length > 0;
   return (
     <aside className={`booking-summary${actionLabel ? " booking-summary-selection" : ""}`} aria-label="Booking summary">
+      <div className="summary-mobile-heading">
+        <span><strong>Booking details</strong><small>{dateLabel}</small></span>
+        <b>{selections.length} hr{selections.length === 1 ? "" : "s"}</b>
+      </div>
       <div className="summary-score"><span>COURT-HOURS</span><strong>{selections.length}</strong></div>
       <div className="summary-heading"><span className="slot-dot" aria-hidden="true" /><p>{hasSelection ? "Your rally plan" : "Build your booking"}</p></div>
       <h3>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} selected` : "Choose from the schedule"}</h3>

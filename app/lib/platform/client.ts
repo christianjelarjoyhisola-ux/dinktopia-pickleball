@@ -14,6 +14,7 @@ import type {
 const publicSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
 const publicSupabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY?.trim() ?? "";
+const SHARED_SUPABASE_ORIGIN = "https://neqvrwtofiolcuxewdze.supabase.co";
 
 let browserClient: SupabaseClient | null = null;
 
@@ -28,8 +29,39 @@ export class PlatformRequestError extends Error {
   }
 }
 
+function jwtRole(value: string): string | null {
+  const segments = value.split(".");
+  if (segments.length !== 3 || !segments[1]) return null;
+  try {
+    const normalized = segments[1].replaceAll("-", "+").replaceAll("_", "/");
+    const payload = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="))) as unknown;
+    return payload && typeof payload === "object" && !Array.isArray(payload) &&
+        typeof (payload as Record<string, unknown>).role === "string"
+      ? (payload as Record<string, string>).role
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function validBrowserPlatformConfiguration(): boolean {
+  let url: URL;
+  try {
+    url = new URL(publicSupabaseUrl);
+  } catch {
+    return false;
+  }
+  const publishableKey = /^sb_publishable_[A-Za-z0-9_-]+$/.test(publicSupabaseKey) ||
+    jwtRole(publicSupabaseKey) === "anon";
+  return Boolean(
+    publishableKey && url.origin === SHARED_SUPABASE_ORIGIN &&
+    url.protocol === "https:" && !url.username && !url.password &&
+    (url.pathname === "/" || url.pathname === "") && !url.search && !url.hash,
+  );
+}
+
 export function platformMode(): PlatformMode {
-  return publicSupabaseUrl && publicSupabaseKey ? "live" : "preview";
+  return validBrowserPlatformConfiguration() ? "live" : "preview";
 }
 
 export function turnstileSiteKey(): string | null {
@@ -67,17 +99,42 @@ async function responseJson<T>(response: Response): Promise<T> {
   return body as T;
 }
 
-async function rpc<T>(functionName: string, args: Record<string, unknown>) {
+async function rpc<T>(
+  functionName: string,
+  args: Record<string, unknown>,
+  accessToken?: string,
+) {
   const response = await fetch(
     `${publicSupabaseUrl.replace(/\/$/, "")}/rest/v1/rpc/${functionName}`,
     {
       method: "POST",
-      headers: publicHeaders(),
+      headers: publicHeaders(accessToken),
       body: JSON.stringify(args),
       cache: "no-store",
     },
   );
   return responseJson<T>(response);
+}
+
+const REGISTERED_MANAGEMENT_ORIGIN = "https://dinktopia.pages.dev";
+
+function managementHostname(options: { mutation?: boolean } = {}): string {
+  if (typeof window === "undefined") {
+    throw new PlatformRequestError(
+      403,
+      "LIVE_TENANT_ORIGIN_MISMATCH",
+      "Live tenant management requires the registered Dinktopia origin.",
+    );
+  }
+  const origin = window.location.origin.toLowerCase();
+  if (options.mutation && origin !== REGISTERED_MANAGEMENT_ORIGIN) {
+    throw new PlatformRequestError(
+      403,
+      "LIVE_TENANT_ORIGIN_MISMATCH",
+      "Live changes are accepted only from the registered Dinktopia origin.",
+    );
+  }
+  return window.location.hostname.toLowerCase();
 }
 
 function previewBootstrap(): TenantBootstrap {
@@ -396,9 +453,157 @@ export async function updateActivationSettings(
   accessToken: string,
   patch: Record<string, unknown>,
 ) {
+  managementHostname({ mutation: true });
   return authenticatedFunction<Record<string, unknown>>(
     "tenant-activation-settings",
     accessToken,
     { action: "update", patch },
+  );
+}
+
+export async function getManagerSession(accessToken: string) {
+  return rpc<Record<string, unknown> | null>(
+    "get_my_tenant_session",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+    },
+    accessToken,
+  );
+}
+
+export async function getManagerCourts(accessToken: string) {
+  return rpc<Array<Record<string, unknown>>>(
+    "get_tenant_courts_for_manager",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+    },
+    accessToken,
+  );
+}
+
+export async function getBlockedDateAccess(accessToken: string) {
+  return rpc<Record<string, unknown>>(
+    "get_blocked_date_access",
+    { p_tenant_slug: activeTenant.identity.slug },
+    accessToken,
+  );
+}
+
+export async function manageTenantCourt(
+  accessToken: string,
+  options: {
+    action: "save" | "delete";
+    courtId?: string | null;
+    patch?: Record<string, unknown>;
+  },
+) {
+  return rpc<Record<string, unknown>>(
+    "manage_tenant_court",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+      p_action: options.action,
+      p_court_id: options.courtId ?? null,
+      p_patch: options.patch ?? {},
+    },
+    accessToken,
+  );
+}
+
+export async function applySharedCourtSchedule(
+  accessToken: string,
+  schedule: {
+    opensAt: string;
+    closesAt: string;
+    bands: Array<{ start: string; end: string; hourlyRate: number }>;
+  },
+) {
+  return rpc<Record<string, unknown>>(
+    "apply_shared_tenant_court_schedule",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+      p_opens_at: schedule.opensAt,
+      p_closes_at: schedule.closesAt,
+      p_bands: schedule.bands,
+    },
+    accessToken,
+  );
+}
+
+export async function manageBlockedDates(
+  accessToken: string,
+  options: {
+    action: "create" | "delete";
+    blockId?: string | null;
+    startDate?: string | null;
+    endDate?: string | null;
+    courtId?: string | null;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    publicLabel?: "Reserved" | "Private Event" | "Maintenance" | "Closed";
+    internalReason?: string | null;
+  },
+) {
+  managementHostname({ mutation: true });
+  return rpc<Record<string, unknown>>(
+    "manage_blocked_dates",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_action: options.action,
+      p_block_id: options.blockId ?? null,
+      p_start_date: options.startDate ?? null,
+      p_end_date: options.endDate ?? null,
+      p_court_id: options.courtId ?? null,
+      p_starts_at: options.startsAt ?? null,
+      p_ends_at: options.endsAt ?? null,
+      p_public_label: options.publicLabel ?? "Reserved",
+      p_internal_reason: options.internalReason ?? null,
+    },
+    accessToken,
+  );
+}
+
+export async function updateBusinessSettings(
+  accessToken: string,
+  expectedRevision: string,
+  patch: Record<string, unknown>,
+) {
+  try {
+    return await rpc<Record<string, unknown>>(
+      "update_tenant_business_settings_if_current",
+      {
+        p_tenant_slug: activeTenant.identity.slug,
+        p_hostname: managementHostname({ mutation: true }),
+        p_expected_revision: expectedRevision,
+        p_patch: patch,
+      },
+      accessToken,
+    );
+  } catch (error) {
+    if (
+      error instanceof PlatformRequestError &&
+      (error.code === "40001" || error.message.includes("BUSINESS_SETTINGS_STALE"))
+    ) {
+      throw new PlatformRequestError(
+        409,
+        "SETTINGS_STALE_REFRESH_REQUIRED",
+        "Business or payment settings changed in another session. Refresh before saving again.",
+      );
+    }
+    throw error;
+  }
+}
+
+export async function activateTenantInitially(accessToken: string) {
+  return rpc<Record<string, unknown>>(
+    "activate_tenant_initially",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+    },
+    accessToken,
   );
 }

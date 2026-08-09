@@ -15,7 +15,7 @@ export type DinktopiaTenantConfig = {
     locale: "en-PH";
     currency: "PHP";
     timezone: "Asia/Manila";
-    productionDomain: null;
+    productionDomain: "dinktopia.pages.dev";
   };
   activation: {
     status: "setup_required";
@@ -31,7 +31,6 @@ export type DinktopiaTenantConfig = {
   booking: {
     minimumHours: number;
     maximumHours: number;
-    maximumCourtHoursPerCheckout: number;
     minimumLeadMinutes: number;
     maximumAdvanceDays: number;
     slotMinutes: 60;
@@ -71,7 +70,7 @@ export const dinktopiaConfig = {
     locale: "en-PH",
     currency: "PHP",
     timezone: "Asia/Manila",
-    productionDomain: null,
+    productionDomain: "dinktopia.pages.dev",
   },
   activation: {
     status: "setup_required",
@@ -87,7 +86,6 @@ export const dinktopiaConfig = {
   booking: {
     minimumHours: 1,
     maximumHours: 3,
-    maximumCourtHoursPerCheckout: 8,
     minimumLeadMinutes: 60,
     maximumAdvanceDays: 30,
     slotMinutes: 60,

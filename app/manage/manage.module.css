@@ -64,7 +64,8 @@
 .manageShell input:focus-visible,
 .manageShell select:focus-visible,
 .manageShell textarea:focus-visible,
-.manageShell a:focus-visible {
+.manageShell a:focus-visible,
+.manageShell summary:focus-visible {
   outline: 3px solid var(--citrus);
   outline-offset: 2px;
   box-shadow: 0 0 0 7px var(--ink) !important;
@@ -676,6 +677,25 @@
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,76,132,.1); }
 .field small { color: var(--muted); font-size: var(--text-micro); }
 .fieldWide { grid-column: 1 / -1; }
+.field input[aria-invalid="true"],
+.field select[aria-invalid="true"],
+.field textarea[aria-invalid="true"] {
+  border-color: var(--danger);
+  background: #fff9f7;
+  box-shadow: 0 0 0 3px rgba(193, 62, 43, .09);
+}
+.fieldError,
+.inlineError {
+  grid-column: 1 / -1;
+  margin: 0;
+  border-left: 3px solid var(--danger);
+  border-radius: 0 8px 8px 0;
+  background: #fcedea;
+  padding: 8px 10px;
+  color: #76261a;
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
 .noticeBox { display: flex; align-items: flex-start; gap: 10px; margin: 18px 0; border: 1px solid var(--line); border-radius: 11px; background: var(--paper-deep); padding: 11px 12px; }
 .noticeBox > span { display: grid; width: 19px; height: 19px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--blue); color: var(--white); font-family: Georgia, serif; font-size: var(--text-caption); font-weight: 800; }
 .noticeBox p { margin: 0; color: var(--muted); font-size: var(--text-caption); }
@@ -686,10 +706,29 @@
 .blockDate { min-width: 43px; min-height: 48px; display: grid; place-content: center; justify-items: center; border-radius: 9px; background: #f8ddd8; color: #76261a; padding: 4px; }
 .blockDate span { font-size: var(--text-micro); font-weight: 800; letter-spacing: .08em; }
 .blockDate strong { font-size: 1rem; line-height: 1.1; }
+.blockDate small { margin-top: 1px; font-size: var(--text-micro); font-weight: 700; line-height: 1; }
 .blockInfo { display: grid; min-width: 0; }
 .blockInfo strong { font-size: var(--text-meta); }
 .blockInfo span { margin-top: 2px; color: var(--muted); font-size: var(--text-micro); }
 .blockInfo small { margin-top: 5px; color: var(--muted); font-size: var(--text-micro); }
+.blockScopeGrid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 15px; }
+.blockAccessMeta {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 16px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--paper-deep);
+  padding: 11px 12px;
+  color: var(--muted);
+  font-size: var(--text-caption);
+}
+.blockAccessMeta strong { color: var(--ink); }
+.blockMeta { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 5px; color: var(--muted); font-size: var(--text-micro); }
+.blockPublicLabel,
+.blockPrivateNote { overflow-wrap: anywhere; }
 
 .customerMetrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 14px; }
 .customerMetrics > div { display: grid; border: 1px solid var(--line); border-radius: 15px; background: rgba(255,255,255,.84); padding: 18px; }
@@ -746,8 +785,77 @@
 .settingsNav .settingsActive { background: var(--ink); color: var(--white); }
 .sectionIntro { max-width: 620px; margin: -7px 0 20px; color: var(--muted); font-size: var(--text-caption); }
 .courtSettingList { display: grid; gap: 9px; }
-.courtSettingList article { display: grid; grid-template-columns: 42px 1fr 1fr auto; align-items: end; gap: 12px; border: 1px solid var(--line); border-radius: 13px; background: var(--white); padding: 13px; }
+.courtSettingList article { border: 1px solid var(--line); border-radius: 13px; background: var(--white); padding: 13px; }
+.courtSettingList article:not(.courtEditorCard) { display: grid; grid-template-columns: 42px 1fr 1fr auto; align-items: end; gap: 12px; }
 .courtNumber { align-self: center; color: var(--blue); font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: var(--text-caption); font-weight: 700; }
+.courtEditorCard {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1.1fr) minmax(0, .9fr) minmax(10rem, .8fr);
+  grid-template-areas:
+    "marker heading heading heading"
+    "marker name slug description"
+    "marker status order ."
+    ". actions actions actions";
+  align-items: end;
+  gap: 12px;
+}
+.courtCardHeading { grid-area: heading; min-width: 0; align-self: center; margin: 0; overflow-wrap: anywhere; font-size: var(--text-body); letter-spacing: -.02em; }
+.courtCardHeading h3 { margin: 0; overflow-wrap: anywhere; font-size: var(--text-body); letter-spacing: -.02em; }
+.courtCardHeading p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.courtMarker { grid-area: marker; align-self: start; justify-self: center; color: var(--blue); font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: var(--text-caption); font-weight: 700; }
+.courtNameField { grid-area: name; min-width: 0; }
+.courtSlugField { grid-area: slug; min-width: 0; }
+.courtDescriptionField { grid-area: description; min-width: 0; }
+.courtStatusField { grid-area: status; min-width: 0; }
+.courtOrderField { grid-area: order; min-width: 0; }
+.courtCardActions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
+.courtCardActions > * { flex: 1 1 7.5rem; }
+.newCourtDetails {
+  margin-top: 18px;
+  overflow: clip;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(255,255,255,.7);
+}
+.newCourtDetails > summary,
+.newCourtSummary {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  padding: 11px 14px;
+  color: var(--ink);
+  font-size: var(--text-small);
+  font-weight: 800;
+  list-style: none;
+}
+.newCourtDetails > summary::-webkit-details-marker { display: none; }
+.newCourtDetails > summary:hover,
+.newCourtSummary:hover { background: rgba(234,240,246,.68); }
+.newCourtDetails > summary::after,
+.newCourtSummary::after {
+  content: "+";
+  width: 28px;
+  height: 28px;
+  display: grid;
+  flex: 0 0 auto;
+  margin-left: auto;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--paper-deep);
+  color: var(--blue);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform 150ms ease;
+}
+.newCourtDetails[open] > summary,
+.newCourtDetails[open] > .newCourtSummary { border-bottom: 1px solid var(--line); }
+.newCourtDetails[open] > summary::after,
+.newCourtDetails[open] > .newCourtSummary::after { transform: rotate(45deg); }
+.newCourtForm { padding: 16px; }
+.newCourtSummaryText { display: grid; min-width: 0; }
+.newCourtSummaryText small { margin-top: 2px; color: var(--muted); font-weight: 500; }
 .settingsFooter { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 22px -27px -27px; border-radius: 0 0 18px 18px; background: var(--paper-deep); padding: 14px 27px; }
 .settingsFooter > span { color: var(--muted); font-size: var(--text-caption); }
 .rateGrid, .ruleList { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -759,6 +867,24 @@
 .hoursList > div:first-child { border-top: 0; padding-top: 0; }
 .hoursList > div > input { width: 100%; min-width: 0; min-height: 44px; border: 1px solid var(--line); border-radius: 9px; background: var(--white); padding: 7px 9px; font-size: var(--text-caption); }
 .hoursList > div > span { color: var(--muted); font-size: var(--text-caption); }
+.sharedScheduleEditor,
+.scheduleEditor { display: grid; gap: 16px; }
+.sharedScheduleRow {
+  display: grid;
+  grid-template-columns: minmax(8.5rem, .75fr) repeat(5, minmax(7.25rem, 1fr));
+  align-items: end;
+  gap: 10px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--white);
+  padding: 13px;
+}
+.scheduleDayLabel { align-self: center; }
+.scheduleDayLabel strong { display: block; font-size: var(--text-small); }
+.scheduleDayLabel span { display: block; margin-top: 3px; color: var(--muted); font-size: var(--text-caption); }
+.scheduleSaveRow { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.scheduleSaveRow > span { color: var(--muted); font-size: var(--text-caption); }
 .switchLabel { min-height: 44px; display: flex; align-items: center; gap: 9px; font-size: var(--text-caption); font-weight: 700; }
 .switchLabel input { position: absolute; opacity: 0; pointer-events: none; }
 .switchLabel > span { position: relative; width: 36px; height: 22px; border-radius: 999px; background: #aebdcb; }
@@ -766,6 +892,34 @@
 .switchLabel input:checked + span { background: var(--blue); }
 .switchLabel input:checked + span::after { transform: translateX(14px); }
 .switchLabel input:focus-visible + span { outline: 3px solid var(--citrus); outline-offset: 2px; box-shadow: 0 0 0 7px var(--ink); }
+
+.businessGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; }
+.businessBoundary,
+.billingBoundary {
+  margin-top: 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper-deep);
+  padding: 13px;
+}
+.businessBoundary h3,
+.billingBoundary h3 { margin: 0; font-size: var(--text-small); }
+.businessBoundary p,
+.billingBoundary p { margin: 5px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.paymentMethodList { display: grid; gap: 10px; margin-top: 16px; }
+.paymentMethodCard {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--white);
+  padding: 13px;
+}
+.paymentMethodHeading { display: flex; align-items: center; justify-content: space-between; gap: 12px; grid-column: 1 / -1; }
+.paymentMethodHeading h3 { margin: 0; font-size: var(--text-small); }
+.paymentMethodFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
+.paymentMethodActions { display: flex; flex-direction: column; gap: 8px; align-self: end; }
 
 .accessGrid { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(300px,.72fr); gap: 14px; align-items: start; }
 .teamList { display: grid; }
@@ -878,8 +1032,23 @@
 .dialogSummary span { color: var(--muted); }
 .dialogSummary strong { text-align: right; }
 .dialogActions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+.confirmDialog[aria-busy="true"],
+.dialogBusy { cursor: wait; }
+.confirmDialog[aria-busy="true"] .dialogMark,
+.dialogBusy .dialogMark { animation: dialogBusyPulse 900ms ease-in-out infinite alternate; }
+.confirmDialog[aria-busy="true"] .dialogActions button,
+.confirmDialog[aria-busy="true"] .dialogClose,
+.dialogBusy button { cursor: wait; }
+@keyframes dialogBusyPulse { to { transform: scale(.92); opacity: .62; } }
 .toast { position: fixed; z-index: 100; right: 22px; bottom: 22px; max-width: min(390px,calc(100vw - 40px)); display: flex; align-items: center; gap: 10px; transform: translateY(24px); border: 1px solid rgba(255,255,255,.13); border-radius: 12px; background: var(--ink); color: var(--white); padding: 12px 15px; box-shadow: var(--shadow); opacity: 0; pointer-events: none; font-size: var(--text-caption); transition: opacity 180ms ease, transform 180ms ease; }
-.toast span { display: grid; width: 19px; height: 19px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--citrus); color: var(--ink); font-size: var(--text-micro); font-weight: 800; }
+.toast > span:first-child,
+.toastIcon { display: grid; width: 19px; height: 19px; flex: 0 0 auto; place-items: center; border-radius: 50%; background: var(--citrus); color: var(--ink); font-size: var(--text-micro); font-weight: 800; }
+.toastMessage { min-width: 0; overflow-wrap: anywhere; }
+.toastSuccess { border-color: rgba(130,245,0,.32); background: #123f30; }
+.toastError { border-color: rgba(255,255,255,.2); background: #76261a; }
+.toastWarning { border-color: #d0a43c; background: #fff0c7; color: #4b3500; }
+.toastError .toastIcon { background: var(--white); color: #76261a; }
+.toastWarning .toastIcon { background: #715100; color: var(--white); }
 .toastVisible { transform: translateY(0); opacity: 1; }
 
 /* One compact typography system across the owner workspace. */
@@ -896,7 +1065,7 @@
 .settingsNav button span,
 .courtNumber,
 .capabilityList li span,
-.toast span {
+.toastIcon {
   font-size: var(--text-micro);
   line-height: 1.2;
 }
@@ -1113,6 +1282,28 @@
   .nextBooking { grid-template-columns: 78px 35px minmax(110px,1fr) auto auto; }
   .splitLayout, .accessGrid { grid-template-columns: 1fr; }
   .blockList { grid-template-columns: 1fr 1fr; gap: 0 20px; }
+  .settingsLayout { grid-template-columns: minmax(0, 1fr); }
+  .settingsNav {
+    position: static;
+    display: flex;
+    gap: 6px;
+    max-width: 100%;
+    overflow-x: auto;
+    padding: 2px 2px 7px;
+    scrollbar-width: thin;
+  }
+  .settingsNav button { min-width: max-content; flex: 0 0 auto; }
+  .courtEditorCard {
+    grid-template-columns: 38px repeat(2, minmax(0, 1fr));
+    grid-template-areas:
+      "marker heading heading"
+      "marker name slug"
+      "marker description description"
+      "marker status order"
+      ". actions actions";
+  }
+  .sharedScheduleRow { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow-x: visible; }
+  .scheduleDayLabel { grid-column: 1 / -1; }
 }
 
 @media (max-width: 900px) {
@@ -1132,9 +1323,6 @@
   .topbar { position: static; min-height: 48px; padding: 7px 18px; }
   .previewControlsLabel, .syncText { display: none; }
   .main { padding: 26px 18px 22px; }
-  .settingsNav { position: static; display: flex; overflow-x: auto; }
-  .settingsNav button { min-width: max-content; }
-  .settingsLayout { grid-template-columns: 1fr; }
   .previewControls select,
   .searchField input,
   .selectField select,
@@ -1190,6 +1378,8 @@
   .fieldWide { grid-column: auto; }
   .blockForm .button { width: 100%; }
   .blockList { grid-template-columns: 1fr; }
+  .blockScopeGrid, .businessGrid { grid-template-columns: 1fr; }
+  .blockAccessMeta { align-items: stretch; flex-direction: column; }
   .customerMetrics { grid-template-columns: 1fr 1fr; }
   .customerMetrics > div:last-child { grid-column: 1 / -1; }
   .customerRow { grid-template-columns: 36px 1fr 44px; gap: 10px; border: 1px solid var(--line); border-radius: 12px; margin-top: 9px; padding: 13px; }
@@ -1203,11 +1393,32 @@
   .reportHero select { flex: 1; }
   .reportNotes { grid-template-columns: 1fr; }
   .rateGrid, .ruleList { grid-template-columns: 1fr; }
-  .courtSettingList article { grid-template-columns: 33px 1fr; }
-  .courtSettingList article .field { grid-column: 2; }
+  .courtSettingList article:not(.courtEditorCard) { grid-template-columns: 33px 1fr; }
+  .courtSettingList article:not(.courtEditorCard) .field { grid-column: 2; }
   .courtSettingList .openTag { grid-column: 1; grid-row: 2; align-self: start; }
+  .courtEditorCard {
+    grid-template-columns: 33px minmax(0, 1fr);
+    grid-template-areas:
+      "marker heading"
+      "marker name"
+      "marker slug"
+      "marker description"
+      "marker status"
+      "marker order"
+      ". actions";
+    align-items: start;
+  }
+  .courtCardActions { width: 100%; justify-content: stretch; }
+  .courtCardActions > * { width: 100%; }
   .hoursList > div { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .switchLabel { grid-column: 1 / -1; }
+  .sharedScheduleRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scheduleSaveRow { align-items: stretch; flex-direction: column; }
+  .scheduleSaveRow .button { width: 100%; }
+  .paymentMethodCard { grid-template-columns: 1fr; }
+  .paymentMethodFields { grid-template-columns: 1fr; }
+  .paymentMethodActions { flex-direction: row; }
+  .paymentMethodActions > * { flex: 1; }
   .settingsFooter { align-items: stretch; flex-direction: column; margin: 20px -18px -18px; border-radius: 0 0 15px 15px; padding: 14px 18px; }
   .accessGrid { grid-template-columns: 1fr; }
   .authorityNote { margin: 20px -18px -18px; border-radius: 0 0 15px 15px; padding: 14px 18px; }
@@ -1229,6 +1440,26 @@
   .metricGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metricCard { min-height: 123px; }
   .panelHeading { align-items: flex-start; flex-direction: column; gap: 12px; }
+  .courtEditorCard {
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-areas:
+      "marker heading"
+      "name name"
+      "slug slug"
+      "description description"
+      "status status"
+      "order order"
+      "actions actions";
+    gap: 10px;
+  }
+  .courtMarker { justify-self: start; }
+  .courtCardActions { flex-direction: column; }
+  .newCourtForm { padding: 13px; }
+  .sharedScheduleRow { grid-template-columns: minmax(0, 1fr); }
+  .scheduleDayLabel { grid-column: auto; }
+  .blockItem { grid-template-columns: 43px minmax(0, 1fr); align-items: start; }
+  .blockItem > .button,
+  .blockItem > .removeButton { grid-column: 1 / -1; width: 100%; }
   .nextBooking { grid-template-columns: 55px 32px 1fr; }
   .nextBooking .statusPill { grid-column: 3; }
   .nextBooking .rowAction { grid-column: 1 / -1; grid-row: auto; width: 100%; }
