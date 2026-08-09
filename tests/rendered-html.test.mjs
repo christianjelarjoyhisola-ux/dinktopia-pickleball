@@ -20,6 +20,7 @@ const files = {
     import.meta.url,
   ),
   manageCss: new URL("../app/manage/manage.module.css", import.meta.url),
+  operatingHours: new URL("../app/lib/operating-hours.ts", import.meta.url),
   logo: new URL("../public/dinktopia-logo.png", import.meta.url),
   og: new URL("../public/og.png", import.meta.url),
   packageJson: new URL("../package.json", import.meta.url),
@@ -34,6 +35,201 @@ const files = {
   types: new URL("../app/lib/platform/types.ts", import.meta.url),
   worker: new URL("../worker/index.ts", import.meta.url),
 };
+
+test("models overnight court hours as one clearly labelled operating day", async () => {
+  const operatingHoursUrl = new URL(files.operatingHours);
+  operatingHoursUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
+  const {
+    boundaryOptionsFor,
+    buildTwoBandSchedule,
+    closeOptionsFor,
+    formatClockLabel,
+    logicalBandForHour,
+    logicalBandsForOperatingWindow,
+    logicalBoundaryHour,
+    logicalCloseHour,
+    nextIsoDate,
+    normalizeTwoBandSchedule,
+  } = await import(operatingHoursUrl.href);
+
+  assert.equal(logicalCloseHour("06:00", "02:00"), 26);
+  assert.equal(logicalCloseHour("01:00", "02:00"), 2);
+  assert.equal(logicalCloseHour("06:00", "06:00"), null);
+  assert.equal(logicalBoundaryHour("06:00", "02:00", "01:00"), 25);
+  assert.equal(logicalBoundaryHour("06:00", "02:00", "02:00"), null);
+
+  const closeOptions = closeOptionsFor("06:00");
+  assert.equal(closeOptions.length, 23);
+  assert.deepEqual(
+    closeOptions.filter((option) => ["00:00", "01:00", "02:00"].includes(option.value)),
+    [
+      { value: "00:00", label: "12 AM (next day)", logicalHour: 24, dayOffset: 1 },
+      { value: "01:00", label: "1 AM (next day)", logicalHour: 25, dayOffset: 1 },
+      { value: "02:00", label: "2 AM (next day)", logicalHour: 26, dayOffset: 1 },
+    ],
+  );
+  assert.equal(
+    boundaryOptionsFor("06:00", "02:00").at(-1)?.label,
+    "1 AM (next day)",
+  );
+  assert.equal(formatClockLabel(25), "1 AM (next day)");
+
+  const schedule = buildTwoBandSchedule({
+    opensAt: "06:00",
+    closesAt: "02:00",
+    boundaryAt: "16:00",
+    firstHourlyRate: 300,
+    secondHourlyRate: 400,
+  });
+  assert.deepEqual(schedule, {
+    opensAt: "06:00",
+    closesAt: "02:00",
+    bands: [
+      { start: "06:00", end: "16:00", hourlyRate: 300 },
+      { start: "16:00", end: "02:00", hourlyRate: 400 },
+    ],
+  });
+  assert.equal(logicalBandForHour(schedule, 25)?.hourlyRate, 400);
+
+  const oneBandSchedule = {
+    opensAt: "06:00",
+    closesAt: "02:00",
+    bands: [{ start: "06:00", end: "02:00", hourlyRate: 250 }],
+  };
+  assert.deepEqual(logicalBandsForOperatingWindow(oneBandSchedule), [
+    {
+      start: "06:00",
+      end: "02:00",
+      hourlyRate: 250,
+      logicalStart: 6,
+      logicalEnd: 26,
+    },
+  ]);
+  assert.equal(logicalBandForHour(oneBandSchedule, 6)?.hourlyRate, 250);
+  assert.equal(logicalBandForHour(oneBandSchedule, 25)?.hourlyRate, 250);
+
+  const unorderedTwoBandSchedule = {
+    opensAt: "06:00",
+    closesAt: "22:00",
+    bands: [
+      { start: "16:00", end: "22:00", hourlyRate: 400 },
+      { start: "06:00", end: "16:00", hourlyRate: 300 },
+    ],
+  };
+  assert.deepEqual(
+    logicalBandsForOperatingWindow(unorderedTwoBandSchedule)?.map((band) =>
+      band.hourlyRate
+    ),
+    [300, 400],
+  );
+  assert.equal(logicalBandForHour(unorderedTwoBandSchedule, 7)?.hourlyRate, 300);
+  assert.equal(logicalBandForHour(unorderedTwoBandSchedule, 17)?.hourlyRate, 400);
+
+  const wrappedTwoBandSchedule = {
+    opensAt: "18:00",
+    closesAt: "02:00",
+    bands: [
+      { start: "18:00", end: "23:00", hourlyRate: 350 },
+      { start: "23:00", end: "02:00", hourlyRate: 450 },
+    ],
+  };
+  assert.equal(logicalBandForHour(wrappedTwoBandSchedule, 22)?.hourlyRate, 350);
+  assert.equal(logicalBandForHour(wrappedTwoBandSchedule, 25)?.hourlyRate, 450);
+
+  const gappedSchedule = {
+    opensAt: "06:00",
+    closesAt: "02:00",
+    bands: [
+      { start: "06:00", end: "15:00", hourlyRate: 300 },
+      { start: "16:00", end: "02:00", hourlyRate: 400 },
+    ],
+  };
+  assert.equal(logicalBandsForOperatingWindow(gappedSchedule), null);
+  assert.equal(logicalBandForHour(gappedSchedule, 14), null);
+  assert.deepEqual(
+    normalizeTwoBandSchedule({
+      opensAt: "06:00",
+      closesAt: "00:00",
+      bands: [
+        { start: "06:00", end: "16:00", hourlyRate: 300 },
+        { start: "16:00", end: "24:00", hourlyRate: 400 },
+      ],
+    }),
+    {
+      opensAt: "06:00",
+      closesAt: "00:00",
+      bands: [
+        { start: "06:00", end: "16:00", hourlyRate: 300 },
+        { start: "16:00", end: "00:00", hourlyRate: 400 },
+      ],
+    },
+  );
+  assert.equal(nextIsoDate("2026-08-31"), "2026-09-01");
+  assert.equal(nextIsoDate("2026-12-31"), "2027-01-01");
+});
+
+test("carries overnight court-hours through availability, pricing, and checkout", async () => {
+  const [booking, publicCss] = await Promise.all([
+    readFile(files.booking, "utf8"),
+    readFile(files.publicCss, "utf8"),
+  ]);
+
+  const availabilityStart = booking.indexOf("async getAvailability(request)");
+  const holdStart = booking.indexOf("async createHold(request)", availabilityStart);
+  assert.ok(availabilityStart >= 0 && holdStart > availabilityStart);
+  const availabilitySource = booking.slice(availabilityStart, holdStart);
+  assert.match(availabilitySource, /logicalCloseHour\(court\.opensAt, court\.closesAt\)/);
+  assert.match(availabilitySource, /closeHour !== null && closeHour > 24/);
+  assert.match(availabilitySource, /getPlatformAvailability\(followingDate\)/);
+  assert.match(
+    availabilitySource,
+    /length:\s*Math\.max\(0, closingHour - openingHour\)/,
+  );
+  assert.match(availabilitySource, /const slotDate = hour >= 24 \? followingDate : request\.date/);
+  assert.match(availabilitySource, /timestampPeriodOverlaps\(/);
+  assert.match(availabilitySource, /String\(hour % 24\)\.padStart\(2, "0"\)/);
+  assert.match(booking, /logicalBandForHour\(/);
+
+  const paymentStart = booking.indexOf("async submitPayment(", holdStart);
+  assert.ok(paymentStart > holdStart);
+  const holdSource = booking.slice(holdStart, paymentStart);
+  assert.match(
+    holdSource,
+    /const serializedDate = canonical\.startHour >= 24\s*\? nextIsoDate\(request\.date\)\s*:\s*request\.date/,
+  );
+  assert.match(
+    holdSource,
+    /const serializedStartHour = \(\(canonical\.startHour % 24\) \+ 24\) % 24/,
+  );
+  assert.match(holdSource, /bookingDate:\s*serializedDate/);
+  assert.match(
+    holdSource,
+    /startTime:\s*`\$\{String\(serializedStartHour\)\.padStart\(2, "0"\)\}:00`/,
+  );
+
+  assert.match(booking, /\(record\.startHour \?\? 48\) < 48/);
+  assert.match(booking, /item\.startHour < 48/);
+  assert.match(booking, /className="schedule-next-day-divider"/);
+  assert.match(booking, /<span>NEXT DAY<\/span>/);
+  assert.match(booking, /aria-label=\{`Next day, \$\{longDateLabel\(selectedFollowingDate\)\}`\}/);
+  assert.match(
+    booking,
+    /aria-label=\{`\$\{court\.name\}, \$\{formatHourWithDay\(hour\)\} to \$\{formatHourWithDay\(hour \+ 1\)\}/,
+  );
+
+  const nextDayRule = cssBlock(publicCss, ".schedule-next-day-marker");
+  assert.match(nextDayRule, /display:\s*flex/);
+  assert.match(nextDayRule, /min-height:\s*30px/);
+  assert.match(
+    cssBlock(publicCss, ".schedule-next-day-marker span"),
+    /font-size:\s*var\(--text-caption\)/,
+  );
+  const mobileCss = cssBlock(publicCss, "@media (max-width: 779.98px)");
+  assert.doesNotMatch(
+    mobileCss,
+    /\.schedule-scroll\s*\{[^}]*max-height:\s*(?!none)|\.schedule-scroll\s*\{[^}]*overflow:\s*auto/s,
+  );
+});
 
 const starterMarkers =
   /codex-preview|Your site is taking shape|Building your site|SkeletonPreview|react-loading-skeleton/i;
@@ -316,7 +512,7 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   assert.match(matrixSource, /const isDisabled = isUnavailable/);
   assert.match(
     matrixSource,
-    /aria-label=\{`Availability for \$\{displayCourts\.length\} courts on \$\{selectedDateDetails\?\.long \?\? selectedDate\}`\}/,
+    /aria-label=\{`Availability for \$\{displayCourts\.length\} courts on \$\{selectedBaseDateLabel\}\$\{scheduleHours\.some\(\(hour\) => hour >= 24\) \? " and the next day" : ""\}`\}/,
   );
   assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
   assert.match(matrixSource, /disabled=\{isDisabled\}/);
@@ -1375,21 +1571,20 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     /name:\s*string;[\s\S]*?description:\s*string;[\s\S]*?status:\s*CourtDraft\["status"\];[\s\S]*?opensAt:\s*string;[\s\S]*?peakStartsAt:\s*string;[\s\S]*?closesAt:\s*string;[\s\S]*?dayRate:\s*string;[\s\S]*?peakRate:\s*string;/,
   );
 
-  const hourOptionsStart = manage.indexOf("const wholeHourOptions =");
+  const hourOptionsStart = manage.indexOf("const wholeHourOptions:");
   const hourOptionsEnd = manage.indexOf(
     "function newCourtDraftFor(",
     hourOptionsStart,
   );
   assert.ok(hourOptionsStart >= 0 && hourOptionsEnd > hourOptionsStart);
   const hourOptionsSource = manage.slice(hourOptionsStart, hourOptionsEnd);
-  assert.match(hourOptionsSource, /Array\.from\(\{ length: 24 \}, \(_, hour\) =>/);
+  assert.match(hourOptionsSource, /ClockOption\[\]\s*=\s*Array\.from\(\{ length: 24 \}/);
+  assert.match(hourOptionsSource, /value:\s*clockValueForHour\(hour\)!/);
+  assert.match(hourOptionsSource, /label:\s*formatClockLabel\(hour\)/);
+  assert.match(manage, /closeOptionsFor\(newCourt\.opensAt\)\.map/);
   assert.match(
-    hourOptionsSource,
-    /const value = `\$\{String\(hour\)\.padStart\(2, "0"\)\}:00`/,
-  );
-  assert.match(
-    hourOptionsSource,
-    /label: `\$\{displayHour\} \$\{hour < 12 \? "AM" : "PM"\}`/,
+    manage,
+    /boundaryOptionsFor\(newCourt\.opensAt, newCourt\.closesAt\)\.map/,
   );
 
   const slugStart = manage.indexOf("function generatedCourtSlug(");
@@ -1527,12 +1722,12 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     "name",
     "status",
     "description",
-    "opensAt",
     "peakStartsAt",
-    "closesAt",
     "dayRate",
     "peakRate",
   ]);
+  assert.match(controlsSource, /onChange=\{\(event\) => setNewCourtOpen\(event\.target\.value\)\}/);
+  assert.match(controlsSource, /onChange=\{\(event\) => setNewCourtClose\(event\.target\.value\)\}/);
   assert.match(controlsSource, /<span>Court name<\/span><input\b[^>]*\brequired\b/);
   assert.match(
     controlsSource,
@@ -1545,11 +1740,15 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   );
   assert.match(
     controlsSource,
-    /<span>Peak starts<\/span><select\b[^>]*value=\{newCourt\.peakStartsAt\}[\s\S]*?key=\{`peak-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}<\/option>/,
+    /<span>Peak starts<\/span><select\b[^>]*value=\{newCourt\.peakStartsAt\}[\s\S]*?boundaryOptionsFor\(newCourt\.opensAt, newCourt\.closesAt\)[\s\S]*?key=\{`peak-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}<\/option>/,
   );
   assert.match(
     controlsSource,
-    /<span>Closes<\/span><select\b[^>]*value=\{newCourt\.closesAt\}[\s\S]*?key=\{`close-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}/,
+    /<span>Closes<\/span><select\b[^>]*value=\{newCourt\.closesAt\}[\s\S]*?closeOptionsFor\(newCourt\.opensAt\)[\s\S]*?key=\{`close-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}/,
+  );
+  assert.match(
+    controlsSource,
+    /className=\{styles\.operatingSummary\}[\s\S]*?operatingWindowSummary\(newCourt\.opensAt, newCourt\.closesAt, newCourt\.peakStartsAt\)/,
   );
   assert.match(controlsSource, /<span>Day rate \/ hour<\/span>/);
   assert.match(controlsSource, /<span>Peak rate \/ hour<\/span>/);
@@ -1575,6 +1774,7 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(createSource, /sortOrder:\s*nextCourtSortOrder\(snapshot\)/);
   assert.match(createSource, /minimumHours:\s*NEW_COURT_INTERNAL_DEFAULTS\.minimumHours/);
   assert.match(createSource, /maximumHours:\s*NEW_COURT_INTERNAL_DEFAULTS\.maximumHours/);
+  assert.match(createSource, /bands:\s*courtSchedule\.bands/);
   assert.match(createSource, /minimumLeadMinutes:\s*NEW_COURT_INTERNAL_DEFAULTS\.minimumLeadMinutes/);
   assert.match(createSource, /maximumAdvanceDays:\s*NEW_COURT_INTERNAL_DEFAULTS\.maximumAdvanceDays/);
   assert.match(controlsSource, /onSuccess:\s*cancelNewCourtForm/);
@@ -1596,19 +1796,22 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   const businessStart = manage.indexOf('{section === "business" &&', scheduleStart);
   assert.ok(scheduleStart >= 0 && businessStart > scheduleStart);
   const scheduleSource = manage.slice(scheduleStart, businessStart);
-  assert.equal((scheduleSource.match(/wholeHourOptions\.map/g) ?? []).length, 3);
+  assert.equal((scheduleSource.match(/wholeHourOptions\.map/g) ?? []).length, 1);
+  assert.equal((scheduleSource.match(/closeOptionsFor\(scheduleDraft\.opensAt\)\.map/g) ?? []).length, 1);
+  assert.equal((scheduleSource.match(/boundaryOptionsFor\(scheduleDraft\.opensAt, scheduleDraft\.closesAt\)\.map/g) ?? []).length, 1);
   assert.match(
     scheduleSource,
     /<span>Opens<\/span><select\b[^>]*value=\{scheduleDraft\.opensAt\}[\s\S]*?>\{option\.label\}<\/option>/,
   );
   assert.match(
     scheduleSource,
-    /<span>Rate boundary<\/span><select\b[^>]*value=\{scheduleDraft\.bands\[0\]!\.end\}[\s\S]*?>\{option\.label\}<\/option>/,
+    /<span>Rate boundary<\/span><select\b[^>]*value=\{scheduleDraft\.boundaryAt\}[\s\S]*?>\{option\.label\}<\/option>/,
   );
   assert.match(
     scheduleSource,
     /<span>Closes<\/span><select\b[^>]*value=\{scheduleDraft\.closesAt\}[\s\S]*?>\{option\.label\}/,
   );
+  assert.match(manage, /actionType:\s*"settings:schedule",[\s\S]*?payload:\s*schedulePayload/);
   assert.doesNotMatch(scheduleSource, /type="time"/);
 
   assert.match(cssBlock(manageCss, ".button"), /min-height:\s*44px/);
@@ -1675,8 +1878,25 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     narrowCss,
     /\.newCourtInlineForm\s*\{[^}]*gap:\s*15px[^}]*padding-top:\s*15px/s,
   );
-  assert.match(narrowCss, /\.newCourtTimes\s*\{[^}]*gap:\s*6px/s);
+  assert.match(
+    narrowCss,
+    /\.newCourtTimes\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)[^}]*gap:\s*8px/s,
+  );
+  assert.match(
+    narrowCss,
+    /\.newCourtTimes \.field:nth-child\(3\)\s*\{[^}]*grid-column:\s*1 \/ -1/s,
+  );
   assert.match(narrowCss, /\.newCourtRates\s*\{[^}]*gap:\s*8px/s);
+
+  const phoneCss = cssBlock(manageCss, "@media (max-width: 390px)");
+  assert.match(
+    phoneCss,
+    /\.newCourtTimes\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    phoneCss,
+    /\.newCourtTimes \.field:nth-child\(3\)\s*\{[^}]*grid-column:\s*auto/s,
+  );
 });
 
 test("fails closed when live platform setup or authorization is incomplete", async () => {
@@ -1827,6 +2047,22 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   const restoreEnd = booking.indexOf("void restoreActiveHold()", restoreStart);
   assert.ok(restoreStart >= 0 && restoreEnd > restoreStart);
   const restoreSource = booking.slice(restoreStart, restoreEnd);
+  assert.match(booking, /const bookingOwnsSelectionRef = useRef\(false\);/);
+  const restoredSelectionOwnership = restoreSource.indexOf(
+    "bookingOwnsSelectionRef.current = true",
+  );
+  const restoredSelectionReplacement = restoreSource.indexOf(
+    'dispatchSelection({\n        type: "replace"',
+  );
+  const restoredStatusBranch = restoreSource.indexOf(
+    'if (restored.status === "confirmed" || restored.status === "payment_review")',
+  );
+  assert.ok(
+    restoredSelectionOwnership >= 0 &&
+      restoredSelectionOwnership < restoredSelectionReplacement &&
+      restoredSelectionReplacement < restoredStatusBranch,
+    "expected every verified restored booking to own its selection before pending/confirmed status branches",
+  );
   assert.match(
     restoreSource,
     /if \(restored\.status === "confirmed" \|\| restored\.status === "payment_review"\)[\s\S]*?setPendingBooking\(null\);[\s\S]*?setConfirmedBooking\(restored\);[\s\S]*?setStep\(4\);/,
@@ -1834,6 +2070,16 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   assert.match(
     restoreSource,
     /setConfirmedBooking\(null\);[\s\S]*?setPendingBooking\(restored\);[\s\S]*?setStep\(3\);/,
+  );
+  assert.match(
+    booking,
+    /if \(!bookingOwnsSelectionRef\.current\)\s*\{\s*dispatchSelection\(\{ type: "retain-open", openKeys \}\);\s*\}/,
+  );
+  assert.equal(
+    (booking.match(/dispatchSelection\(\{ type: "retain-open", openKeys \}\)/g) ?? [])
+      .length,
+    1,
+    "expected the sole availability-pruning dispatch to remain behind the booking ownership guard",
   );
 
   assert.match(

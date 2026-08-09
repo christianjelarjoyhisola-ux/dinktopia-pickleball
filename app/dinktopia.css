@@ -1649,6 +1649,38 @@
 .schedule-matrix tbody th strong { font-size: var(--text-caption); }
 .schedule-matrix tbody th span { color: var(--muted); font-size: var(--text-caption); }
 
+.schedule-next-day-divider td {
+  padding: 5px 2px 3px;
+}
+
+.schedule-next-day-marker {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid rgba(37, 76, 132, 0.2);
+  border-radius: 9px;
+  background: #eef4ff;
+  color: var(--blue);
+  line-height: 1.1;
+}
+
+.schedule-next-day-marker span {
+  border-radius: 999px;
+  background: var(--blue);
+  padding: 4px 7px 3px;
+  color: var(--white);
+  font-size: var(--text-caption);
+  font-weight: 800;
+  letter-spacing: 0.09em;
+}
+
+.schedule-next-day-marker strong {
+  font-size: var(--text-caption);
+  font-weight: 800;
+}
+
 .schedule-cell {
   position: relative;
   display: grid;
@@ -3793,6 +3825,13 @@
 
   .date-rail { gap: 6px; padding-bottom: 5px; }
   .date-option { min-width: 58px; min-height: 64px; padding-block: 7px; }
+
+  .schedule-next-day-marker {
+    position: sticky;
+    left: 4px;
+    width: min(360px, calc(100vw - 52px));
+    margin-right: auto;
+  }
 
   .compact-step .booking-summary {
     display: grid;

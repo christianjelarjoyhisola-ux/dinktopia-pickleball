@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  Fragment,
   FormEvent,
   useEffect,
   useId,
@@ -12,6 +13,13 @@ import {
 } from "react";
 import { TransitionLink as Link } from "./transition-link";
 import { activeTenant } from "./tenants/registry";
+import {
+  formatClockLabel,
+  logicalBandForHour,
+  logicalCloseHour,
+  nextIsoDate,
+  parseClockHour,
+} from "./lib/operating-hours";
 import {
   bookingStatus,
   cancelUnpaidBooking,
@@ -240,9 +248,57 @@ const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
 
 function formatHour(hour: number) {
-  const period = hour >= 12 ? "PM" : "AM";
-  const value = hour % 12 || 12;
+  const normalizedHour = ((hour % 24) + 24) % 24;
+  const period = normalizedHour >= 12 ? "PM" : "AM";
+  const value = normalizedHour % 12 || 12;
   return `${value}:00 ${period}`;
+}
+
+function formatHourWithDay(hour: number) {
+  return hour >= 24 ? `${formatHour(hour)} (next day)` : formatHour(hour);
+}
+
+function formatHourRange(startHour: number, endHour: number) {
+  return `${formatHour(startHour)}–${formatHour(endHour)}${
+    endHour >= 24 ? " (next day)" : ""
+  }`;
+}
+
+function selectionIncludesNextDay(
+  items: Array<{ startHour: number; durationHours: number }>,
+) {
+  return items.some((item) => item.startHour + item.durationHours >= 24);
+}
+
+function longDateLabel(date: string) {
+  return new Intl.DateTimeFormat("en-PH", {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
+
+function shortDateLabel(date: string) {
+  return new Intl.DateTimeFormat("en-PH", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  }).format(new Date(`${date}T12:00:00Z`));
+}
+
+function bookingDateLabel(
+  dateLabel: string,
+  date: string,
+  items: Array<{ startHour: number; durationHours: number }>,
+) {
+  if (!selectionIncludesNextDay(items)) return dateLabel;
+  const followingDate = nextIsoDate(date);
+  return followingDate
+    ? `${dateLabel} into ${longDateLabel(followingDate)} (next day)`
+    : `${dateLabel} into the next day`;
 }
 
 function selectionKey(courtId: string, startHour: number) {
@@ -410,11 +466,12 @@ function groupSelectionDetails(items: SelectionDetail[]) {
 
 function getPrice(startHour: number, durationHours: number) {
   return Array.from({ length: durationHours }, (_, index) => startHour + index)
-    .map((hour) =>
-      hour >= Number(activeTenant.booking.offPeakEndsAt.slice(0, 2))
+    .map((hour) => {
+      const clockHour = ((hour % 24) + 24) % 24;
+      return clockHour >= Number(activeTenant.booking.offPeakEndsAt.slice(0, 2))
         ? activeTenant.booking.peakHourlyRate
-        : activeTenant.booking.offPeakHourlyRate,
-    )
+        : activeTenant.booking.offPeakHourlyRate;
+    })
     .reduce((total, price) => total + price, 0);
 }
 
@@ -434,13 +491,35 @@ function getConfiguredPrice(
     return getPrice(startHour, durationHours);
   }
 
+  if (!court) {
+    throw new Error("Court pricing is not available yet.");
+  }
+  const configuredBands = bands.map((band) => {
+    if (
+      typeof band.start !== "string" ||
+      typeof band.end !== "string" ||
+      typeof band.hourlyRate !== "number" ||
+      !Number.isFinite(band.hourlyRate)
+    ) {
+      throw new Error("Court pricing is incomplete for this time.");
+    }
+    return {
+      start: band.start,
+      end: band.end,
+      hourlyRate: band.hourlyRate,
+    };
+  });
+
   return Array.from({ length: durationHours }, (_, index) => startHour + index).reduce(
     (total, hour) => {
-      const band = bands.find((candidate) => {
-        const start = Number(candidate.start?.slice(0, 2));
-        const end = Number(candidate.end?.slice(0, 2));
-        return Number.isFinite(start) && Number.isFinite(end) && hour >= start && hour < end;
-      });
+      const band = logicalBandForHour(
+        {
+          opensAt: court.opensAt,
+          closesAt: court.closesAt,
+          bands: configuredBands,
+        },
+        hour,
+      );
       if (typeof band?.hourlyRate !== "number") {
         throw new Error("Court pricing is incomplete for this time.");
       }
@@ -470,6 +549,9 @@ function blockedPeriodOverlaps(
   courtId: string,
   startHour: number,
   durationHours: number,
+  baseDate: string,
+  responseDate: string,
+  timezone: string,
 ) {
   return (blockedDates ?? []).some((block) => {
     const blockCourtId = block.courtId ?? block.court_id;
@@ -477,17 +559,122 @@ function blockedPeriodOverlaps(
     if (!appliesToCourt) return false;
     const startsAt = block.startsAt ?? block.starts_at;
     const endsAt = block.endsAt ?? block.ends_at;
-    if (startsAt == null && endsAt == null) return true;
-    if (typeof startsAt !== "string" || typeof endsAt !== "string") return true;
-    const blockedStart = hourFromTimestamp(startsAt);
-    const blockedEnd = hourFromTimestamp(endsAt);
-    return startHour < blockedEnd && startHour + durationHours > blockedStart;
+    const slotDate = startHour >= 24 ? nextIsoDate(baseDate) : baseDate;
+    if (startsAt == null && endsAt == null) return slotDate === responseDate;
+    if (typeof startsAt !== "string" || typeof endsAt !== "string") {
+      return slotDate === responseDate;
+    }
+    return timestampPeriodOverlaps(
+      startsAt,
+      endsAt,
+      startHour,
+      durationHours,
+      baseDate,
+      responseDate,
+      timezone,
+    );
   });
 }
 
-function hourFromTimestamp(value: string) {
-  const timePart = value.includes("T") ? (value.split("T")[1] ?? "00:00") : value;
-  return Number(timePart.slice(0, 2));
+function isoDayDifference(baseDate: string, date: string) {
+  const base = Date.parse(`${baseDate}T00:00:00Z`);
+  const target = Date.parse(`${date}T00:00:00Z`);
+  if (!Number.isFinite(base) || !Number.isFinite(target)) return null;
+  return Math.round((target - base) / 86_400_000);
+}
+
+function timestampMinuteFromBase(
+  value: string,
+  baseDate: string,
+  fallbackDate: string,
+  timezone: string,
+) {
+  let date = fallbackDate;
+  let hour: number | null = null;
+  let minute: number | null = null;
+  const hasExplicitOffset = /(?:z|[+-]\d{2}:?\d{2})$/i.test(value);
+  const timestamp = hasExplicitOffset ? new Date(value) : null;
+
+  if (timestamp && Number.isFinite(timestamp.getTime())) {
+    try {
+      const parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: timezone,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hourCycle: "h23",
+      }).formatToParts(timestamp);
+      const part = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((candidate) => candidate.type === type)?.value;
+      const year = part("year");
+      const month = part("month");
+      const day = part("day");
+      if (year && month && day) date = `${year}-${month}-${day}`;
+      hour = Number(part("hour"));
+      minute = Number(part("minute"));
+    } catch {
+      // Fall through to the literal wall-clock representation below.
+    }
+  }
+
+  if (!Number.isInteger(hour) || !Number.isInteger(minute)) {
+    const match = value.match(
+      /^(?:(\d{4}-\d{2}-\d{2})[T\s])?(\d{2}):(\d{2})/,
+    );
+    if (!match) return null;
+    date = match[1] ?? fallbackDate;
+    hour = Number(match[2]);
+    minute = Number(match[3]);
+  }
+
+  const dayDifference = isoDayDifference(baseDate, date);
+  if (
+    dayDifference === null ||
+    hour === null ||
+    minute === null ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    hour > 23 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return null;
+  }
+  return dayDifference * 24 * 60 + hour * 60 + minute;
+}
+
+function timestampPeriodOverlaps(
+  startsAt: string,
+  endsAt: string,
+  startHour: number,
+  durationHours: number,
+  baseDate: string,
+  fallbackDate: string,
+  timezone: string,
+) {
+  const periodStart = timestampMinuteFromBase(
+    startsAt,
+    baseDate,
+    fallbackDate,
+    timezone,
+  );
+  let periodEnd = timestampMinuteFromBase(
+    endsAt,
+    baseDate,
+    fallbackDate,
+    timezone,
+  );
+  if (periodStart === null || periodEnd === null) {
+    const slotDate = startHour >= 24 ? nextIsoDate(baseDate) : baseDate;
+    return slotDate === fallbackDate;
+  }
+  if (periodEnd <= periodStart) periodEnd += 24 * 60;
+  const slotStart = startHour * 60;
+  const slotEnd = (startHour + durationHours) * 60;
+  return slotStart < periodEnd && slotEnd > periodStart;
 }
 
 function mappedBookingStatus(
@@ -514,12 +701,12 @@ function isStoredBookingRecord(value: unknown): value is BookingRecord {
     typeof record.date === "string" &&
     /^\d{4}-\d{2}-\d{2}$/.test(record.date) &&
     typeof record.courtId === "string" &&
-    Number.isFinite(record.startHour) &&
+    Number.isInteger(record.startHour) &&
     (record.startHour ?? -1) >= 0 &&
-    (record.startHour ?? 24) < 24 &&
-    Number.isFinite(record.durationHours) &&
+    (record.startHour ?? 48) < 48 &&
+    Number.isInteger(record.durationHours) &&
     (record.durationHours ?? 0) > 0 &&
-    (record.startHour ?? 24) + (record.durationHours ?? 24) <= 24 &&
+    (record.startHour ?? 48) + (record.durationHours ?? 48) <= 48 &&
     Number.isFinite(record.amount) &&
     (record.amount ?? -1) >= 0 &&
     (record.subtotalAmount === undefined ||
@@ -532,9 +719,9 @@ function isStoredBookingRecord(value: unknown): value is BookingRecord {
         record.items.every(
           (item) =>
             typeof item.courtId === "string" &&
-            Number.isFinite(item.startHour) &&
+            Number.isInteger(item.startHour) &&
             item.startHour >= 0 &&
-            item.startHour < 24 &&
+            item.startHour < 48 &&
             item.durationHours === 1 &&
             Number.isFinite(item.amount) &&
             item.amount >= 0,
@@ -583,13 +770,31 @@ const platformAdapter: BookingAdapter = {
       getPlatformAvailability(request.date),
       getTenantBootstrap(),
     ]);
+    const followingDate = nextIsoDate(request.date);
+    const hasAfterMidnightSlots = tenantBootstrap.courts.some((court) => {
+      const closeHour = logicalCloseHour(court.opensAt, court.closesAt);
+      return closeHour !== null && closeHour > 24;
+    });
+    const nextResponse = hasAfterMidnightSlots && followingDate
+      ? await getPlatformAvailability(followingDate)
+      : null;
+    const availabilityDays = [
+      { date: request.date, response },
+      ...(followingDate && nextResponse
+        ? [{ date: followingDate, response: nextResponse }]
+        : []),
+    ];
+
     return tenantBootstrap.courts.map((publicCourt) => {
       const availabilityCourt = response.courts.find((item) => item.id === publicCourt.id);
       if (!availabilityCourt) {
         throw new Error("The court schedule is incomplete. Refresh before selecting a time.");
       }
-      const openingHour = Number(publicCourt.opensAt.slice(0, 2));
-      const closingHour = Number(publicCourt.closesAt.slice(0, 2));
+      const openingHour = parseClockHour(publicCourt.opensAt);
+      const closingHour = logicalCloseHour(publicCourt.opensAt, publicCourt.closesAt);
+      if (openingHour === null || closingHour === null) {
+        throw new Error("The court hours are incomplete. Refresh before selecting a time.");
+      }
       const publicConfig = publicCourt.publicConfig as
         | { minimumLeadMinutes?: number }
         | undefined;
@@ -599,26 +804,54 @@ const platformAdapter: BookingAdapter = {
         { length: Math.max(0, closingHour - openingHour) },
         (_, index) => index + openingHour,
       ).map((hour): AvailabilitySlot => {
-        const overlapsBooking = availabilityCourt.unavailable.some((blocked) => {
-          const blockedStart = hourFromTimestamp(blocked.startsAt);
-          const blockedEnd = hourFromTimestamp(blocked.endsAt);
-          return hour < blockedEnd && hour + 1 > blockedStart;
+        const slotDate = hour >= 24 ? followingDate : request.date;
+        if (!slotDate) {
+          throw new Error("The next-day schedule could not be calculated. Refresh and try again.");
+        }
+        const overlapsBooking = availabilityDays.some((day) => {
+          const dayCourt = day.response.courts.find(
+            (candidate) => candidate.id === publicCourt.id,
+          );
+          if (!dayCourt) {
+            if (day.date === slotDate) {
+              throw new Error(
+                "The court schedule is incomplete. Refresh before selecting a time.",
+              );
+            }
+            return false;
+          }
+          return dayCourt.unavailable.some((blocked) =>
+            timestampPeriodOverlaps(
+              blocked.startsAt,
+              blocked.endsAt,
+              hour,
+              1,
+              request.date,
+              day.date,
+              day.response.timezone || activeTenant.identity.timezone,
+            ),
+          );
         });
-        const overlapsBlock = blockedPeriodOverlaps(
-          response.blockedDates,
-          publicCourt.id,
-          hour,
-          1,
+        const overlapsBlock = availabilityDays.some((day) =>
+          blockedPeriodOverlaps(
+            day.response.blockedDates,
+            publicCourt.id,
+            hour,
+            1,
+            request.date,
+            day.date,
+            day.response.timezone || activeTenant.identity.timezone,
+          ),
         );
         const candidateStartsAt = new Date(
-          `${request.date}T${String(hour).padStart(2, "0")}:00:00+08:00`,
+          `${slotDate}T${String(hour % 24).padStart(2, "0")}:00:00+08:00`,
         ).getTime();
         const tooSoon =
           candidateStartsAt < Date.now() + minimumLeadMinutes * 60 * 1000;
         return {
           hour,
-          startsAt: formatHour(hour),
-          endsAt: formatHour(hour + 1),
+          startsAt: formatClockLabel(hour),
+          endsAt: formatClockLabel(hour + 1),
           price: getConfiguredPrice(publicCourt, hour, 1),
           status: tooSoon || overlapsBlock || overlapsBooking ? "unavailable" : "available",
         };
@@ -641,6 +874,13 @@ const platformAdapter: BookingAdapter = {
       startHour: request.startHour,
       durationHours: request.durationHours,
     };
+    const serializedDate = canonical.startHour >= 24
+      ? nextIsoDate(request.date)
+      : request.date;
+    const serializedStartHour = ((canonical.startHour % 24) + 24) % 24;
+    if (!serializedDate || !Number.isInteger(serializedStartHour)) {
+      throw new Error("The selected start time could not be prepared for checkout.");
+    }
     const pendingKey = `dinktopia:pending:${request.clientRequestId}`;
     const probeKey = `dinktopia:storage-probe:${request.clientRequestId}`;
     try {
@@ -656,8 +896,8 @@ const platformAdapter: BookingAdapter = {
     // cached browser response after an ambiguous network failure.
     const confirmation: BookingConfirmation = await createPlatformBooking({
       courtId: canonical.courtId,
-      bookingDate: request.date,
-      startTime: `${String(canonical.startHour).padStart(2, "0")}:00`,
+      bookingDate: serializedDate,
+      startTime: `${String(serializedStartHour).padStart(2, "0")}:00`,
       durationHours: canonical.durationHours,
       bookingType: "regular",
       customer: {
@@ -1028,6 +1268,7 @@ export function BookingExperience({
   const turnstileWidgetRef = useRef<string | null>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const bookingAttemptIdRef = useRef("");
+  const bookingOwnsSelectionRef = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -1121,6 +1362,14 @@ export function BookingExperience({
     [selectedSlotDetails],
   );
   const selectedDateDetails = dates.find((date) => date.iso === selectedDate);
+  const selectedBaseDateLabel = selectedDateDetails?.long ?? selectedDate;
+  const selectedFollowingDate = nextIsoDate(selectedDate);
+  const selectedNextDayDateSuffix = selectionIncludesNextDay(selectedSlots)
+    ? selectedFollowingDate
+      ? ` into ${longDateLabel(selectedFollowingDate)} (next day)`
+      : " into the next day"
+    : "";
+  const selectedBookingDateLabel = `${selectedBaseDateLabel}${selectedNextDayDateSuffix}`;
   const availableCount = schedule.reduce(
     (count, court) => count + court.slots.filter((slot) => slot.status !== "unavailable").length,
     0,
@@ -1357,6 +1606,7 @@ export function BookingExperience({
       }
 
       bookingAttemptIdRef.current = pointer.clientRequestId;
+      bookingOwnsSelectionRef.current = true;
       setSelectedDate(restored.date);
       setSelectedCourtId(restored.courtId);
       dispatchSelection({
@@ -1499,7 +1749,9 @@ export function BookingExperience({
               .map((slot) => selectionKey(court.courtId, slot.hour)),
           ),
         );
-        dispatchSelection({ type: "retain-open", openKeys });
+        if (!bookingOwnsSelectionRef.current) {
+          dispatchSelection({ type: "retain-open", openKeys });
+        }
         setAvailabilityState("ready");
       })
       .catch(() => {
@@ -1677,6 +1929,7 @@ export function BookingExperience({
         turnstileToken: turnstileTokenValue || undefined,
         clientRequestId,
       });
+      bookingOwnsSelectionRef.current = true;
       setPendingBooking(booking);
       setHoldNow(Date.now());
       setStep(3);
@@ -1787,6 +2040,7 @@ export function BookingExperience({
     } catch {
       // The UI can still recover when browser storage is unavailable.
     }
+    bookingOwnsSelectionRef.current = false;
     setPendingBooking(null);
     setConfirmedBooking(null);
     dispatchSelection({ type: "clear", announcement: message });
@@ -1846,6 +2100,7 @@ export function BookingExperience({
   }
 
   function resetBooking() {
+    bookingOwnsSelectionRef.current = false;
     setStep(1);
     dispatchSelection({ type: "clear", announcement: "Ready for another booking." });
     setPaymentReference("");
@@ -2345,7 +2600,7 @@ export function BookingExperience({
                         )}
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedDateDetails?.long ?? selectedDate}`} tabIndex={0}>
+                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
                             <table className="schedule-matrix">
                               <thead>
                                 <tr>
@@ -2360,7 +2615,22 @@ export function BookingExperience({
                               </thead>
                               <tbody>
                                 {scheduleHours.map((hour) => (
-                                  <tr key={hour}>
+                                  <Fragment key={hour}>
+                                  {hour === 24 && selectedFollowingDate && (
+                                    <tr className="schedule-next-day-divider">
+                                      <td colSpan={displayCourts.length + 1}>
+                                        <div
+                                          className="schedule-next-day-marker"
+                                          role="separator"
+                                          aria-label={`Next day, ${longDateLabel(selectedFollowingDate)}`}
+                                        >
+                                          <span>NEXT DAY</span>
+                                          <strong>{shortDateLabel(selectedFollowingDate)}</strong>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                  <tr>
                                     <th scope="row"><strong>{formatHour(hour).replace(":00", "")}</strong><span>–{formatHour(hour + 1).replace(":00", "")}</span></th>
                                     {displayCourts.map((court) => {
                                       const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
@@ -2384,7 +2654,7 @@ export function BookingExperience({
                                             className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={isDisabled}
-                                            aria-label={`${court.name}, ${formatHour(hour)} to ${formatHour(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
                                             onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
                                           >
                                             <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
@@ -2395,6 +2665,7 @@ export function BookingExperience({
                                       );
                                     })}
                                   </tr>
+                                  </Fragment>
                                 ))}
                               </tbody>
                             </table>
@@ -2418,7 +2689,7 @@ export function BookingExperience({
                     </div>
                     <BookingSummary
                       selections={selectedSlotDetails}
-                      dateLabel={selectedDateDetails?.long ?? selectedDate}
+                      dateLabel={selectedBookingDateLabel}
                       subtotal={courtSubtotal}
                       bookingFee={bookingFee ?? 0}
                       total={total}
@@ -2431,7 +2702,7 @@ export function BookingExperience({
 
                 {step === 2 && (
                   <div className="booking-layout compact-step booking-details-step">
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
+                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                     <form className="booking-main-card booking-details-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
                       <div className="booking-card-heading">
                         <span className="step-chip">STEP 02</span>
@@ -2548,7 +2819,7 @@ export function BookingExperience({
                         </div>
                       </div>
                       <div className="checkout-snapshot" aria-label="Checkout booking summary">
-                        <span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</strong><small>{selectedDateDetails?.long}</small></span>
+                        <span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</strong><small>{selectedDateDetails?.long}{!selectedDateDetails ? selectedDate : ""}{selectedNextDayDateSuffix}</small></span>
                         <b>{peso(checkoutTotal)}</b>
                       </div>
                       {pendingBooking && (
@@ -2646,7 +2917,7 @@ export function BookingExperience({
                         </button>}
                       </div>
                     </form>
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedDateDetails?.long ?? selectedDate} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
+                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
                   </div>
                 )}
 
@@ -2659,7 +2930,7 @@ export function BookingExperience({
                     <div className="confirmation-reference"><span>BOOKING REFERENCE</span><strong>{confirmedBooking.reference}</strong><button type="button" onClick={() => navigator.clipboard?.writeText(confirmedBooking.reference)}>Copy</button></div>
                     <div className="confirmation-details">
                       <div><span>Courts</span><strong>{selectedCourtCount}</strong></div>
-                      <div><span>Date</span><strong>{selectedDateDetails?.long ?? confirmedBooking.date}</strong></div>
+                      <div><span>Date</span><strong>{selectedBookingDateLabel || confirmedBooking.date}</strong></div>
                       <div><span>Play</span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"}</strong></div>
                       <div><span>Total</span><strong>{peso(confirmedBooking.amount)}</strong></div>
                     </div>
@@ -2668,7 +2939,7 @@ export function BookingExperience({
                         {groupedSelections.map((group) => (
                           <li key={`${group.court.id}:${group.startHour}`}>
                             <strong>{group.court.name}</strong>
-                            <span>{formatHour(group.startHour)}–{formatHour(group.endHour)} · {group.courtHours} hour{group.courtHours === 1 ? "" : "s"}</span>
+                            <span>{formatHourRange(group.startHour, group.endHour)} · {group.courtHours} hour{group.courtHours === 1 ? "" : "s"}</span>
                           </li>
                         ))}
                       </ul>
@@ -2776,7 +3047,7 @@ function BookingSummary({
         <ul className="summary-sessions" aria-label="Selected sessions">
           {groups.map((group) => (
             <li key={`${group.court.id}:${group.startHour}`}>
-              <span><strong>{group.court.name}</strong><small>{formatHour(group.startHour)}–{formatHour(group.endHour)} · {group.courtHours} court-hour{group.courtHours === 1 ? "" : "s"}</small></span>
+              <span><strong>{group.court.name}</strong><small>{formatHourRange(group.startHour, group.endHour)} · {group.courtHours} court-hour{group.courtHours === 1 ? "" : "s"}</small></span>
               <b>{peso(group.subtotal)}</b>
             </li>
           ))}
@@ -2848,6 +3119,9 @@ function ManageBooking({
         timeZone: "UTC",
       }).format(new Date(`${booking.date}T12:00:00Z`))
     : "";
+  const formattedBookingDate = booking
+    ? bookingDateLabel(formattedDate, booking.date, [booking])
+    : "";
 
   return (
     <div className="manage-shell">
@@ -2885,8 +3159,8 @@ function ManageBooking({
             {cancelState === "success" && <div className="notice-banner notice-success" role="status"><div><strong>{isPreview ? "Preview dismissed" : "Booking cancelled"}</strong><span>{isPreview ? "No real court or payment was affected." : "The unpaid hold has been released."}</span></div></div>}
             <dl className="managed-details">
               <div><dt>Court</dt><dd>{court.name}</dd></div>
-              <div><dt>Date</dt><dd>{formattedDate}</dd></div>
-              <div><dt>Time</dt><dd>{formatHour(booking.startHour)}–{formatHour(booking.startHour + booking.durationHours)}</dd></div>
+              <div><dt>Date</dt><dd>{formattedBookingDate}</dd></div>
+              <div><dt>Time</dt><dd>{formatHourRange(booking.startHour, booking.startHour + booking.durationHours)}</dd></div>
               <div><dt>Total</dt><dd>{peso(booking.amount)}</dd></div>
             </dl>
             {booking.status === "pending_payment" && <div className="payment-due-note"><span aria-hidden="true">◷</span><div><strong>{isPreview ? "Preview only" : "Payment has not been submitted"}</strong><p>{isPreview ? "No real reservation or payment exists. This simulated hold can be dismissed online." : "This unpaid hold can be cancelled online until its server-controlled expiry."}</p></div></div>}

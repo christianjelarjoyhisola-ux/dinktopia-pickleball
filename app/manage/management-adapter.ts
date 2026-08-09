@@ -1,4 +1,5 @@
 import { activeTenant } from "../tenants/registry";
+import { normalizeTwoBandSchedule } from "../lib/operating-hours";
 import {
   activateTenantInitially,
   applySharedCourtSchedule,
@@ -785,7 +786,6 @@ const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const CLOCK_PATTERN = /^(?:[01]\d|2[0-3]):[0-5]\d$/;
 const WHOLE_HOUR_PATTERN = /^(?:[01]\d|2[0-3]):00$/;
-const BAND_END_PATTERN = /^(?:(?:[01]\d|2[0-3]):00|24:00)$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SHARED_SUPABASE_ORIGIN = "https://neqvrwtofiolcuxewdze.supabase.co";
 const PUBLIC_PAYMENT_ASSET_PREFIX =
@@ -1009,24 +1009,15 @@ function exactInteger(row: JsonObject, keys: string[]): number | null {
   return result !== null && Number.isSafeInteger(result) ? result : null;
 }
 
-function priceBands(candidate: unknown): SharedPriceBand[] | null {
-  if (!Array.isArray(candidate) || candidate.length < 1 || candidate.length > 24) {
-    return null;
-  }
+function returnedTwoPriceBands(candidate: unknown): SharedPriceBand[] | null {
+  if (!Array.isArray(candidate) || candidate.length !== 2) return null;
   const bands: SharedPriceBand[] = [];
-  for (const entry of candidate) {
-    const band = record(entry);
+  for (const candidateBand of candidate) {
+    const band = record(candidateBand);
     const start = band ? value(band, ["start"]) : "";
     const end = band ? value(band, ["end"]) : "";
     const hourlyRate = band ? numberValue(band, ["hourlyRate"]) : null;
-    if (
-      !WHOLE_HOUR_PATTERN.test(start) || !BAND_END_PATTERN.test(end) ||
-      end <= start ||
-      hourlyRate === null || hourlyRate <= 0 || hourlyRate > 9_999_999_999.99 ||
-      Math.abs(hourlyRate * 100 - Math.round(hourlyRate * 100)) > 1e-7
-    ) {
-      return null;
-    }
+    if (!band || !start || !end || hourlyRate === null) return null;
     bands.push({ start, end, hourlyRate });
   }
   return bands;
@@ -1037,9 +1028,12 @@ function scheduleForCourt(row: JsonObject) {
   const closesAt = normalizedClock(value(row, ["closes_at", "closesAt"]));
   const pricing = record(row.pricing_config ?? row.pricingConfig);
   const regular = record(pricing?.regular);
-  const bands = priceBands(regular?.bands);
-  if (!opensAt || !closesAt || !bands) return null;
-  return { opensAt, closesAt, bands };
+  if (!opensAt || !closesAt) return null;
+  return normalizeTwoBandSchedule({
+    opensAt,
+    closesAt,
+    bands: returnedTwoPriceBands(regular?.bands),
+  });
 }
 
 function mapLiveCourt(row: JsonObject): Court {
@@ -1215,7 +1209,15 @@ function courtMutationPatch(candidate: unknown, creating: boolean): JsonObject {
   if ("currency" in patch && patch.currency !== activeTenant.identity.currency) {
     throw new Error("COURT_CURRENCY_INVALID");
   }
-  if ("pricingConfig" in patch) validateCourtPricing(patch);
+  if ("pricingConfig" in patch) {
+    const schedule = validateCourtPricing(patch);
+    const pricing = record(patch.pricingConfig)!;
+    const regular = record(pricing.regular)!;
+    patch.pricingConfig = {
+      ...pricing,
+      regular: { ...regular, bands: schedule.bands },
+    };
+  }
   if ("publicConfig" in patch) validateCourtPublicConfig(patch.publicConfig);
   return Object.fromEntries(Object.entries(patch).map(([key, entry]) => [
     key,
@@ -1223,25 +1225,27 @@ function courtMutationPatch(candidate: unknown, creating: boolean): JsonObject {
   ]));
 }
 
-function validateCourtPricing(patch: JsonObject): void {
+function validateCourtPricing(patch: JsonObject) {
   const pricing = record(patch.pricingConfig);
   const regular = record(pricing?.regular);
-  const bands = priceBands(regular?.bands);
   const minimumHours = regular ? numberValue(regular, ["minimumHours"]) : null;
   const maximumHours = regular ? numberValue(regular, ["maximumHours"]) : null;
   const opensAt = typeof patch.opensAt === "string" ? patch.opensAt : "";
   const closesAt = typeof patch.closesAt === "string" ? patch.closesAt : "";
-  const expectedEnd = closesAt === "00:00" ? "24:00" : closesAt;
+  const schedule = normalizeTwoBandSchedule({
+    opensAt,
+    closesAt,
+    bands: returnedTwoPriceBands(regular?.bands),
+  });
   if (
-    !pricing || !regular || !bands || minimumHours === null || maximumHours === null ||
+    !pricing || !regular || !schedule || minimumHours === null || maximumHours === null ||
     !Number.isInteger(minimumHours) || !Number.isInteger(maximumHours) ||
     minimumHours <= 0 || maximumHours < minimumHours ||
-    !WHOLE_HOUR_PATTERN.test(opensAt) || !WHOLE_HOUR_PATTERN.test(closesAt) ||
-    bands[0]?.start !== opensAt || bands.at(-1)?.end !== expectedEnd ||
-    bands.some((band, index) => index > 0 && bands[index - 1]?.end !== band.start)
+    !WHOLE_HOUR_PATTERN.test(opensAt) || !WHOLE_HOUR_PATTERN.test(closesAt)
   ) {
     throw new Error("COURT_PRICING_CONFIGURATION_INVALID");
   }
+  return schedule;
 }
 
 function validateCourtPublicConfig(candidate: unknown): void {
@@ -1267,16 +1271,15 @@ function sharedSchedulePayload(candidate: unknown) {
   assertAllowedKeys(payload, SHARED_SCHEDULE_KEYS, "SHARED_COURT_SCHEDULE_INVALID");
   const opensAt = typeof payload.opensAt === "string" ? payload.opensAt.trim() : "";
   const closesAt = typeof payload.closesAt === "string" ? payload.closesAt.trim() : "";
-  const bands = priceBands(payload.bands);
-  const expectedEnd = closesAt === "00:00" ? "24:00" : closesAt;
-  if (
-    !WHOLE_HOUR_PATTERN.test(opensAt) || !WHOLE_HOUR_PATTERN.test(closesAt) ||
-    !bands || bands[0]?.start !== opensAt || bands.at(-1)?.end !== expectedEnd ||
-    bands.some((band, index) => index > 0 && bands[index - 1]?.end !== band.start)
-  ) {
+  const schedule = normalizeTwoBandSchedule({
+    opensAt,
+    closesAt,
+    bands: returnedTwoPriceBands(payload.bands),
+  });
+  if (!schedule) {
     throw new Error("SHARED_COURT_SCHEDULE_INVALID");
   }
-  return { opensAt, closesAt, bands };
+  return schedule;
 }
 
 const BLOCK_PAYLOAD_KEYS = new Set([

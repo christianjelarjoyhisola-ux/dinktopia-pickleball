@@ -30,6 +30,20 @@ import {
   signInOwner,
   signOutOwner,
 } from "../lib/platform/client";
+import {
+  boundaryOptionsFor,
+  buildTwoBandSchedule,
+  clockValueForHour,
+  closeOptionsFor,
+  formatClockLabel,
+  isWholeHourClock,
+  logicalBoundaryHour,
+  logicalCloseHour,
+  normalizeTwoBandSchedule,
+  parseClockHour,
+  type ClockOption,
+  type TwoBandSchedule,
+} from "../lib/operating-hours";
 import { activeTenant } from "../tenants/registry";
 
 type View =
@@ -1343,6 +1357,14 @@ type NewCourtDraft = {
   peakRate: string;
 };
 
+type SharedScheduleDraft = {
+  opensAt: string;
+  boundaryAt: string;
+  closesAt: string;
+  firstHourlyRate: number;
+  secondHourlyRate: number;
+};
+
 const emptyNewCourt: NewCourtDraft = {
   name: "",
   description: "",
@@ -1354,7 +1376,6 @@ const emptyNewCourt: NewCourtDraft = {
   peakRate: "400",
 };
 
-const WHOLE_HOUR_PATTERN = /^(?:[01]\d|2[0-3]):00$/;
 const NEW_COURT_INTERNAL_DEFAULTS = {
   minimumHours: 1,
   maximumHours: 18,
@@ -1362,37 +1383,37 @@ const NEW_COURT_INTERNAL_DEFAULTS = {
   maximumAdvanceDays: 30,
 } as const;
 
-const wholeHourOptions = Array.from({ length: 24 }, (_, hour) => {
-  const value = `${String(hour).padStart(2, "0")}:00`;
-  const displayHour = hour % 12 || 12;
-  return { value, label: `${displayHour} ${hour < 12 ? "AM" : "PM"}` };
-});
+const wholeHourOptions: ClockOption[] = Array.from({ length: 24 }, (_, hour) => ({
+  value: clockValueForHour(hour)!,
+  label: formatClockLabel(hour),
+  logicalHour: hour,
+  dayOffset: 0,
+}));
 
 function newCourtDraftFor(snapshot: ManagementSnapshot): NewCourtDraft {
-  const schedule = snapshot.configuration.sharedSchedule;
-  const firstBand = schedule?.bands[0];
-  const secondBand = schedule?.bands[1];
-  const closesAt = schedule?.closesAt === "00:00" ? "24:00" : schedule?.closesAt;
-  const scheduleIsSafe = Boolean(
-    schedule && schedule.bands.length === 2 && firstBand && secondBand &&
-    WHOLE_HOUR_PATTERN.test(schedule.opensAt) &&
-    WHOLE_HOUR_PATTERN.test(firstBand.end) &&
-    WHOLE_HOUR_PATTERN.test(schedule.closesAt) &&
-    firstBand.start === schedule.opensAt && firstBand.end === secondBand.start &&
-    secondBand.end === closesAt && schedule.opensAt < firstBand.end && firstBand.end < closesAt! &&
-    Number.isFinite(firstBand.hourlyRate) && firstBand.hourlyRate > 0 &&
-    Number.isFinite(secondBand.hourlyRate) && secondBand.hourlyRate > 0
-  );
-  if (!scheduleIsSafe || !schedule || !firstBand || !secondBand) {
-    return { ...emptyNewCourt };
-  }
+  const schedule = normalizeTwoBandSchedule(snapshot.configuration.sharedSchedule);
+  if (!schedule) return { ...emptyNewCourt };
   return {
     ...emptyNewCourt,
     opensAt: schedule.opensAt,
-    peakStartsAt: firstBand.end,
+    peakStartsAt: schedule.bands[0].end,
     closesAt: schedule.closesAt,
-    dayRate: String(firstBand.hourlyRate),
-    peakRate: String(secondBand.hourlyRate),
+    dayRate: String(schedule.bands[0].hourlyRate),
+    peakRate: String(schedule.bands[1].hourlyRate),
+  };
+}
+
+function sharedScheduleDraftFor(
+  candidate: ManagementSnapshot["configuration"]["sharedSchedule"],
+): SharedScheduleDraft | null {
+  const schedule = normalizeTwoBandSchedule(candidate);
+  if (!schedule) return null;
+  return {
+    opensAt: schedule.opensAt,
+    boundaryAt: schedule.bands[0].end,
+    closesAt: schedule.closesAt,
+    firstHourlyRate: schedule.bands[0].hourlyRate,
+    secondHourlyRate: schedule.bands[1].hourlyRate,
   };
 }
 
@@ -1429,7 +1450,80 @@ function nextCourtSortOrder(snapshot: ManagementSnapshot): number {
 }
 
 function wholeHourLabel(value: string): string {
-  return wholeHourOptions.find((option) => option.value === value)?.label ?? value;
+  return formatClockLabel(value) || value;
+}
+
+function boundaryValueForWindow(
+  opensAt: string,
+  closesAt: string,
+  preferredBoundary: string,
+): string {
+  const options = boundaryOptionsFor(opensAt, closesAt);
+  if (options.some((option) => option.value === preferredBoundary)) {
+    return preferredBoundary;
+  }
+  return options[Math.min(options.length - 1, Math.floor(options.length * 2 / 3))]
+    ?.value ?? "";
+}
+
+function shiftedOperatingWindow(
+  current: { opensAt: string; closesAt: string; boundaryAt: string },
+  opensAt: string,
+): { opensAt: string; closesAt: string; boundaryAt: string } {
+  const currentOpen = parseClockHour(current.opensAt);
+  const currentClose = logicalCloseHour(current.opensAt, current.closesAt);
+  const nextOpen = parseClockHour(opensAt);
+  const closeOptions = closeOptionsFor(opensAt);
+  const currentCloseIsAvailable = closeOptions.some((option) =>
+    option.value === current.closesAt
+  );
+  const preservedDuration = currentOpen !== null && currentClose !== null &&
+      nextOpen !== null
+    ? currentClose - currentOpen
+    : 16;
+  const shiftedClose = nextOpen === null
+    ? null
+    : clockValueForHour(nextOpen + preservedDuration);
+  const closesAt = currentCloseIsAvailable
+    ? current.closesAt
+    : closeOptions.find((option) => option.value === shiftedClose)?.value ??
+      closeOptions[15]?.value ?? "";
+  return {
+    opensAt,
+    closesAt,
+    boundaryAt: boundaryValueForWindow(opensAt, closesAt, current.boundaryAt),
+  };
+}
+
+function operatingWindowSummary(
+  opensAt: string,
+  closesAt: string,
+  boundaryAt: string,
+): string {
+  const closeHour = logicalCloseHour(opensAt, closesAt);
+  const boundaryHour = logicalBoundaryHour(opensAt, closesAt, boundaryAt);
+  const openHour = parseClockHour(opensAt);
+  const openLabel = wholeHourLabel(opensAt);
+  if (closeHour === null) return `Hours: ${openLabel}; choose a different closing time.`;
+  const closeLabel = formatClockLabel(closeHour);
+  const duration = openHour === null ? null : closeHour - openHour;
+  const durationLabel = duration === null
+    ? ""
+    : ` · ${duration} ${duration === 1 ? "hour" : "hours"}`;
+  if (boundaryHour === null) {
+    return `Open ${openLabel} · Close ${closeLabel}${durationLabel}; choose an interior peak boundary.`;
+  }
+  return `Open ${openLabel} · Close ${closeLabel} · Peak ${formatClockLabel(boundaryHour)}${durationLabel}.`;
+}
+
+function scheduleForNewCourt(draft: NewCourtDraft): TwoBandSchedule | null {
+  return buildTwoBandSchedule({
+    opensAt: draft.opensAt,
+    closesAt: draft.closesAt,
+    boundaryAt: draft.peakStartsAt,
+    firstHourlyRate: Number(draft.dayRate),
+    secondHourlyRate: Number(draft.peakRate),
+  });
 }
 
 function courtDraftsFor(snapshot: ManagementSnapshot): Record<string, CourtDraft> {
@@ -1455,13 +1549,19 @@ function newCourtDraftError(draft: NewCourtDraft): string | null {
   });
   if (baseError) return baseError;
   if (
-    !WHOLE_HOUR_PATTERN.test(draft.opensAt) ||
-    !WHOLE_HOUR_PATTERN.test(draft.peakStartsAt) ||
-    !WHOLE_HOUR_PATTERN.test(draft.closesAt)
+    !isWholeHourClock(draft.opensAt) ||
+    !isWholeHourClock(draft.closesAt) ||
+    (draft.peakStartsAt !== "" && !isWholeHourClock(draft.peakStartsAt))
   ) return "Opening, rate boundary, and closing times must be whole hours.";
-  const closingEnd = draft.closesAt === "00:00" ? "24:00" : draft.closesAt;
-  if (!(draft.opensAt < draft.peakStartsAt && draft.peakStartsAt < closingEnd)) {
-    return "Times must run in order: opening, rate boundary, then closing.";
+  if (logicalCloseHour(draft.opensAt, draft.closesAt) === null) {
+    return "Opening and closing times must differ.";
+  }
+  if (logicalBoundaryHour(
+    draft.opensAt,
+    draft.closesAt,
+    draft.peakStartsAt,
+  ) === null) {
+    return "Peak start must fall strictly inside the operating window.";
   }
   const dayRate = Number(draft.dayRate);
   const peakRate = Number(draft.peakRate);
@@ -1469,6 +1569,9 @@ function newCourtDraftError(draft: NewCourtDraft): string | null {
     !Number.isFinite(dayRate) || dayRate <= 0 ||
     !Number.isFinite(peakRate) || peakRate <= 0
   ) return "Both hourly rates must be greater than zero.";
+  if (!scheduleForNewCourt(draft)) {
+    return "Both hourly rates must be valid amounts with at most two decimal places.";
+  }
   return null;
 }
 
@@ -1582,8 +1685,8 @@ function LiveSettingsView({
   const [addingCourt, setAddingCourt] = useState(false);
   const addCourtButtonRef = useRef<HTMLButtonElement>(null);
   const newCourtNameRef = useRef<HTMLInputElement>(null);
-  const [scheduleDraft, setScheduleDraft] = useState(
-    snapshot.configuration.sharedSchedule,
+  const [scheduleDraft, setScheduleDraft] = useState(() =>
+    sharedScheduleDraftFor(snapshot.configuration.sharedSchedule)
   );
   const [businessDraft, setBusinessDraft] = useState(() =>
     businessDraftFor(snapshot.configuration.businessPayments)
@@ -1602,6 +1705,30 @@ function LiveSettingsView({
     key: Key,
     fieldValue: NewCourtDraft[Key],
   ) => setNewCourt((current) => ({ ...current, [key]: fieldValue }));
+
+  const setNewCourtOpen = (opensAt: string) => setNewCourt((current) => {
+    const shiftedWindow = shiftedOperatingWindow({
+      opensAt: current.opensAt,
+      closesAt: current.closesAt,
+      boundaryAt: current.peakStartsAt,
+    }, opensAt);
+    return {
+      ...current,
+      opensAt: shiftedWindow.opensAt,
+      closesAt: shiftedWindow.closesAt,
+      peakStartsAt: shiftedWindow.boundaryAt,
+    };
+  });
+
+  const setNewCourtClose = (closesAt: string) => setNewCourt((current) => ({
+    ...current,
+    closesAt,
+    peakStartsAt: boundaryValueForWindow(
+      current.opensAt,
+      closesAt,
+      current.peakStartsAt,
+    ),
+  }));
 
   const openNewCourtForm = () => {
     setNewCourt(newCourtDraftFor(snapshot));
@@ -1638,27 +1765,44 @@ function LiveSettingsView({
     ),
   } : current);
 
-  const twoBandSchedule = scheduleDraft?.bands.length === 2;
-  const scheduleDraftIsValid = Boolean(
-    scheduleDraft && twoBandSchedule &&
-    WHOLE_HOUR_PATTERN.test(scheduleDraft.opensAt) &&
-    WHOLE_HOUR_PATTERN.test(scheduleDraft.bands[0]?.end ?? "") &&
-    WHOLE_HOUR_PATTERN.test(scheduleDraft.closesAt) &&
-    scheduleDraft.bands[0]?.start === scheduleDraft.opensAt &&
-    scheduleDraft.bands[0]?.end === scheduleDraft.bands[1]?.start &&
-    scheduleDraft.bands[1]?.end === (scheduleDraft.closesAt === "00:00" ? "24:00" : scheduleDraft.closesAt) &&
-    scheduleDraft.bands[0].start < scheduleDraft.bands[0].end &&
-    scheduleDraft.bands[1].start < scheduleDraft.bands[1].end &&
-    scheduleDraft.bands.every((band) => Number.isFinite(band.hourlyRate) && band.hourlyRate > 0),
-  );
+  const schedulePayload = scheduleDraft ? buildTwoBandSchedule({
+    opensAt: scheduleDraft.opensAt,
+    closesAt: scheduleDraft.closesAt,
+    boundaryAt: scheduleDraft.boundaryAt,
+    firstHourlyRate: scheduleDraft.firstHourlyRate,
+    secondHourlyRate: scheduleDraft.secondHourlyRate,
+  }) : null;
+  const scheduleDraftIsValid = schedulePayload !== null;
+
+  const setScheduleOpen = (opensAt: string) => setScheduleDraft((current) => {
+    if (!current) return current;
+    return {
+      ...current,
+      ...shiftedOperatingWindow(current, opensAt),
+    };
+  });
+
+  const setScheduleClose = (closesAt: string) => setScheduleDraft((current) => {
+    if (!current) return current;
+    return {
+      ...current,
+      closesAt,
+      boundaryAt: boundaryValueForWindow(
+        current.opensAt,
+        closesAt,
+        current.boundaryAt,
+      ),
+    };
+  });
+
   const saveSchedule = () => {
-    if (!scheduleDraft || !scheduleDraftIsValid) return;
+    if (!scheduleDraft || !schedulePayload) return;
     request({
       title: "Save the shared schedule?",
-      detail: `Every day, ${scheduleDraft.opensAt}–${scheduleDraft.closesAt}; ${formatPeso(scheduleDraft.bands[0]!.hourlyRate)}/hour until ${scheduleDraft.bands[0]!.end}, then ${formatPeso(scheduleDraft.bands[1]!.hourlyRate)}/hour. This replaces hours and rates on every Dinktopia court atomically.`,
+      detail: `${operatingWindowSummary(scheduleDraft.opensAt, scheduleDraft.closesAt, scheduleDraft.boundaryAt)} ${formatPeso(scheduleDraft.firstHourlyRate)}/hour before the peak boundary, then ${formatPeso(scheduleDraft.secondHourlyRate)}/hour. This replaces hours and rates on every Dinktopia court atomically.`,
       confirmLabel: "Save shared schedule",
       actionType: "settings:schedule",
-      payload: scheduleDraft,
+      payload: schedulePayload,
     });
   };
 
@@ -1739,10 +1883,11 @@ function LiveSettingsView({
                     event.currentTarget.reportValidity();
                     return;
                   }
-                  const closingBandEnd = newCourt.closesAt === "00:00" ? "24:00" : newCourt.closesAt;
+                  const courtSchedule = scheduleForNewCourt(newCourt);
+                  if (!courtSchedule) return;
                   request({
                     title: `Create ${newCourt.name.trim()}?`,
-                    detail: `${newCourt.status} · ${wholeHourLabel(newCourt.opensAt)}–${wholeHourLabel(newCourt.closesAt)} · ${formatPeso(Number(newCourt.dayRate))}/${formatPeso(Number(newCourt.peakRate))} per hour.`,
+                    detail: `${newCourt.status} · ${operatingWindowSummary(newCourt.opensAt, newCourt.closesAt, newCourt.peakStartsAt)} ${formatPeso(Number(newCourt.dayRate))}/${formatPeso(Number(newCourt.peakRate))} per hour.`,
                     confirmLabel: `Create ${newCourt.name.trim()}`,
                     actionType: "court:create",
                     payload: {
@@ -1757,10 +1902,7 @@ function LiveSettingsView({
                       pricingConfig: { regular: {
                         minimumHours: NEW_COURT_INTERNAL_DEFAULTS.minimumHours,
                         maximumHours: NEW_COURT_INTERNAL_DEFAULTS.maximumHours,
-                        bands: [
-                          { start: newCourt.opensAt, end: newCourt.peakStartsAt, hourlyRate: Number(newCourt.dayRate) },
-                          { start: newCourt.peakStartsAt, end: closingBandEnd, hourlyRate: Number(newCourt.peakRate) },
-                        ],
+                        bands: courtSchedule.bands,
                       } },
                       publicConfig: {
                         minimumLeadMinutes: NEW_COURT_INTERNAL_DEFAULTS.minimumLeadMinutes,
@@ -1783,12 +1925,13 @@ function LiveSettingsView({
                 </div>
                 <fieldset className={styles.newCourtSchedule}>
                   <legend>Hours and pricing</legend>
-                  <p>Choose whole hours only. The peak rate starts at the selected boundary.</p>
-                  <div className={styles.newCourtTimes}>
-                    <label className={styles.field}><span>Opens</span><select required value={newCourt.opensAt} onChange={(event) => setNewCourtField("opensAt", event.target.value)}>{wholeHourOptions.map((option) => <option key={`open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
-                    <label className={styles.field}><span>Peak starts</span><select required value={newCourt.peakStartsAt} onChange={(event) => setNewCourtField("peakStartsAt", event.target.value)}>{wholeHourOptions.map((option) => <option key={`peak-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
-                    <label className={styles.field}><span>Closes</span><select required value={newCourt.closesAt} onChange={(event) => setNewCourtField("closesAt", event.target.value)}>{wholeHourOptions.map((option) => <option key={`close-${option.value}`} value={option.value}>{option.label}{option.value === "00:00" ? " next day" : ""}</option>)}</select></label>
-                  </div>
+                   <p>Choose whole hours only. The peak rate starts at the selected boundary.</p>
+                   <div className={styles.newCourtTimes}>
+                    <label className={styles.field}><span>Opens</span><select required value={newCourt.opensAt} onChange={(event) => setNewCourtOpen(event.target.value)}>{wholeHourOptions.map((option) => <option key={`open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                    <label className={styles.field}><span>Closes</span><select required value={newCourt.closesAt} onChange={(event) => setNewCourtClose(event.target.value)}>{closeOptionsFor(newCourt.opensAt).map((option) => <option key={`close-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                    <label className={styles.field}><span>Peak starts</span><select required value={newCourt.peakStartsAt} onChange={(event) => setNewCourtField("peakStartsAt", event.target.value)}>{boundaryOptionsFor(newCourt.opensAt, newCourt.closesAt).length === 0 && <option value="">No interior hour</option>}{boundaryOptionsFor(newCourt.opensAt, newCourt.closesAt).map((option) => <option key={`peak-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                   </div>
+                  <p className={styles.operatingSummary} aria-live="polite">{operatingWindowSummary(newCourt.opensAt, newCourt.closesAt, newCourt.peakStartsAt)}</p>
                   <div className={styles.newCourtRates}>
                     <label className={styles.field}><span>Day rate / hour</span><div className={styles.moneyInput}><span aria-hidden="true">₱</span><input aria-label="Day rate per hour in Philippine pesos" required inputMode="decimal" type="number" min="0.01" step="0.01" value={newCourt.dayRate} onChange={(event) => setNewCourtField("dayRate", event.target.value)} /></div></label>
                     <label className={styles.field}><span>Peak rate / hour</span><div className={styles.moneyInput}><span aria-hidden="true">₱</span><input aria-label="Peak rate per hour in Philippine pesos" required inputMode="decimal" type="number" min="0.01" step="0.01" value={newCourt.peakRate} onChange={(event) => setNewCourtField("peakRate", event.target.value)} /></div></label>
@@ -1860,18 +2003,19 @@ function LiveSettingsView({
         {section === "schedule" && (
           <div className={styles.settingsSection}>
             <div className={styles.panelHeading}><div><p className={styles.eyebrow}>PHP · Asia/Manila · Every court</p><h2>Shared schedule</h2></div><span className={styles.previewTag}>Atomic update</span></div>
-            {scheduleDraft && twoBandSchedule ? (
+            {scheduleDraft ? (
               <div className={styles.sharedScheduleEditor}>
                 <div className={styles.sharedScheduleRow}>
                   <div className={styles.scheduleDayLabel}><strong>Every day</strong><span>One shared daily window</span></div>
-                  <label className={styles.field}><span>Opens</span><select required value={scheduleDraft.opensAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, opensAt: event.target.value, bands: [{ ...scheduleDraft.bands[0]!, start: event.target.value }, scheduleDraft.bands[1]!] })}>{wholeHourOptions.map((option) => <option key={`schedule-open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
-                  <label className={styles.field}><span>Rate boundary</span><select required value={scheduleDraft.bands[0]!.end} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, end: event.target.value }, { ...scheduleDraft.bands[1]!, start: event.target.value }] })}>{wholeHourOptions.map((option) => <option key={`schedule-boundary-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
-                  <label className={styles.field}><span>Closes</span><select required value={scheduleDraft.closesAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, closesAt: event.target.value, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, end: event.target.value === "00:00" ? "24:00" : event.target.value }] })}>{wholeHourOptions.map((option) => <option key={`schedule-close-${option.value}`} value={option.value}>{option.label}{option.value === "00:00" ? " next day" : ""}</option>)}</select></label>
-                  <label className={styles.field}><span>First rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.bands[0]!.hourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, hourlyRate: Number(event.target.value) }, scheduleDraft.bands[1]!] })} /></div></label>
-                  <label className={styles.field}><span>Second rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.bands[1]!.hourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, hourlyRate: Number(event.target.value) }] })} /></div></label>
+                  <label className={styles.field}><span>Opens</span><select required value={scheduleDraft.opensAt} onChange={(event) => setScheduleOpen(event.target.value)}>{wholeHourOptions.map((option) => <option key={`schedule-open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                  <label className={styles.field}><span>Closes</span><select required value={scheduleDraft.closesAt} onChange={(event) => setScheduleClose(event.target.value)}>{closeOptionsFor(scheduleDraft.opensAt).map((option) => <option key={`schedule-close-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                  <label className={styles.field}><span>Rate boundary</span><select required value={scheduleDraft.boundaryAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, boundaryAt: event.target.value })}>{boundaryOptionsFor(scheduleDraft.opensAt, scheduleDraft.closesAt).length === 0 && <option value="">No interior hour</option>}{boundaryOptionsFor(scheduleDraft.opensAt, scheduleDraft.closesAt).map((option) => <option key={`schedule-boundary-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                  <label className={styles.field}><span>First rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.firstHourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, firstHourlyRate: Number(event.target.value) })} /></div></label>
+                  <label className={styles.field}><span>Second rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.secondHourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, secondHourlyRate: Number(event.target.value) })} /></div></label>
                 </div>
+                <p className={styles.operatingSummary} aria-live="polite">{operatingWindowSummary(scheduleDraft.opensAt, scheduleDraft.closesAt, scheduleDraft.boundaryAt)}</p>
                 <div className={styles.businessBoundary}><h3>Booking durations are unchanged</h3><p>This shared-schedule contract changes only whole-hour operating windows and rate bands.</p></div>
-                {!scheduleDraftIsValid && <p className={styles.inlineError} role="alert">Opening, boundary, closing, and both positive rates must form one continuous two-band day.</p>}
+                {!scheduleDraftIsValid && <p className={styles.inlineError} role="alert">Opening and closing must differ, the boundary must be strictly inside that window, and both rates must be positive amounts.</p>}
                 <div className={styles.scheduleSaveRow}><span>Applies to all {snapshot.courts.length} live courts</span><ActionButton disabled={!can("settings:update") || !scheduleDraftIsValid} onClick={saveSchedule}>Save shared schedule</ActionButton></div>
               </div>
             ) : <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Shared editor unavailable</p><h3>No uniform two-band live schedule was returned.</h3><p>Create the first court or use the platform workspace for schedules with more than two bands. No preview values are substituted.</p></div>}
