@@ -175,6 +175,14 @@ function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
   }));
 }
 
+function compactCourtSurface(court: Court) {
+  const descriptor = court.descriptor.toLowerCase();
+  if (descriptor.includes("covered")) return "Covered";
+  if (descriptor.includes("outdoor")) return "Outdoor";
+  if (descriptor.includes("indoor")) return "Indoor";
+  return "Court";
+}
+
 function trustedGallerySource(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return null;
   const source = value.trim();
@@ -2657,18 +2665,16 @@ export function BookingExperience({
                                 : "Select any open times across one or more courts."}
                             </p>
                           </div>
-                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}>
-                            <span className="schedule-count-number">{selectedSlots.length}</span>
-                            <span>selected</span>
-                            <small>court-hours</small>
-                            <button className={selectedSlots.length ? undefined : "is-placeholder"} type="button" disabled={!selectedSlots.length} aria-hidden={!selectedSlots.length} tabIndex={selectedSlots.length ? 0 : -1} onClick={clearSelection}>Clear</button>
-                          </div>
                         </div>
                         <div className="availability-legend-row">
                           <div className="slot-legend" aria-label="Availability key">
                             <span><i className="legend-open" />Open</span>
                             <span><i className="legend-selected" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
+                          </div>
+                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}>
+                            <span className="schedule-count-number">{selectedSlots.length}</span>
+                            <span>selected</span>
                           </div>
                         </div>
 
@@ -2783,7 +2789,7 @@ export function BookingExperience({
                                   {displayCourts.map((court) => (
                                     <th scope="col" key={court.id} title={court.name}>
                                       <strong>C{Number(court.number)}</strong>
-                                      <span>{court.descriptor}</span>
+                                      <span>{compactCourtSurface(court)}</span>
                                     </th>
                                   ))}
                                 </tr>
@@ -2837,7 +2843,14 @@ export function BookingExperience({
                           <strong>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
                           {selectedSlots.length > 0 && <span>{selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"} · {peso(total)}</span>}
                         </div>
-                        {selectedSlots.length > 0 && <button className="slot-clear-button" type="button" onClick={clearSelection}>Clear</button>}
+                        <button
+                          className={`slot-clear-button${selectedSlots.length ? "" : " is-placeholder"}`}
+                          type="button"
+                          disabled={!selectedSlots.length}
+                          aria-hidden={!selectedSlots.length}
+                          tabIndex={selectedSlots.length ? 0 : -1}
+                          onClick={clearSelection}
+                        >Clear</button>
                         <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!selectedSlots.length || !liveSelectionSupported} onClick={() => setStep(2)}>Continue{selectedSlots.length ? ` · ${peso(total)}` : ""} <span aria-hidden="true">→</span></button>
                       </div>
                     </div>

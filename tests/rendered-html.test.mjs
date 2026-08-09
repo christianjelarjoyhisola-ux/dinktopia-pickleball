@@ -948,9 +948,10 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     /aria-label=\{`\$\{selectedSlots\.length\} court-hour\$\{selectedSlots\.length === 1 \? "" : "s"\} selected`\}/,
   );
   assert.doesNotMatch(selectionCountSource, /aria-live=/);
+  assert.doesNotMatch(selectionCountSource, /<button/);
   assert.match(
-    selectionCountSource,
-    /<button className=\{selectedSlots\.length \? undefined : "is-placeholder"\}[\s\S]*?disabled=\{!selectedSlots\.length\}[\s\S]*?aria-hidden=\{!selectedSlots\.length\}[\s\S]*?tabIndex=\{selectedSlots\.length \? 0 : -1\}[\s\S]*?onClick=\{clearSelection\}>Clear<\/button>/s,
+    booking,
+    /<button[\s\S]*?className=\{`slot-clear-button\$\{selectedSlots\.length \? "" : " is-placeholder"\}`\}[\s\S]*?disabled=\{!selectedSlots\.length\}[\s\S]*?aria-hidden=\{!selectedSlots\.length\}[\s\S]*?tabIndex=\{selectedSlots\.length \? 0 : -1\}[\s\S]*?onClick=\{clearSelection\}[\s\S]*?>[\s\S]*?Clear[\s\S]*?<\/button>/s,
   );
   assert.doesNotMatch(selectionCountSource, /selectedSlots\.length > 0 &&/);
   assert.doesNotMatch(
@@ -1263,7 +1264,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   assert.match(
     booking,
-    /className="slot-step-footer"[\s\S]*?className="slot-clear-button"[\s\S]*?data-testid="booking-continue"/s,
+    /className="slot-step-footer"[\s\S]*?className=\{`slot-clear-button\$\{selectedSlots\.length \? "" : " is-placeholder"\}`\}[\s\S]*?data-testid="booking-continue"/s,
   );
   assert.match(
     booking,
@@ -1271,7 +1272,8 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   const responsiveBookingCss = publicCss.slice(publicCss.indexOf("/* RallyOS-inspired player booking workspace */"));
   assert.match(responsiveBookingCss, /\.slot-step-footer\s*\{[^}]*display:\s*flex/s);
-  assert.match(responsiveBookingCss, /@media \(max-width: 779\.98px\)[\s\S]*?\.slot-step-footer\s*\{[^}]*position:\s*sticky[^}]*bottom:\s*8px/s);
+  assert.match(responsiveBookingCss, /@media \(max-width: 779\.98px\)[\s\S]*?\.availability-legend-row\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s);
+  assert.match(responsiveBookingCss, /@media \(max-width: 779\.98px\)[\s\S]*?\.slot-step-footer\s*\{[^}]*position:\s*static/s);
   assert.match(
     responsiveBookingCss,
     /@media \(min-width: 980px\)[\s\S]*?\.booking-slot-step\s*\{[^}]*grid-template-columns:\s*1fr/s,
