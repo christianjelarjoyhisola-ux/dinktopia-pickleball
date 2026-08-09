@@ -807,21 +807,15 @@
 .courtStatusField { grid-area: status; min-width: 0; }
 .courtCardActions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
 .courtCardActions > * { flex: 1 1 7.5rem; }
-.addCourtRow {
+.courtHeadingActions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-top: 18px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: var(--paper-deep);
-  padding: 13px 14px;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-left: auto;
 }
-.addCourtRow > div { display: grid; gap: 3px; min-width: 0; }
-.addCourtRow strong { font-size: var(--text-small); }
-.addCourtRow span { color: var(--muted); font-size: var(--text-caption); }
-.addCourtRow .button span { color: inherit; font-size: inherit; }
+.addCourtButton { white-space: nowrap; }
+.addCourtButton span { color: inherit; font-size: inherit; }
 .courtDialog {
   width: min(620px, calc(100vw - 28px));
   max-width: none;
@@ -1454,8 +1448,9 @@
   }
   .courtMarker { justify-self: start; }
   .courtCardActions { flex-direction: column; }
-  .addCourtRow { align-items: stretch; flex-direction: column; }
-  .addCourtRow .button { width: 100%; }
+  .courtPanelHeading { align-items: center; flex-direction: row; gap: 10px; }
+  .courtHeadingActions { width: auto; justify-content: flex-end; margin-left: auto; }
+  .courtHeadingActions .previewTag { display: none; }
   .courtDialog { width: calc(100vw - 12px); max-height: calc(100dvh - 12px); border-radius: 17px; }
   .courtDialogShell { max-height: calc(100dvh - 12px); }
   .courtDialogHeader { padding: 18px 66px 14px 16px; }

@@ -1676,7 +1676,13 @@ function LiveSettingsView({
       <div className={styles.panel}>
         {section === "courts" && (
           <div className={styles.settingsSection}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Live inventory</p><h2>Courts</h2></div><span className={styles.previewTag}>Server records</span></div>
+            <div className={cx(styles.panelHeading, styles.courtPanelHeading)}>
+              <div><p className={styles.eyebrow}>Live inventory</p><h2>Courts</h2></div>
+              <div className={styles.courtHeadingActions}>
+                <span className={styles.previewTag}>Server records</span>
+                <ActionButton className={styles.addCourtButton} disabled={!can("settings:update")} onClick={openNewCourtDialog}><span aria-hidden="true">＋</span> Add court</ActionButton>
+              </div>
+            </div>
             <p className={styles.sectionIntro}>Each save targets one server-returned court UUID. Tenant scope is still derived from the fixed Dinktopia slug and registered origin.</p>
             <div className={styles.courtSettingList}>
               {snapshot.courts.map((court, index) => {
@@ -1728,10 +1734,6 @@ function LiveSettingsView({
               })}
             </div>
             {!snapshot.courts.length && <div className={styles.inlineEmpty} role="status"><span aria-hidden="true">00</span><h3>No live courts configured</h3><p>Add the first court with its name, whole-hour schedule, and rates. Internal setup values are handled automatically.</p></div>}
-            <div className={styles.addCourtRow}>
-              <div><strong>Need another court?</strong><span>It takes only the venue details owners actually use.</span></div>
-              <ActionButton disabled={!can("settings:update")} onClick={openNewCourtDialog}><span aria-hidden="true">＋</span> Add court</ActionButton>
-            </div>
             <dialog
               ref={newCourtDialogRef}
               className={styles.courtDialog}

@@ -1408,6 +1408,33 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(sortSource, /if \(highest < 10_000\) return highest \+ 1/);
   assert.match(sortSource, /if \(!used\.has\(sortOrder\)\) return sortOrder/);
 
+  const courtsSectionStart = manage.indexOf('{section === "courts" &&');
+  const courtsHeadingStart = manage.indexOf(
+    '<div className={cx(styles.panelHeading, styles.courtPanelHeading)}>',
+    courtsSectionStart,
+  );
+  const courtsIntroStart = manage.indexOf(
+    '<p className={styles.sectionIntro}>',
+    courtsHeadingStart,
+  );
+  assert.ok(
+    courtsSectionStart >= 0 &&
+      courtsHeadingStart > courtsSectionStart &&
+      courtsIntroStart > courtsHeadingStart,
+  );
+  const courtsHeadingSource = manage.slice(courtsHeadingStart, courtsIntroStart);
+  assert.match(courtsHeadingSource, /<h2>Courts<\/h2>/);
+  assert.match(
+    courtsHeadingSource,
+    /<div className=\{styles\.courtHeadingActions\}>[\s\S]*?<span className=\{styles\.previewTag\}>Server records<\/span>[\s\S]*?<ActionButton className=\{styles\.addCourtButton\} disabled=\{!can\("settings:update"\)\} onClick=\{openNewCourtDialog\}>[\s\S]*? Add court<\/ActionButton>/,
+  );
+  assert.equal(
+    (manage.match(/onClick=\{openNewCourtDialog\}/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(manage, /styles\.addCourtRow/);
+  assert.doesNotMatch(manage, /Need another court\?|styles\.newCourtDetails/);
+
   const editorStart = manage.indexOf("{snapshot.courts.map((court, index) => {");
   const editorEnd = manage.indexOf("{!snapshot.courts.length", editorStart);
   assert.ok(editorStart >= 0 && editorEnd > editorStart);
@@ -1544,6 +1571,14 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(dialogCss, /max-height:\s*calc\(100dvh - 28px\)/);
   assert.match(dialogCss, /overflow:\s*hidden/);
   assert.match(cssBlock(manageCss, ".courtDialogBody"), /overflow-y:\s*auto/);
+  assert.doesNotMatch(manageCss, /\.addCourtRow\b/);
+  const headingActionsCss = cssBlock(manageCss, ".courtHeadingActions");
+  assert.match(headingActionsCss, /display:\s*flex/);
+  assert.match(headingActionsCss, /margin-left:\s*auto/);
+  assert.doesNotMatch(
+    headingActionsCss,
+    /\b(?:background|border(?:-radius)?|padding)\s*:/,
+  );
   const narrowCss = cssBlock(manageCss, "@media (max-width: 430px)");
   assert.match(
     narrowCss,
@@ -1556,6 +1591,18 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(
     narrowCss,
     /\.courtDialogActions \.button\s*\{[^}]*flex:\s*1/s,
+  );
+  assert.match(
+    narrowCss,
+    /\.courtPanelHeading\s*\{[^}]*align-items:\s*center[^}]*flex-direction:\s*row[^}]*gap:\s*10px/s,
+  );
+  assert.match(
+    narrowCss,
+    /\.courtHeadingActions\s*\{[^}]*width:\s*auto[^}]*justify-content:\s*flex-end[^}]*margin-left:\s*auto/s,
+  );
+  assert.match(
+    narrowCss,
+    /\.courtHeadingActions \.previewTag\s*\{[^}]*display:\s*none/s,
   );
 });
 
