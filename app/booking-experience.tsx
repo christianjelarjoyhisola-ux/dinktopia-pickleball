@@ -6,6 +6,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from "react";
@@ -245,6 +246,107 @@ function formatHour(hour: number) {
 
 function selectionKey(courtId: string, startHour: number) {
   return `${courtId}:${startHour}`;
+}
+
+type SelectionState = {
+  items: BookingSelection[];
+  announcement: string;
+};
+
+type SelectionAction =
+  | {
+      type: "toggle";
+      item: BookingSelection;
+      courtName: string;
+      startsAt: string;
+      endsAt: string;
+      maximum: number;
+      liveMode: boolean;
+    }
+  | { type: "replace"; items: BookingSelection[] }
+  | { type: "retain-open"; openKeys: Set<string> }
+  | { type: "clear"; announcement?: string };
+
+function uniqueSelections(items: BookingSelection[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = selectionKey(item.courtId, item.startHour);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function selectionReducer(state: SelectionState, action: SelectionAction): SelectionState {
+  if (action.type === "replace") {
+    return { ...state, items: uniqueSelections(action.items) };
+  }
+
+  if (action.type === "retain-open") {
+    const items = uniqueSelections(state.items).filter((item) =>
+      action.openKeys.has(selectionKey(item.courtId, item.startHour)),
+    );
+    if (items.length === state.items.length) return state;
+    return {
+      items,
+      announcement: "The schedule changed, so unavailable court-hours were removed.",
+    };
+  }
+
+  if (action.type === "clear") {
+    return {
+      items: [],
+      announcement: action.announcement ?? "Court-hour selection cleared.",
+    };
+  }
+
+  const items = uniqueSelections(state.items);
+  const key = selectionKey(action.item.courtId, action.item.startHour);
+  const isSelected = items.some(
+    (item) => selectionKey(item.courtId, item.startHour) === key,
+  );
+
+  if (!isSelected && items.length >= action.maximum) {
+    return {
+      ...state,
+      items,
+      announcement: `You can select up to ${action.maximum} court-hours per checkout.`,
+    };
+  }
+
+  if (action.liveMode && items.length > 0) {
+    const orderedHours = items
+      .filter((item) => item.courtId === action.item.courtId)
+      .map((item) => item.startHour)
+      .sort((left, right) => left - right);
+    const sameCourt = orderedHours.length === items.length;
+    const extendsRun = sameCourt && (
+      action.item.startHour === orderedHours[0] - 1 ||
+      action.item.startHour === orderedHours.at(-1)! + 1
+    );
+    const removesEdge = sameCourt && isSelected && (
+      action.item.startHour === orderedHours[0] ||
+      action.item.startHour === orderedHours.at(-1)
+    );
+    if ((!isSelected && !extendsRun) || (isSelected && !removesEdge)) {
+      return {
+        ...state,
+        items,
+        announcement: isSelected
+          ? "For live checkout, remove the first or last hour in the run."
+          : "Live checkout accepts consecutive hours on one court. Choose the next hour beside your current selection.",
+      };
+    }
+  }
+
+  const nextItems = isSelected
+    ? items.filter((item) => selectionKey(item.courtId, item.startHour) !== key)
+    : [...items, action.item];
+  const nextCount = nextItems.length;
+  return {
+    items: nextItems,
+    announcement: `${action.courtName}, ${action.startsAt} to ${action.endsAt} ${isSelected ? "removed" : "added"}. ${nextCount} court-hour${nextCount === 1 ? "" : "s"} selected.`,
+  };
 }
 
 function canonicalizeSelection(items: BookingSelection[]) {
@@ -908,8 +1010,13 @@ export function BookingExperience({
     if (isLive) return previewCourts[0].id;
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
   });
-  const [selectedSlots, setSelectedSlots] = useState<BookingSelection[]>([]);
+  const [selectionState, dispatchSelection] = useReducer(selectionReducer, {
+    items: [],
+    announcement: "",
+  });
+  const selectedSlots = selectionState.items;
   const [schedule, setSchedule] = useState<CourtSchedule[]>([]);
+  const [scheduleDate, setScheduleDate] = useState("");
   const [availabilityState, setAvailabilityState] = useState<
     "loading" | "ready" | "error"
   >("loading");
@@ -977,10 +1084,6 @@ export function BookingExperience({
     () => groupSelectionDetails(selectedSlotDetails),
     [selectedSlotDetails],
   );
-  const selectedCourt =
-    selectedSlotDetails[0]?.court ??
-    displayCourts.find((court) => court.id === selectedCourtId) ??
-    previewCourts[0];
   const selectedDateDetails = dates.find((date) => date.iso === selectedDate);
   const availableCount = schedule.reduce(
     (count, court) => count + court.slots.filter((slot) => slot.status !== "unavailable").length,
@@ -1008,6 +1111,7 @@ export function BookingExperience({
   const selectedKeys = new Set(
     selectedSlots.map((item) => selectionKey(item.courtId, item.startHour)),
   );
+  const selectionAtLimit = selectedSlots.length >= maximumCourtHoursPerCheckout;
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
@@ -1074,6 +1178,9 @@ export function BookingExperience({
       Boolean(policyVersion) &&
       Boolean(securitySiteKey) &&
       bookingFee !== null);
+  const availabilityBootstrapState = isLive ? bootstrapState : "ready";
+  const visibleAvailabilityState =
+    scheduleDate === selectedDate ? availabilityState : "loading";
   const heldPaymentReady =
     !isLive ||
     (bootstrapState === "ready" &&
@@ -1222,8 +1329,9 @@ export function BookingExperience({
       bookingAttemptIdRef.current = pointer.clientRequestId;
       setSelectedDate(restored.date);
       setSelectedCourtId(restored.courtId);
-      setSelectedSlots(
-        restored.items?.length
+      dispatchSelection({
+        type: "replace",
+        items: restored.items?.length
           ? restored.items
           : Array.from({ length: restored.durationHours }, (_, index) => ({
               courtId: restored.courtId,
@@ -1231,7 +1339,7 @@ export function BookingExperience({
               durationHours: 1 as const,
               amount: (restored.subtotalAmount ?? restored.amount) / restored.durationHours,
             })),
-      );
+      });
       setCustomer(restored.customer);
       setAcceptedPolicy(true);
       setPaymentError("");
@@ -1326,9 +1434,12 @@ export function BookingExperience({
       if (!active) return;
       setAvailabilityState("loading");
     });
-    if (isLive && bootstrapState !== "ready") {
+    if (isLive && availabilityBootstrapState !== "ready") {
       queueMicrotask(() => {
-        if (active) setSchedule([]);
+        if (active) {
+          setSchedule([]);
+          setScheduleDate("");
+        }
       });
       return () => {
         active = false;
@@ -1343,6 +1454,7 @@ export function BookingExperience({
       .then((nextSchedule) => {
         if (!active) return;
         setSchedule(nextSchedule);
+        setScheduleDate(selectedDate);
         const openKeys = new Set(
           nextSchedule.flatMap((court) =>
             court.slots
@@ -1350,27 +1462,20 @@ export function BookingExperience({
               .map((slot) => selectionKey(court.courtId, slot.hour)),
           ),
         );
-        setSelectedSlots((current) => {
-          const retained = current.filter((item) =>
-            openKeys.has(selectionKey(item.courtId, item.startHour)),
-          );
-          if (retained.length !== current.length) {
-            setLiveMessage("The schedule changed, so unavailable court-hours were removed from your selection.");
-          }
-          return retained;
-        });
+        dispatchSelection({ type: "retain-open", openKeys });
         setAvailabilityState("ready");
       })
       .catch(() => {
         if (!active) return;
         setSchedule([]);
+        setScheduleDate(selectedDate);
         setAvailabilityState("error");
       });
 
     return () => {
       active = false;
     };
-  }, [adapter, availabilityRetry, bootstrapState, isBookingPage, isLive, selectedDate]);
+  }, [adapter, availabilityBootstrapState, availabilityRetry, isBookingPage, isLive, selectedDate]);
 
   useEffect(() => {
     if (!pendingBooking) bookingAttemptIdRef.current = "";
@@ -1402,40 +1507,40 @@ export function BookingExperience({
 
   function chooseSlot(court: Court, slot: AvailabilitySlot) {
     if (slot.status === "unavailable") return;
-    const key = selectionKey(court.id, slot.hour);
-    const isSelected = selectedKeys.has(key);
-    if (!isSelected && selectedSlots.length >= maximumCourtHoursPerCheckout) {
-      setLiveMessage(`You can select up to ${maximumCourtHoursPerCheckout} court-hours per checkout.`);
-      return;
-    }
-    setSelectedCourtId(court.id);
-    setSelectedSlots((current) =>
-      isSelected
-        ? current.filter((item) => selectionKey(item.courtId, item.startHour) !== key)
-        : [...current, {
-            courtId: court.id,
-            startHour: slot.hour,
-            durationHours: 1,
-            amount: slot.price,
-          }],
-    );
-    const nextCount = selectedSlots.length + (isSelected ? -1 : 1);
-    setLiveMessage(
-      `${court.name}, ${slot.startsAt} to ${slot.endsAt} ${isSelected ? "removed" : "selected"}. ${nextCount} court-hour${nextCount === 1 ? "" : "s"} selected.`,
-    );
+    dispatchSelection({
+      type: "toggle",
+      item: {
+        courtId: court.id,
+        startHour: slot.hour,
+        durationHours: 1,
+        amount: slot.price,
+      },
+      courtName: court.name,
+      startsAt: slot.startsAt,
+      endsAt: slot.endsAt,
+      maximum: maximumCourtHoursPerCheckout,
+      liveMode: isLive,
+    });
   }
 
   function clearSelection() {
-    setSelectedSlots([]);
-    setLiveMessage("Court-hour selection cleared.");
+    dispatchSelection({ type: "clear" });
   }
 
   function chooseDate(date: string) {
     if (date === selectedDate) return;
+    const nextDate = dates.find((candidate) => candidate.iso === date);
+    const resetMessage = selectedSlots.length
+      ? `${nextDate?.long ?? date} selected. Your previous court-hours were cleared.`
+      : `${nextDate?.long ?? date} selected.`;
     if (selectedSlots.length) {
-      setLiveMessage("Clear your selected court-hours before changing the date.");
-      return;
+      dispatchSelection({ type: "clear", announcement: resetMessage });
+    } else {
+      setLiveMessage(resetMessage);
     }
+    setSchedule([]);
+    setScheduleDate("");
+    setAvailabilityState("loading");
     setSelectedDate(date);
   }
 
@@ -1622,7 +1727,7 @@ export function BookingExperience({
     }
     setPendingBooking(null);
     setConfirmedBooking(null);
-    setSelectedSlots([]);
+    dispatchSelection({ type: "clear", announcement: message });
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
@@ -1631,7 +1736,6 @@ export function BookingExperience({
     setTurnstileTokenValue("");
     bookingAttemptIdRef.current = "";
     setStep(1);
-    setLiveMessage(message);
     scrollToBooking();
   }
 
@@ -1681,7 +1785,7 @@ export function BookingExperience({
 
   function resetBooking() {
     setStep(1);
-    setSelectedSlots([]);
+    dispatchSelection({ type: "clear", announcement: "Ready for another booking." });
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
@@ -2061,23 +2165,29 @@ export function BookingExperience({
             ) : mode === "book" ? (
               <div className="booking-shell">
                 {step < 5 && (
-                  <ol className="booking-progress" aria-label="Booking progress">
-                    {stepLabels.map((label, index) => {
-                      const number = index + 1;
-                      const state = number === step ? "current" : number < step ? "complete" : "upcoming";
-                      return (
-                        <li key={label} className={`is-${state}`} aria-current={number === step ? "step" : undefined}>
-                          <span>{number < step ? "✓" : String(number).padStart(2, "0")}</span>
-                          <small>{label}</small>
-                        </li>
-                      );
-                    })}
-                  </ol>
+                  <>
+                    <p className="booking-step-summary">
+                      <span>Step {step} of 4</span>
+                      <strong>{stepLabels[step - 1]}</strong>
+                    </p>
+                    <ol className="booking-progress" aria-label="Booking progress">
+                      {stepLabels.map((label, index) => {
+                        const number = index + 1;
+                        const state = number === step ? "current" : number < step ? "complete" : "upcoming";
+                        return (
+                          <li key={label} className={`is-${state}`} aria-current={number === step ? "step" : undefined}>
+                            <span>{number < step ? "✓" : String(number).padStart(2, "0")}</span>
+                            <small>{label}</small>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  </>
                 )}
 
                 {step === 1 && (
                   <div className="booking-layout">
-                    <div className="booking-main-card">
+                    <div className={`booking-main-card booking-selection-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
                       <div className="booking-card-heading">
                         <span className="step-chip">STEP 01</span>
                         <div><h3>When are you playing?</h3><p>Times shown in Philippine Standard Time.</p></div>
@@ -2092,7 +2202,7 @@ export function BookingExperience({
                               key={date.iso}
                               className={`date-option ${selectedDate === date.iso ? "is-selected" : ""}`}
                               aria-pressed={selectedDate === date.iso}
-                              aria-disabled={selectedSlots.length > 0 && selectedDate !== date.iso}
+                              aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
                             >
                               <span>{date.isToday ? "Today" : date.day}</span>
@@ -2101,24 +2211,30 @@ export function BookingExperience({
                             </button>
                           ))}
                         </div>
-                        {selectedSlots.length > 0 && (
-                          <p className="date-selection-note">Clear your court-hours before choosing another date.</p>
-                        )}
+                        <p className="date-selection-note">Changing the date clears selected court-hours.</p>
                       </fieldset>
 
                       <fieldset className="booking-fieldset availability-fieldset">
                         <legend className="sr-only">Choose court-hours</legend>
                         <div className="schedule-heading-row">
-                          <h4>Choose court-hours</h4>
-                          <div className="schedule-selection-count" aria-live="polite">
-                            <strong>{selectedSlots.length} of {maximumCourtHoursPerCheckout}</strong>
-                            <span>court-hours</span>
-                            {selectedSlots.length > 0 && <button type="button" onClick={clearSelection}>Clear all</button>}
+                          <div className="schedule-title-group">
+                            <span className="schedule-kicker"><i aria-hidden="true" />{visibleAvailabilityState === "loading" ? "Refreshing schedule" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : `${availableCount} court-hours open`}</span>
+                            <h4>Pick your court and time</h4>
+                            <p className="schedule-help">
+                              {isLive
+                                ? "Choose consecutive hours on one court. Tap a selected time again to remove it."
+                                : "Each tap adds one hour. Mix courts and times, then tap again to remove a choice."}
+                            </p>
+                          </div>
+                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} of ${maximumCourtHoursPerCheckout} court-hours selected`}>
+                            <span className="schedule-count-number">{selectedSlots.length}</span>
+                            <span>selected</span>
+                            <small>of {maximumCourtHoursPerCheckout}</small>
+                            <button className={selectedSlots.length ? undefined : "is-placeholder"} type="button" disabled={!selectedSlots.length} aria-hidden={!selectedSlots.length} tabIndex={selectedSlots.length ? 0 : -1} onClick={clearSelection}>Clear</button>
                           </div>
                         </div>
-                        <p className="schedule-help">Tap any open time under the court you want. Select several times or several courts—each cell adds one court-hour.</p>
-                        {selectedSlots.length >= maximumCourtHoursPerCheckout && (
-                          <p className="schedule-limit-note" role="status">Maximum reached. Remove a court-hour before adding another.</p>
+                        {selectionAtLimit && (
+                          <p className="schedule-limit-note" role="status">You reached the {maximumCourtHoursPerCheckout}-hour limit. Selected times stay active so you can remove them.</p>
                         )}
                         <div className="availability-legend-row">
                           <div className="slot-legend" aria-label="Availability key">
@@ -2126,16 +2242,17 @@ export function BookingExperience({
                             <span><i className="legend-limited" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
                           </div>
+                          <span className="schedule-scroll-hint">Scroll sideways to see more courts <span aria-hidden="true">→</span></span>
                         </div>
 
-                        {availabilityState === "loading" && (
+                        {visibleAvailabilityState === "loading" && (
                           <div className="availability-loading" role="status" aria-live="polite">
                             <span className="spinner" aria-hidden="true" />
                             <div><strong>Checking the court board…</strong><small>Looking for open whole-hour slots.</small></div>
                           </div>
                         )}
 
-                        {availabilityState === "error" && (
+                        {visibleAvailabilityState === "error" && (
                           <div className="state-card state-error" role="alert">
                             <span className="state-symbol" aria-hidden="true">!</span>
                             <div><h4>The schedule took a timeout.</h4><p>Your choices are still here. Try loading availability again.</p></div>
@@ -2143,7 +2260,7 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {availabilityState === "ready" && displayCourts.length > 0 && availableCount === 0 && (
+                        {visibleAvailabilityState === "ready" && displayCourts.length > 0 && availableCount === 0 && (
                           <div className="state-card state-empty" role="status">
                             <span className="state-symbol" aria-hidden="true">0</span>
                             <div><h4>This day is rally-packed.</h4><p>No court-hours are open. Try the next date.</p></div>
@@ -2160,21 +2277,21 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {availabilityState === "ready" && displayCourts.length === 0 && (
+                        {visibleAvailabilityState === "ready" && displayCourts.length === 0 && (
                           <div className="state-card state-empty" role="status">
                             <span className="state-symbol" aria-hidden="true">0</span>
                             <div><h4>No courts are published yet.</h4><p>The venue owner can add and activate courts in system settings.</p></div>
                           </div>
                         )}
 
-                        {availabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts`} tabIndex={0}>
+                        {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
+                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedDateDetails?.long ?? selectedDate}`} tabIndex={0}>
                             <table className="schedule-matrix">
                               <thead>
                                 <tr>
                                   <th scope="col">Time</th>
                                   {displayCourts.map((court) => (
-                                    <th scope="col" key={court.id} className={court.id === selectedCourtId ? "is-current-court" : undefined}>
+                                    <th scope="col" key={court.id} title={court.name} className={initialCourtSlug && court.id === selectedCourtId ? "is-requested-court" : undefined}>
                                       <strong>C{Number(court.number)}</strong>
                                       <span>{court.name}</span>
                                     </th>
@@ -2189,19 +2306,33 @@ export function BookingExperience({
                                       const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
                                       const key = selectionKey(court.id, hour);
                                       const isSelected = selectedKeys.has(key);
-                                      const isUnavailable = !slot || slot.status === "unavailable";
+                                      const isClosed = !slot;
+                                      const isBooked = slot?.status === "unavailable";
+                                      const isUnavailable = isClosed || isBooked;
+                                      const isLimitBlocked = selectionAtLimit && !isSelected && !isUnavailable;
+                                      const isDisabled = isUnavailable || isLimitBlocked;
+                                      const stateLabel = isClosed
+                                        ? "closed"
+                                        : isBooked
+                                          ? "booked"
+                                          : isLimitBlocked
+                                            ? `selection limit of ${maximumCourtHoursPerCheckout} reached`
+                                            : isSelected
+                                              ? "selected"
+                                              : "available";
                                       return (
                                         <td key={court.id}>
                                           <button
                                             type="button"
-                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}`}
+                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}${isLimitBlocked ? " is-limit-blocked" : ""}`}
                                             aria-pressed={isSelected}
-                                            aria-disabled={isUnavailable}
-                                            aria-label={`${court.name}, ${formatHour(hour)} to ${formatHour(hour + 1)}, ${isUnavailable ? "booked" : `${peso(slot.price)}, ${isSelected ? "selected" : "available"}`}`}
-                                            onClick={() => slot && chooseSlot(court, slot)}
+                                            disabled={isDisabled}
+                                            aria-label={`${court.name}, ${formatHour(hour)} to ${formatHour(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
+                                            onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
                                           >
-                                            <strong>{isUnavailable ? "Booked" : peso(slot.price)}</strong>
-                                            <span>{isSelected ? "Selected" : isUnavailable ? "Unavailable" : "Open"}</span>
+                                            <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
+                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : peso(slot.price)}</strong>
+                                            <span className="schedule-cell-state">{isSelected ? "Added" : isLimitBlocked ? "Limit" : isUnavailable ? stateLabel : "Open"}</span>
                                           </button>
                                         </td>
                                       );
@@ -2220,10 +2351,13 @@ export function BookingExperience({
                         )}
                       </fieldset>
 
-                      <div className="booking-mobile-action">
-                        <div>{selectedSlots.length ? <><small>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</small><strong>{peso(total)}</strong></> : <span>Tap open court-hours</span>}</div>
-                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!selectedSlots.length || !liveSelectionSupported} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
-                      </div>
+                      {selectedSlots.length > 0 && (
+                        <div className="booking-mobile-action" role="region" aria-label="Selected court-hours">
+                          <div><small>{selectionAtLimit ? `Maximum ${maximumCourtHoursPerCheckout} hrs` : `${selectedSlots.length} hr${selectedSlots.length === 1 ? "" : "s"} · ${selectedCourtCount} court${selectedCourtCount === 1 ? "" : "s"}`}</small><strong>{peso(total)}</strong></div>
+                          <button className="mobile-selection-clear" type="button" onClick={clearSelection}>Clear</button>
+                          <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!liveSelectionSupported} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
+                        </div>
+                      )}
                     </div>
                     <BookingSummary
                       selections={selectedSlotDetails}
@@ -2470,11 +2604,21 @@ export function BookingExperience({
                     <p className="confirmation-lede">{!isLive ? <>No real reservation or payment was created. This reference is for the current browser preview only.</> : confirmedBooking.status === "confirmed" ? <>Payment was accepted and booking <strong>{confirmedBooking.reference}</strong> is confirmed. Use <strong>{confirmedBooking.customer.email}</strong> to manage it.</> : <>The receipt for <strong>{confirmedBooking.reference}</strong> was received and is awaiting review. Use <strong>{confirmedBooking.customer.email}</strong> to check its status.</>}</p>
                     <div className="confirmation-reference"><span>BOOKING REFERENCE</span><strong>{confirmedBooking.reference}</strong><button type="button" onClick={() => navigator.clipboard?.writeText(confirmedBooking.reference)}>Copy</button></div>
                     <div className="confirmation-details">
-                      <div><span>Court</span><strong>{selectedCourt.name}</strong></div>
+                      <div><span>Courts</span><strong>{selectedCourtCount}</strong></div>
                       <div><span>Date</span><strong>{selectedDateDetails?.long ?? confirmedBooking.date}</strong></div>
-                      <div><span>Time</span><strong>{formatHour(confirmedBooking.startHour)}–{formatHour(confirmedBooking.startHour + confirmedBooking.durationHours)}</strong></div>
+                      <div><span>Play</span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"}</strong></div>
                       <div><span>Total</span><strong>{peso(confirmedBooking.amount)}</strong></div>
                     </div>
+                    {groupedSelections.length > 0 && (
+                      <ul className="confirmation-sessions" aria-label="Confirmed court sessions">
+                        {groupedSelections.map((group) => (
+                          <li key={`${group.court.id}:${group.startHour}`}>
+                            <strong>{group.court.name}</strong>
+                            <span>{formatHour(group.startHour)}–{formatHour(group.endHour)} · {group.courtHours} hour{group.courtHours === 1 ? "" : "s"}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     <div className="confirmation-next"><span className="status-pulse" aria-hidden="true" /><div><strong>{!isLive ? "Preview reminder" : confirmedBooking.status === "confirmed" ? "You’re booked" : "What happens next?"}</strong><p>{!isLive ? "Do not travel to the venue or send money based on this preview." : confirmedBooking.status === "confirmed" ? "Keep this reference handy for status checks or owner-assisted changes." : "The club will review the submitted receipt. Keep this reference handy to check status."}</p></div></div>
                     <div className="confirmation-actions">
                       <button className="button button-blue" type="button" onClick={() => {
@@ -2532,6 +2676,7 @@ export function BookingExperience({
         <div className="site-container footer-bottom"><span>© 2026 Dinktopia Pickleball Club</span><span>Made for longer rallies.</span></div>
       </footer>
       <p className="sr-live" aria-live="polite" aria-atomic="true">{liveMessage}</p>
+      <p className="sr-live" aria-live="polite" aria-atomic="true">{selectionState.announcement}</p>
     </div>
   );
 }
@@ -2561,7 +2706,7 @@ function BookingSummary({
   const courtCount = new Set(selections.map((item) => item.court.id)).size;
   const hasSelection = selections.length > 0;
   return (
-    <aside className="booking-summary" aria-label="Booking summary">
+    <aside className={`booking-summary${actionLabel ? " booking-summary-selection" : ""}`} aria-label="Booking summary">
       <div className="summary-score"><span>COURT-HOURS</span><strong>{selections.length}</strong></div>
       <div className="summary-heading"><span className="slot-dot" aria-hidden="true" /><p>{hasSelection ? "Your rally plan" : "Build your booking"}</p></div>
       <h3>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} selected` : "Choose from the schedule"}</h3>

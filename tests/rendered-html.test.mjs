@@ -181,7 +181,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.doesNotMatch(manageBook, /class="court-discovery section-pad"|class="club-gallery/i);
 });
 
-test("uses a dynamic multi-select court-hour matrix and fails closed for unsupported live groups", async () => {
+test("uses an atomic, responsive court-hour matrix and fails closed for unsupported live groups", async () => {
   const [bookResponse, booking, publicCss, config] = await Promise.all([
     render("/book"),
     readFile(files.booking, "utf8"),
@@ -190,16 +190,17 @@ test("uses a dynamic multi-select court-hour matrix and fails closed for unsuppo
   ]);
   assertHtmlResponse(bookResponse);
   const bookHtml = await bookResponse.text();
-  const bookText = documentText(bookHtml);
 
   assert.match(bookHtml, /<legend\b[^>]*>Choose court-hours<\/legend>/i);
-  assert.match(
-    bookHtml,
-    /class="schedule-selection-count"[^>]*aria-live="polite"/i,
+  const renderedSelectionCount = bookHtml.match(
+    /<div\b[^>]*class="schedule-selection-count"[^>]*>/i,
   );
-  assert.match(bookText, /0 of 8 court-hours/i);
-  assert.match(bookText, /Tap any open time under the court you want\./i);
-  assert.match(bookText, /COURT-HOURS 0[\s\S]*Choose from the schedule/i);
+  assert.ok(renderedSelectionCount, "expected a rendered selection count");
+  assert.match(
+    renderedSelectionCount[0],
+    /aria-label="0 of \d+ court-hours selected"/i,
+  );
+  assert.doesNotMatch(renderedSelectionCount[0], /aria-live=/i);
   assert.doesNotMatch(bookHtml, /<legend>How long\?<\/legend>|class="duration-control"/i);
 
   const previewStart = config.indexOf("previewCourts: [");
@@ -238,11 +239,44 @@ test("uses a dynamic multi-select court-hour matrix and fails closed for unsuppo
     booking,
     /Two dedicated preview courts|both courts|2 preview courts|Applies to both preview courts/i,
   );
+  assert.match(
+    booking,
+    /className=\{`date-option \$\{selectedDate === date\.iso \? "is-selected" : ""\}`\}[\s\S]*?aria-pressed=\{selectedDate === date\.iso\}[\s\S]*?aria-label=\{date\.long\}/s,
+  );
+  assert.match(
+    booking,
+    /<p className="sr-live" aria-live="polite" aria-atomic="true">\{selectionState\.announcement\}<\/p>/,
+  );
+
+  const selectionCountStart = booking.indexOf(
+    '<div className="schedule-selection-count"',
+  );
+  const selectionCountEnd = booking.indexOf("</div>", selectionCountStart);
+  assert.ok(selectionCountStart >= 0 && selectionCountEnd > selectionCountStart);
+  const selectionCountSource = booking.slice(
+    selectionCountStart,
+    selectionCountEnd + "</div>".length,
+  );
+  assert.match(
+    selectionCountSource,
+    /aria-label=\{`\$\{selectedSlots\.length\} of \$\{maximumCourtHoursPerCheckout\} court-hours selected`\}/,
+  );
+  assert.doesNotMatch(selectionCountSource, /aria-live=/);
+  assert.match(
+    selectionCountSource,
+    /<button className=\{selectedSlots\.length \? undefined : "is-placeholder"\}[\s\S]*?disabled=\{!selectedSlots\.length\}[\s\S]*?aria-hidden=\{!selectedSlots\.length\}[\s\S]*?tabIndex=\{selectedSlots\.length \? 0 : -1\}[\s\S]*?onClick=\{clearSelection\}>Clear<\/button>/s,
+  );
+  assert.doesNotMatch(selectionCountSource, /selectedSlots\.length > 0 &&/);
+  assert.match(
+    booking,
+    /className="schedule-scroll-hint">Scroll sideways to see more courts/,
+  );
+  assert.doesNotMatch(booking, /className="schedule-scroll-hint">Swipe sideways/i);
 
   const matrixStart = booking.indexOf('<div className="schedule-scroll"');
-  const matrixEnd = booking.indexOf("{isLive && selectedSlots.length", matrixStart);
+  const matrixEnd = booking.indexOf("</table>", matrixStart);
   assert.ok(matrixStart >= 0 && matrixEnd > matrixStart);
-  const matrixSource = booking.slice(matrixStart, matrixEnd);
+  const matrixSource = booking.slice(matrixStart, matrixEnd + "</table>".length);
   assert.ok(
     (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length >= 2,
     "expected both schedule headers and row cells to derive from displayCourts",
@@ -254,25 +288,136 @@ test("uses a dynamic multi-select court-hour matrix and fails closed for unsuppo
   );
   assert.match(matrixSource, /const key = selectionKey\(court\.id, hour\)/);
   assert.match(matrixSource, /const isSelected = selectedKeys\.has\(key\)/);
+  assert.match(matrixSource, /const isClosed = !slot/);
+  assert.match(matrixSource, /const isBooked = slot\?\.status === "unavailable"/);
+  assert.match(matrixSource, /const isUnavailable = isClosed \|\| isBooked/);
+  assert.match(
+    matrixSource,
+    /const isLimitBlocked = selectionAtLimit && !isSelected && !isUnavailable/,
+  );
+  assert.match(matrixSource, /const isDisabled = isUnavailable \|\| isLimitBlocked/);
+  assert.match(
+    matrixSource,
+    /aria-label=\{`Availability for \$\{displayCourts\.length\} courts on \$\{selectedDateDetails\?\.long \?\? selectedDate\}`\}/,
+  );
   assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
-  assert.match(matrixSource, /onClick=\{\(\) => slot && chooseSlot\(court, slot\)\}/);
-  assert.doesNotMatch(matrixSource, /<strong>C[1-4]<|\[\s*"C1"|\[\s*"Court 01"/);
+  assert.match(matrixSource, /disabled=\{isDisabled\}/);
+  assert.match(
+    matrixSource,
+    /onClick=\{\(\) => slot && !isUnavailable && chooseSlot\(court, slot\)\}/,
+  );
+  assert.match(matrixSource, /is-closed/);
+  assert.match(matrixSource, /is-booked/);
+  assert.match(matrixSource, /is-limit-blocked/);
+  assert.doesNotMatch(matrixSource, /aria-disabled=/);
+
+  const uniqueStart = booking.indexOf("function uniqueSelections(");
+  const reducerStart = booking.indexOf("function selectionReducer(", uniqueStart);
+  const reducerEnd = booking.indexOf("function canonicalizeSelection(", reducerStart);
+  assert.ok(uniqueStart >= 0 && reducerStart > uniqueStart && reducerEnd > reducerStart);
+  const uniqueSource = booking.slice(uniqueStart, reducerStart);
+  const reducerSource = booking.slice(reducerStart, reducerEnd);
+  assert.match(uniqueSource, /const seen = new Set<string>\(\)/);
+  assert.match(uniqueSource, /const key = selectionKey\(item\.courtId, item\.startHour\)/);
+  assert.match(uniqueSource, /if \(seen\.has\(key\)\) return false/);
+  assert.match(uniqueSource, /seen\.add\(key\)/);
+  assert.match(reducerSource, /items: uniqueSelections\(action\.items\)/);
+  assert.match(reducerSource, /const items = uniqueSelections\(state\.items\)/);
+  assert.match(
+    reducerSource,
+    /const key = selectionKey\(action\.item\.courtId, action\.item\.startHour\)/,
+  );
+  assert.match(
+    reducerSource,
+    /const isSelected = items\.some\([\s\S]*?selectionKey\(item\.courtId, item\.startHour\) === key[\s\S]*?\)/,
+  );
+  assert.match(reducerSource, /if \(!isSelected && items\.length >= action\.maximum\)/);
+  assert.match(reducerSource, /if \(action\.liveMode && items\.length > 0\)/);
+  assert.match(
+    reducerSource,
+    /const orderedHours = items[\s\S]*?\.filter\(\(item\) => item\.courtId === action\.item\.courtId\)[\s\S]*?\.map\(\(item\) => item\.startHour\)[\s\S]*?\.sort\(\(left, right\) => left - right\)/,
+  );
+  assert.match(
+    reducerSource,
+    /const sameCourt = orderedHours\.length === items\.length/,
+  );
+  assert.match(
+    reducerSource,
+    /const extendsRun = sameCourt && \([\s\S]*?action\.item\.startHour === orderedHours\[0\] - 1[\s\S]*?action\.item\.startHour === orderedHours\.at\(-1\)! \+ 1[\s\S]*?\)/,
+  );
+  assert.match(
+    reducerSource,
+    /const removesEdge = sameCourt && isSelected && \([\s\S]*?action\.item\.startHour === orderedHours\[0\][\s\S]*?action\.item\.startHour === orderedHours\.at\(-1\)[\s\S]*?\)/,
+  );
+  assert.match(
+    reducerSource,
+    /if \(\(!isSelected && !extendsRun\) \|\| \(isSelected && !removesEdge\)\)\s*\{[\s\S]*?items,[\s\S]*?Live checkout accepts consecutive hours on one court/s,
+  );
+  assert.match(
+    reducerSource,
+    /const nextItems = isSelected[\s\S]*?items\.filter\([\s\S]*?: \[\.\.\.items, action\.item\]/,
+  );
+  assert.doesNotMatch(reducerSource, /selectedKeys|selectedSlots|setSelectedSlots/);
+  assert.match(
+    booking,
+    /const \[selectionState, dispatchSelection\] = useReducer\(selectionReducer,/,
+  );
+  assert.doesNotMatch(booking, /useState<BookingSelection\[\]>|setSelectedSlots/);
 
   const toggleStart = booking.indexOf("function chooseSlot(");
   const toggleEnd = booking.indexOf("function clearSelection(", toggleStart);
   assert.ok(toggleStart >= 0 && toggleEnd > toggleStart);
   const toggleSource = booking.slice(toggleStart, toggleEnd);
-  assert.match(toggleSource, /selectionKey\(court\.id, slot\.hour\)/);
   assert.match(
     toggleSource,
-    /current\.filter\(\(item\) => selectionKey\(item\.courtId, item\.startHour\) !== key\)/,
+    /dispatchSelection\(\{[\s\S]*?type: "toggle"[\s\S]*?courtId: court\.id[\s\S]*?startHour: slot\.hour[\s\S]*?durationHours: 1[\s\S]*?maximum: maximumCourtHoursPerCheckout,[\s\S]*?liveMode: isLive/s,
   );
-  assert.match(
-    toggleSource,
-    /\.\.\.current,[\s\S]*?courtId:\s*court\.id,[\s\S]*?startHour:\s*slot\.hour,[\s\S]*?durationHours:\s*1/s,
-  );
-  assert.doesNotMatch(toggleSource, /setSelectedSlots\(\s*\[/);
+  assert.doesNotMatch(toggleSource, /selectedKeys|selectedSlots|setSelectedSlots/);
   assert.doesNotMatch(booking, /<legend>How long\?<\/legend>|className="duration-control"/);
+
+  const chooseDateStart = booking.indexOf("function chooseDate(");
+  const chooseDateEnd = booking.indexOf("function validateDetails(", chooseDateStart);
+  assert.ok(chooseDateStart >= 0 && chooseDateEnd > chooseDateStart);
+  const chooseDateSource = booking.slice(chooseDateStart, chooseDateEnd);
+  assert.match(
+    chooseDateSource,
+    /dispatchSelection\(\{ type: "clear", announcement: resetMessage \}\)/,
+  );
+  assert.match(
+    chooseDateSource,
+    /setSchedule\(\[\]\);\s*setScheduleDate\(""\);\s*setAvailabilityState\("loading"\);\s*setSelectedDate\(date\);/s,
+  );
+  assert.doesNotMatch(
+    chooseDateSource,
+    /selectedSlots\.length[\s\S]*?return;[\s\S]*?setSelectedDate/,
+  );
+  assert.match(
+    booking,
+    /const visibleAvailabilityState =\s*scheduleDate === selectedDate \? availabilityState : "loading";/s,
+  );
+  assert.match(
+    booking,
+    /setSchedule\(nextSchedule\);\s*setScheduleDate\(selectedDate\);/s,
+  );
+  const availabilityMarkupStart = booking.indexOf(
+    '{visibleAvailabilityState === "loading"',
+  );
+  const availabilityMarkupEnd = booking.indexOf(
+    "{isLive && selectedSlots.length",
+    availabilityMarkupStart,
+  );
+  assert.ok(
+    availabilityMarkupStart >= 0 && availabilityMarkupEnd > availabilityMarkupStart,
+  );
+  const availabilityMarkup = booking.slice(
+    availabilityMarkupStart,
+    availabilityMarkupEnd,
+  );
+  assert.ok(
+    (availabilityMarkup.match(/visibleAvailabilityState ===/g) ?? []).length >= 5,
+    "expected every schedule state to use only availability for the selected date",
+  );
+  assert.doesNotMatch(availabilityMarkup, /\{availabilityState ===/);
 
   const summaryStart = booking.indexOf("function BookingSummary(");
   const summaryEnd = booking.indexOf("type ManageBookingProps", summaryStart);
@@ -328,10 +473,24 @@ test("uses a dynamic multi-select court-hour matrix and fails closed for unsuppo
     "expected the UI to reject unsupported live groups before calling its adapter",
   );
 
-  assert.match(
-    publicCss,
-    /\.schedule-scroll\s*\{[^}]*overflow(?:-x)?:\s*auto/s,
+  const scheduleScrollRules = [
+    ...publicCss.matchAll(/(?:^|\n)\s*\.schedule-scroll\s*\{([^}]*)\}/g),
+  ].map((match) => match[1]);
+  assert.ok(scheduleScrollRules.length >= 1, "expected schedule-scroll styles");
+  const scheduleScrollBase = scheduleScrollRules[0];
+  assert.match(scheduleScrollBase, /max-height:\s*none/);
+  assert.match(scheduleScrollBase, /overflow-x:\s*auto/);
+  assert.match(scheduleScrollBase, /overflow-y:\s*visible/);
+  assert.match(scheduleScrollBase, /touch-action:\s*pan-x pan-y/);
+  const scheduleMaxHeights = scheduleScrollRules.flatMap((rule) =>
+    [...rule.matchAll(/max-height:\s*([^;}]+)/g)].map((match) => match[1].trim()),
   );
+  assert.deepEqual(
+    scheduleMaxHeights,
+    ["none"],
+    "the schedule must not create a nested vertical max-height scroller",
+  );
+  assert.doesNotMatch(scheduleScrollRules.join("\n"), /\boverflow:\s*auto/);
   assert.match(
     publicCss,
     /\.schedule-matrix[^\{]*\{[^}]*min-width:/s,
@@ -340,17 +499,78 @@ test("uses a dynamic multi-select court-hour matrix and fails closed for unsuppo
     publicCss,
     /\.schedule-matrix tbody th\s*\{[^}]*position:\s*sticky[^}]*left:\s*0/s,
   );
-  const scheduleCellRule = publicCss.match(/\.schedule-cell\s*\{([^}]*)\}/s);
-  assert.ok(scheduleCellRule, "expected schedule-cell styles");
-  const scheduleCellWidth = scheduleCellRule[1].match(/min-width:\s*([0-9.]+)px/);
-  const scheduleCellHeight = scheduleCellRule[1].match(/min-height:\s*([0-9.]+)px/);
-  assert.ok(
-    scheduleCellWidth && Number(scheduleCellWidth[1]) >= 48,
-    "expected every schedule cell to be at least 48px wide",
+
+  const scheduleCellRules = [
+    ...publicCss.matchAll(/(?:^|\n)\s*\.schedule-cell\s*\{([^}]*)\}/g),
+  ].map((match) => match[1]);
+  assert.ok(scheduleCellRules.length >= 1, "expected schedule-cell styles");
+  for (const rule of scheduleCellRules) {
+    const width = rule.match(/min-width:\s*([0-9.]+)px/);
+    const height = rule.match(/min-height:\s*([0-9.]+)px/);
+    assert.ok(width && Number(width[1]) >= 48, "expected 48px-wide schedule targets");
+    assert.ok(height && Number(height[1]) >= 48, "expected 48px-tall schedule targets");
+  }
+  const baseScheduleCell = scheduleCellRules[0];
+  assert.match(baseScheduleCell, /border:\s*1px solid var\(--line\)/);
+  assert.match(baseScheduleCell, /border-radius:\s*(?:[89]|[1-9][0-9]+)px/);
+  assert.match(baseScheduleCell, /background:\s*var\(--white\)/);
+  assert.match(baseScheduleCell, /touch-action:\s*manipulation/);
+  const selectedCellRule = publicCss.match(/\.schedule-cell\.is-selected\s*\{([^}]*)\}/s);
+  assert.ok(selectedCellRule, "expected a selected schedule tile state");
+  assert.match(selectedCellRule[1], /border-color:/);
+  assert.match(selectedCellRule[1], /background:\s*#e8ffd2/);
+  assert.match(selectedCellRule[1], /box-shadow:/);
+  assert.match(
+    publicCss,
+    /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*border-radius:\s*50%[^}]*background:\s*var\(--ink\)[^}]*color:\s*var\(--lime\)/s,
   );
-  assert.ok(
-    scheduleCellHeight && Number(scheduleCellHeight[1]) >= 48,
-    "expected every schedule cell to be at least 48px tall",
+  assert.match(
+    publicCss,
+    /\.schedule-selection-count button\.is-placeholder\s*\{[^}]*visibility:\s*hidden[^}]*pointer-events:\s*none/s,
+  );
+
+  assert.equal(
+    (booking.match(/className="booking-mobile-action"/g) ?? []).length,
+    1,
+    "expected one mobile selection dock",
+  );
+  assert.match(
+    booking,
+    /\{selectedSlots\.length > 0 && \([\s\S]*?className="booking-mobile-action"[\s\S]*?className="mobile-selection-clear"[\s\S]*?data-testid="booking-continue"/s,
+  );
+  assert.match(
+    booking,
+    /className=\{`booking-summary\$\{actionLabel \? " booking-summary-selection" : ""\}`\}/,
+  );
+  const mobileDockRule = publicCss.match(/\.booking-mobile-action\s*\{([^}]*)\}/s);
+  assert.ok(mobileDockRule, "expected mobile dock styles");
+  assert.match(mobileDockRule[1], /position:\s*fixed/);
+  assert.match(mobileDockRule[1], /bottom:\s*max\(12px, env\(safe-area-inset-bottom\)\)/);
+  const mobileSummaryRule = publicCss.match(/\.booking-summary-selection\s*\{([^}]*)\}/s);
+  assert.ok(mobileSummaryRule, "expected mobile selection-summary styles");
+  assert.match(mobileSummaryRule[1], /display:\s*none/);
+  assert.match(
+    publicCss,
+    /@media \(min-width:\s*980px\)\s*\{[\s\S]*?\.booking-summary-selection\s*\{\s*display:\s*block;?\s*\}[\s\S]*?\.booking-mobile-action\s*\{\s*display:\s*none;?\s*\}/s,
+  );
+
+  for (const [selector, expectedDimensions] of [
+    ["date-option", ["min-width", "min-height"]],
+    ["mobile-selection-clear", ["min-width", "min-height"]],
+  ]) {
+    const rule = publicCss.match(new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`, "s"));
+    assert.ok(rule, `expected ${selector} styles`);
+    for (const dimension of expectedDimensions) {
+      const size = rule[1].match(new RegExp(`${dimension}:\\s*([0-9.]+)px`));
+      assert.ok(
+        size && Number(size[1]) >= 48,
+        `expected ${selector} ${dimension} to be at least 48px`,
+      );
+    }
+  }
+  assert.match(
+    publicCss,
+    /\.booking-mobile-action \.button\s*\{[^}]*min-height:\s*(?:4[89]|[5-9][0-9]|[1-9][0-9]{2,})px/s,
   );
 });
 
@@ -1115,7 +1335,19 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /\.booking-mobile-action\s*\{[^}]*position:\s*sticky/s,
+    /\.booking-mobile-action\s*\{[^}]*position:\s*fixed[^}]*bottom:\s*max\(12px,\s*env\(safe-area-inset-bottom\)\)/s,
+  );
+  assert.match(
+    publicCss,
+    /\.booking-selection-card\.has-mobile-selection\s*\{[^}]*padding-bottom:\s*(?:9[6-9]|[1-9][0-9]{2,})px/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.booking-selection-card\.has-mobile-selection\s*\{[^}]*padding-bottom:\s*(?:9[6-9]|[1-9][0-9]{2,})px[^}]*\}/s,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.booking-mobile-action\s*\{[^}]*display:\s*none[^}]*\}[\s\S]*?\.booking-selection-card\.has-mobile-selection\s*\{[^}]*padding-bottom:\s*24px[^}]*\}/s,
   );
   assert.match(
     publicCss,
@@ -1219,8 +1451,16 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(manageCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
 
+  assert.match(
+    booking,
+    /className="schedule-cell-mark" aria-hidden="true"/,
+  );
+  const publicTextCss = publicCss.replace(
+    /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*\}/gs,
+    "",
+  );
   const publicPixelTypeSizes = [
-    ...publicCss.matchAll(/font-size:\s*([0-9.]+)px/g),
+    ...publicTextCss.matchAll(/font-size:\s*([0-9.]+)px/g),
   ].map((match) => Number(match[1]));
   assert.ok(publicPixelTypeSizes.every((size) => size >= 12));
 
