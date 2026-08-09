@@ -790,11 +790,10 @@
 .courtNumber { align-self: center; color: var(--blue); font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: var(--text-caption); font-weight: 700; }
 .courtEditorCard {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1.1fr) minmax(0, .9fr) minmax(10rem, .8fr);
+  grid-template-columns: 42px minmax(0, 1fr) minmax(0, 1.2fr) minmax(10rem, .65fr);
   grid-template-areas:
     "marker heading heading heading"
-    "marker name slug description"
-    "marker status order ."
+    "marker name description status"
     ". actions actions actions";
   align-items: end;
   gap: 12px;
@@ -804,58 +803,64 @@
 .courtCardHeading p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-caption); }
 .courtMarker { grid-area: marker; align-self: start; justify-self: center; color: var(--blue); font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: var(--text-caption); font-weight: 700; }
 .courtNameField { grid-area: name; min-width: 0; }
-.courtSlugField { grid-area: slug; min-width: 0; }
 .courtDescriptionField { grid-area: description; min-width: 0; }
 .courtStatusField { grid-area: status; min-width: 0; }
-.courtOrderField { grid-area: order; min-width: 0; }
 .courtCardActions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
 .courtCardActions > * { flex: 1 1 7.5rem; }
-.newCourtDetails {
-  margin-top: 18px;
-  overflow: clip;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: rgba(255,255,255,.7);
-}
-.newCourtDetails > summary,
-.newCourtSummary {
-  min-height: 52px;
+.addCourtRow {
   display: flex;
   align-items: center;
-  gap: 10px;
-  cursor: pointer;
-  padding: 11px 14px;
-  color: var(--ink);
-  font-size: var(--text-small);
-  font-weight: 800;
-  list-style: none;
-}
-.newCourtDetails > summary::-webkit-details-marker { display: none; }
-.newCourtDetails > summary:hover,
-.newCourtSummary:hover { background: rgba(234,240,246,.68); }
-.newCourtDetails > summary::after,
-.newCourtSummary::after {
-  content: "+";
-  width: 28px;
-  height: 28px;
-  display: grid;
-  flex: 0 0 auto;
-  margin-left: auto;
-  place-items: center;
-  border-radius: 8px;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
   background: var(--paper-deep);
-  color: var(--blue);
-  font-size: 1.1rem;
-  line-height: 1;
-  transition: transform 150ms ease;
+  padding: 13px 14px;
 }
-.newCourtDetails[open] > summary,
-.newCourtDetails[open] > .newCourtSummary { border-bottom: 1px solid var(--line); }
-.newCourtDetails[open] > summary::after,
-.newCourtDetails[open] > .newCourtSummary::after { transform: rotate(45deg); }
-.newCourtForm { padding: 16px; }
-.newCourtSummaryText { display: grid; min-width: 0; }
-.newCourtSummaryText small { margin-top: 2px; color: var(--muted); font-weight: 500; }
+.addCourtRow > div { display: grid; gap: 3px; min-width: 0; }
+.addCourtRow strong { font-size: var(--text-small); }
+.addCourtRow span { color: var(--muted); font-size: var(--text-caption); }
+.addCourtRow .button span { color: inherit; font-size: inherit; }
+.courtDialog {
+  width: min(620px, calc(100vw - 28px));
+  max-width: none;
+  max-height: calc(100dvh - 28px);
+  overflow: hidden;
+  border: 0;
+  border-radius: 20px;
+  background: transparent;
+  padding: 0;
+  color: var(--ink);
+  box-shadow: 0 28px 90px rgba(11,33,53,.32);
+}
+.courtDialog::backdrop { background: rgba(7,31,52,.66); backdrop-filter: blur(5px); }
+.courtDialogShell {
+  max-height: calc(100dvh - 28px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.74);
+  border-radius: inherit;
+  background: var(--white);
+}
+.courtDialogHeader { position: relative; flex: 0 0 auto; border-bottom: 1px solid var(--line); padding: 22px 76px 17px 24px; }
+.courtDialogHeader .eyebrow { margin: 0 0 5px; }
+.courtDialogHeader h2 { margin: 0; font-size: 1.55rem; line-height: 1.12; letter-spacing: -.035em; }
+.courtDialogHeader h2 + p { max-width: 430px; margin: 7px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.newCourtForm { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
+.courtDialogBody { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px; }
+.courtBasicsGrid { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 14px; }
+.courtBasicsGrid .fieldWide { grid-column: 1 / -1; }
+.courtBasicsGrid .field > span small { margin-left: 4px; color: var(--muted); font-weight: 600; }
+.courtScheduleCard { min-width: 0; margin: 18px 0 0; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-deep); padding: 16px; }
+.courtScheduleCard legend { padding: 0 6px; color: var(--ink); font-size: var(--text-small); font-weight: 800; }
+.courtScheduleCard > p { margin: 0 0 13px; color: var(--muted); font-size: var(--text-caption); }
+.courtTimeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.courtRateGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.systemDefaultsNote { margin: 14px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.courtDialogActions { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--line); background: rgba(255,255,255,.97); padding: 13px 24px max(13px, env(safe-area-inset-bottom)); }
+.courtDialogActions .button { min-width: 112px; }
 .settingsFooter { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 22px -27px -27px; border-radius: 0 0 18px 18px; background: var(--paper-deep); padding: 14px 27px; }
 .settingsFooter > span { color: var(--muted); font-size: var(--text-caption); }
 .rateGrid, .ruleList { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -1297,9 +1302,8 @@
     grid-template-columns: 38px repeat(2, minmax(0, 1fr));
     grid-template-areas:
       "marker heading heading"
-      "marker name slug"
+      "marker name status"
       "marker description description"
-      "marker status order"
       ". actions actions";
   }
   .sharedScheduleRow { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow-x: visible; }
@@ -1401,10 +1405,8 @@
     grid-template-areas:
       "marker heading"
       "marker name"
-      "marker slug"
       "marker description"
       "marker status"
-      "marker order"
       ". actions";
     align-items: start;
   }
@@ -1445,16 +1447,27 @@
     grid-template-areas:
       "marker heading"
       "name name"
-      "slug slug"
       "description description"
       "status status"
-      "order order"
       "actions actions";
     gap: 10px;
   }
   .courtMarker { justify-self: start; }
   .courtCardActions { flex-direction: column; }
-  .newCourtForm { padding: 13px; }
+  .addCourtRow { align-items: stretch; flex-direction: column; }
+  .addCourtRow .button { width: 100%; }
+  .courtDialog { width: calc(100vw - 12px); max-height: calc(100dvh - 12px); border-radius: 17px; }
+  .courtDialogShell { max-height: calc(100dvh - 12px); }
+  .courtDialogHeader { padding: 18px 66px 14px 16px; }
+  .courtDialogHeader h2 { font-size: 1.35rem; }
+  .courtDialogBody { padding: 16px; }
+  .courtBasicsGrid { grid-template-columns: 1fr; gap: 12px; }
+  .courtBasicsGrid .fieldWide { grid-column: auto; }
+  .courtScheduleCard { margin-top: 14px; padding: 13px 10px; }
+  .courtTimeGrid { gap: 6px; }
+  .courtRateGrid { gap: 8px; }
+  .courtDialogActions { padding: 11px 16px max(11px, env(safe-area-inset-bottom)); }
+  .courtDialogActions .button { min-width: 0; flex: 1; }
   .sharedScheduleRow { grid-template-columns: minmax(0, 1fr); }
   .scheduleDayLabel { grid-column: auto; }
   .blockItem { grid-template-columns: 43px minmax(0, 1fr); align-items: start; }

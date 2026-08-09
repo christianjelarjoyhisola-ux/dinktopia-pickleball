@@ -1328,53 +1328,95 @@ function ReportsView({ snapshot }: { snapshot: ManagementSnapshot }) {
 
 type CourtDraft = {
   name: string;
-  slug: string;
   description: string;
   status: "active" | "inactive" | "maintenance";
-  sortOrder: string;
 };
 
 type NewCourtDraft = {
   name: string;
-  slug: string;
   description: string;
-  status: "" | CourtDraft["status"];
-  sortOrder: string;
+  status: CourtDraft["status"];
   opensAt: string;
   peakStartsAt: string;
   closesAt: string;
   dayRate: string;
   peakRate: string;
-  minimumHours: string;
-  maximumHours: string;
-  minimumLeadMinutes: string;
-  maximumAdvanceDays: string;
 };
 
 const emptyNewCourt: NewCourtDraft = {
   name: "",
-  slug: "",
   description: "",
-  status: "",
-  sortOrder: "",
-  opensAt: "",
-  peakStartsAt: "",
-  closesAt: "",
-  dayRate: "",
-  peakRate: "",
-  minimumHours: "",
-  maximumHours: "",
-  minimumLeadMinutes: "",
-  maximumAdvanceDays: "",
+  status: "active",
+  opensAt: "06:00",
+  peakStartsAt: "16:00",
+  closesAt: "22:00",
+  dayRate: "300",
+  peakRate: "400",
 };
+
+const wholeHourOptions = Array.from({ length: 24 }, (_, hour) => {
+  const value = `${String(hour).padStart(2, "0")}:00`;
+  const displayHour = hour % 12 || 12;
+  return { value, label: `${displayHour} ${hour < 12 ? "AM" : "PM"}` };
+});
+
+function newCourtDraftFor(snapshot: ManagementSnapshot): NewCourtDraft {
+  const schedule = snapshot.configuration.sharedSchedule;
+  if (!schedule || schedule.bands.length !== 2) return { ...emptyNewCourt };
+  return {
+    ...emptyNewCourt,
+    opensAt: schedule.opensAt,
+    peakStartsAt: schedule.bands[0]?.end ?? emptyNewCourt.peakStartsAt,
+    closesAt: schedule.closesAt,
+    dayRate: String(schedule.bands[0]?.hourlyRate ?? emptyNewCourt.dayRate),
+    peakRate: String(schedule.bands[1]?.hourlyRate ?? emptyNewCourt.peakRate),
+  };
+}
+
+function generatedCourtSlug(name: string, snapshot: ManagementSnapshot): string {
+  const normalized = name
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  const base = normalized.slice(0, 80).replace(/-+$/g, "") || "court";
+  const used = new Set(snapshot.courts.map((court) => court.slug));
+  if (!used.has(base)) return base;
+  let suffix = 2;
+  while (true) {
+    const suffixText = `-${suffix}`;
+    const stem = base
+      .slice(0, 80 - suffixText.length)
+      .replace(/-+$/g, "") || "court";
+    const candidate = `${stem}${suffixText}`;
+    if (!used.has(candidate)) return candidate;
+    suffix += 1;
+  }
+}
+
+function nextCourtSortOrder(snapshot: ManagementSnapshot): number {
+  const used = new Set(snapshot.courts.map((court) => court.sortOrder));
+  const highest = snapshot.courts.reduce(
+    (current, court) => Math.max(current, court.sortOrder),
+    -1,
+  );
+  if (highest < 10_000) return highest + 1;
+  for (let sortOrder = 0; sortOrder <= 10_000; sortOrder += 1) {
+    if (!used.has(sortOrder)) return sortOrder;
+  }
+  return 10_000;
+}
+
+function wholeHourLabel(value: string): string {
+  return wholeHourOptions.find((option) => option.value === value)?.label ?? value;
+}
 
 function courtDraftsFor(snapshot: ManagementSnapshot): Record<string, CourtDraft> {
   return Object.fromEntries(snapshot.courts.map((court) => [court.id, {
     name: court.name,
-    slug: court.slug,
     description: court.description,
     status: court.status,
-    sortOrder: String(court.sortOrder),
   }]));
 }
 
@@ -1382,27 +1424,16 @@ function courtDraftError(draft: CourtDraft): string | null {
   if (!draft.name.trim() || draft.name.trim().length > 120) {
     return "Display name must contain 1 to 120 characters.";
   }
-  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(draft.slug)) {
-    return "Slug must use lowercase letters, numbers, and single hyphens.";
-  }
-  const sortOrder = Number(draft.sortOrder);
-  if (
-    draft.sortOrder.trim() === "" || !Number.isSafeInteger(sortOrder) ||
-    sortOrder < 0 || sortOrder > 10_000
-  ) return "Sort order must be a whole number from 0 to 10,000.";
   return null;
 }
 
 function newCourtDraftError(draft: NewCourtDraft): string | null {
   const baseError = courtDraftError({
     name: draft.name,
-    slug: draft.slug,
     description: draft.description,
-    status: draft.status || "inactive",
-    sortOrder: draft.sortOrder,
+    status: draft.status,
   });
   if (baseError) return baseError;
-  if (!draft.status) return "Choose the court's initial status.";
   const wholeHour = /^(?:[01]\d|2[0-3]):00$/;
   if (
     !wholeHour.test(draft.opensAt) || !wholeHour.test(draft.peakStartsAt) ||
@@ -1418,20 +1449,6 @@ function newCourtDraftError(draft: NewCourtDraft): string | null {
     !Number.isFinite(dayRate) || dayRate <= 0 ||
     !Number.isFinite(peakRate) || peakRate <= 0
   ) return "Both hourly rates must be greater than zero.";
-  const minimumHours = Number(draft.minimumHours);
-  const maximumHours = Number(draft.maximumHours);
-  if (
-    draft.minimumHours.trim() === "" || draft.maximumHours.trim() === "" ||
-    !Number.isSafeInteger(minimumHours) || !Number.isSafeInteger(maximumHours) ||
-    minimumHours < 1 || maximumHours < minimumHours
-  ) return "Maximum hours must be a whole number at least as large as minimum hours.";
-  const minimumLeadMinutes = Number(draft.minimumLeadMinutes);
-  const maximumAdvanceDays = Number(draft.maximumAdvanceDays);
-  if (
-    draft.minimumLeadMinutes.trim() === "" || draft.maximumAdvanceDays.trim() === "" ||
-    !Number.isSafeInteger(minimumLeadMinutes) || minimumLeadMinutes < 0 ||
-    !Number.isSafeInteger(maximumAdvanceDays) || maximumAdvanceDays < 1
-  ) return "Lead minutes and advance days must be valid whole-number limits.";
   return null;
 }
 
@@ -1540,8 +1557,9 @@ function LiveSettingsView({
 }) {
   const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
   const [courtDrafts, setCourtDrafts] = useState(() => courtDraftsFor(snapshot));
-  const [newCourt, setNewCourt] = useState<NewCourtDraft>(emptyNewCourt);
+  const [newCourt, setNewCourt] = useState<NewCourtDraft>(() => newCourtDraftFor(snapshot));
   const [newCourtAttempted, setNewCourtAttempted] = useState(false);
+  const newCourtDialogRef = useRef<HTMLDialogElement>(null);
   const [scheduleDraft, setScheduleDraft] = useState(
     snapshot.configuration.sharedSchedule,
   );
@@ -1562,6 +1580,20 @@ function LiveSettingsView({
     key: Key,
     fieldValue: NewCourtDraft[Key],
   ) => setNewCourt((current) => ({ ...current, [key]: fieldValue }));
+
+  const openNewCourtDialog = () => {
+    setNewCourtAttempted(false);
+    const dialog = newCourtDialogRef.current;
+    if (!dialog || dialog.open) return;
+    dialog.showModal();
+    window.requestAnimationFrame(() => {
+      dialog.querySelector<HTMLInputElement>("[data-new-court-name]")?.focus();
+    });
+  };
+
+  const closeNewCourtDialog = () => {
+    newCourtDialogRef.current?.close();
+  };
 
   const setBusinessField = <Key extends keyof Omit<BusinessDraft, "paymentMethods">>(
     key: Key,
@@ -1650,7 +1682,6 @@ function LiveSettingsView({
               {snapshot.courts.map((court, index) => {
                 const draft = courtDrafts[court.id];
                 if (!draft) return null;
-                const sortOrder = Number(draft.sortOrder);
                 const draftError = courtDraftError(draft);
                 const headingId = `court-${court.id}-title`;
                 const errorId = `court-${court.id}-error`;
@@ -1665,16 +1696,14 @@ function LiveSettingsView({
                       }
                       request({
                         title: `Save ${court.name}?`,
-                        detail: `${draft.name.trim()} · ${draft.status} · sort ${sortOrder}. Schedule, pricing, and public booking limits remain untouched.`,
+                        detail: `${draft.name.trim()} · ${draft.status}. Its internal address, order, schedule, pricing, and booking rules remain untouched.`,
                         confirmLabel: `Save ${court.name}`,
                         actionType: "court:update",
                         resourceId: court.id,
                         payload: {
                           name: draft.name,
-                          slug: draft.slug,
                           description: draft.description || null,
                           status: draft.status,
-                          sortOrder,
                         },
                       });
                     }}
@@ -1686,10 +1715,8 @@ function LiveSettingsView({
                         <p>Live court record</p>
                       </div>
                       <label className={cx(styles.field, styles.courtNameField)}><span>Display name</span><input required aria-invalid={!draft.name.trim() || draft.name.trim().length > 120} aria-describedby={draftError ? errorId : undefined} value={draft.name} maxLength={120} onChange={(event) => setCourtField(court.id, "name", event.target.value)} /></label>
-                      <label className={cx(styles.field, styles.courtSlugField)}><span>Slug</span><input required aria-invalid={!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(draft.slug)} aria-describedby={draftError ? errorId : undefined} value={draft.slug} pattern="[a-z0-9]+(?:-[a-z0-9]+)*" onChange={(event) => setCourtField(court.id, "slug", event.target.value)} /></label>
                       <label className={cx(styles.field, styles.courtDescriptionField)}><span>Description</span><input value={draft.description} onChange={(event) => setCourtField(court.id, "description", event.target.value)} /></label>
                       <label className={cx(styles.field, styles.courtStatusField)}><span>Status</span><select value={draft.status} onChange={(event) => setCourtField(court.id, "status", event.target.value as CourtDraft["status"])}><option value="active">Active</option><option value="maintenance">Maintenance</option><option value="inactive">Inactive</option></select></label>
-                      <label className={cx(styles.field, styles.courtOrderField)}><span>Sort order</span><input required aria-invalid={draft.sortOrder.trim() === "" || !Number.isSafeInteger(sortOrder) || sortOrder < 0 || sortOrder > 10_000} aria-describedby={draftError ? errorId : undefined} type="number" min="0" max="10000" step="1" value={draft.sortOrder} onChange={(event) => setCourtField(court.id, "sortOrder", event.target.value)} /></label>
                       <div className={styles.courtCardActions}>
                         {draftError && <p id={errorId} className={styles.fieldError} role="alert">{draftError}</p>}
                         <ActionButton type="submit" disabled={!can("settings:update")} ariaLabel={`Save ${court.name} court settings`}>Save court</ActionButton>
@@ -1700,75 +1727,108 @@ function LiveSettingsView({
                 );
               })}
             </div>
-            {!snapshot.courts.length && <div className={styles.inlineEmpty} role="status"><span aria-hidden="true">00</span><h3>No live courts configured</h3><p>Add the first court using confirmed venue values below. Preview inventory is never copied into production.</p></div>}
-            <details className={styles.newCourtDetails}>
-              <summary className={styles.newCourtSummary}>
-                <span className={styles.newCourtSummaryText}>Add a court<small>Enter confirmed hours, rates, and booking limits.</small></span>
-              </summary>
-              <form
-                className={cx(styles.formGrid, styles.newCourtForm)}
-                onInvalid={() => setNewCourtAttempted(true)}
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  setNewCourtAttempted(true);
-                  const error = newCourtDraftError(newCourt);
-                  if (error) {
-                    event.currentTarget.reportValidity();
-                    return;
-                  }
-                  const closingBandEnd = newCourt.closesAt === "00:00" ? "24:00" : newCourt.closesAt;
-                  request({
-                    title: `Create ${newCourt.name.trim()}?`,
-                    detail: `${newCourt.status} · ${newCourt.opensAt}–${newCourt.closesAt} · PHP ${newCourt.dayRate}/${newCourt.peakRate} per hour · ${newCourt.minimumHours}–${newCourt.maximumHours} hour bookings.`,
-                    confirmLabel: `Create ${newCourt.name.trim()}`,
-                    actionType: "court:create",
-                    payload: {
-                      name: newCourt.name,
-                      slug: newCourt.slug,
-                      description: newCourt.description || null,
-                      status: newCourt.status,
-                      sortOrder: Number(newCourt.sortOrder),
-                      opensAt: newCourt.opensAt,
-                      closesAt: newCourt.closesAt,
-                      currency: snapshot.tenant.currency,
-                      pricingConfig: { regular: {
-                        minimumHours: Number(newCourt.minimumHours),
-                        maximumHours: Number(newCourt.maximumHours),
-                        bands: [
-                          { start: newCourt.opensAt, end: newCourt.peakStartsAt, hourlyRate: Number(newCourt.dayRate) },
-                          { start: newCourt.peakStartsAt, end: closingBandEnd, hourlyRate: Number(newCourt.peakRate) },
-                        ],
-                      } },
-                      publicConfig: {
-                        minimumLeadMinutes: Number(newCourt.minimumLeadMinutes),
-                        maximumAdvanceDays: Number(newCourt.maximumAdvanceDays),
+            {!snapshot.courts.length && <div className={styles.inlineEmpty} role="status"><span aria-hidden="true">00</span><h3>No live courts configured</h3><p>Add the first court with its name, whole-hour schedule, and rates. Internal setup values are handled automatically.</p></div>}
+            <div className={styles.addCourtRow}>
+              <div><strong>Need another court?</strong><span>It takes only the venue details owners actually use.</span></div>
+              <ActionButton disabled={!can("settings:update")} onClick={openNewCourtDialog}><span aria-hidden="true">＋</span> Add court</ActionButton>
+            </div>
+            <dialog
+              ref={newCourtDialogRef}
+              className={styles.courtDialog}
+              aria-labelledby="add-court-title"
+              aria-describedby="add-court-description"
+              onCancel={(event) => {
+                event.preventDefault();
+                closeNewCourtDialog();
+              }}
+            >
+              <div className={styles.courtDialogShell}>
+                <header className={styles.courtDialogHeader}>
+                  <div>
+                    <p className={styles.eyebrow}>Live inventory</p>
+                    <h2 id="add-court-title">Add court</h2>
+                    <p id="add-court-description">Set the name, status, whole-hour schedule, and hourly rates.</p>
+                  </div>
+                  <button type="button" className={styles.dialogClose} aria-label="Close Add court" onClick={closeNewCourtDialog}>×</button>
+                </header>
+                <form
+                  className={styles.newCourtForm}
+                  onInvalid={() => setNewCourtAttempted(true)}
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    setNewCourtAttempted(true);
+                    const error = newCourtDraftError(newCourt);
+                    if (error) {
+                      event.currentTarget.reportValidity();
+                      return;
+                    }
+                    const closingBandEnd = newCourt.closesAt === "00:00" ? "24:00" : newCourt.closesAt;
+                    const generatedSlug = generatedCourtSlug(newCourt.name, snapshot);
+                    const generatedSortOrder = nextCourtSortOrder(snapshot);
+                    closeNewCourtDialog();
+                    request({
+                      title: `Create ${newCourt.name.trim()}?`,
+                      detail: `${newCourt.status} · ${wholeHourLabel(newCourt.opensAt)}–${wholeHourLabel(newCourt.closesAt)} · ${formatPeso(Number(newCourt.dayRate))}/${formatPeso(Number(newCourt.peakRate))} per hour.`,
+                      confirmLabel: `Create ${newCourt.name.trim()}`,
+                      actionType: "court:create",
+                      payload: {
+                        name: newCourt.name.trim(),
+                        slug: generatedSlug,
+                        description: newCourt.description.trim() || null,
+                        status: newCourt.status,
+                        sortOrder: generatedSortOrder,
+                        opensAt: newCourt.opensAt,
+                        closesAt: newCourt.closesAt,
+                        currency: snapshot.tenant.currency,
+                        pricingConfig: { regular: {
+                          minimumHours: 1,
+                          maximumHours: 18,
+                          bands: [
+                            { start: newCourt.opensAt, end: newCourt.peakStartsAt, hourlyRate: Number(newCourt.dayRate) },
+                            { start: newCourt.peakStartsAt, end: closingBandEnd, hourlyRate: Number(newCourt.peakRate) },
+                          ],
+                        } },
+                        publicConfig: {
+                          minimumLeadMinutes: 60,
+                          maximumAdvanceDays: 30,
+                        },
                       },
-                    },
-                    onSuccess: () => {
-                      setNewCourt(emptyNewCourt);
-                      setNewCourtAttempted(false);
-                    },
-                  });
-                }}
-              >
-              <label className={styles.field}><span>Display name</span><input required maxLength={120} value={newCourt.name} onChange={(event) => setNewCourtField("name", event.target.value)} /></label>
-              <label className={styles.field}><span>Slug</span><input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" value={newCourt.slug} onChange={(event) => setNewCourtField("slug", event.target.value)} /></label>
-              <label className={styles.field}><span>Description</span><input value={newCourt.description} onChange={(event) => setNewCourtField("description", event.target.value)} /></label>
-              <label className={styles.field}><span>Status</span><select required value={newCourt.status} onChange={(event) => setNewCourtField("status", event.target.value as NewCourtDraft["status"])}><option value="" disabled>Choose status</option><option value="inactive">Inactive</option><option value="maintenance">Maintenance</option><option value="active">Active</option></select></label>
-              <label className={styles.field}><span>Sort order</span><input required type="number" min="0" max="10000" step="1" value={newCourt.sortOrder} onChange={(event) => setNewCourtField("sortOrder", event.target.value)} /></label>
-              <label className={styles.field}><span>Opens</span><input required type="time" step={3600} value={newCourt.opensAt} onChange={(event) => setNewCourtField("opensAt", event.target.value)} /></label>
-              <label className={styles.field}><span>Peak starts</span><input required type="time" step={3600} value={newCourt.peakStartsAt} onChange={(event) => setNewCourtField("peakStartsAt", event.target.value)} /></label>
-              <label className={styles.field}><span>Closes</span><input required type="time" step={3600} value={newCourt.closesAt} onChange={(event) => setNewCourtField("closesAt", event.target.value)} /></label>
-              <label className={styles.field}><span>Day rate / hour</span><input required type="number" min="0.01" step="0.01" value={newCourt.dayRate} onChange={(event) => setNewCourtField("dayRate", event.target.value)} /></label>
-              <label className={styles.field}><span>Peak rate / hour</span><input required type="number" min="0.01" step="0.01" value={newCourt.peakRate} onChange={(event) => setNewCourtField("peakRate", event.target.value)} /></label>
-              <label className={styles.field}><span>Minimum hours</span><input required type="number" min="1" step="1" value={newCourt.minimumHours} onChange={(event) => setNewCourtField("minimumHours", event.target.value)} /></label>
-              <label className={styles.field}><span>Maximum hours</span><input required type="number" min="1" step="1" value={newCourt.maximumHours} onChange={(event) => setNewCourtField("maximumHours", event.target.value)} /></label>
-              <label className={styles.field}><span>Minimum lead minutes</span><input required type="number" min="0" step="1" value={newCourt.minimumLeadMinutes} onChange={(event) => setNewCourtField("minimumLeadMinutes", event.target.value)} /></label>
-              <label className={styles.field}><span>Maximum advance days</span><input required type="number" min="1" step="1" value={newCourt.maximumAdvanceDays} onChange={(event) => setNewCourtField("maximumAdvanceDays", event.target.value)} /></label>
-              {newCourtAttempted && newCourtDraftError(newCourt) && <p className={cx(styles.inlineError, styles.fieldWide)} role="alert">{newCourtDraftError(newCourt)}</p>}
-              <ActionButton type="submit" disabled={!can("settings:update")}>Review new court</ActionButton>
-              </form>
-            </details>
+                      onSuccess: () => {
+                        setNewCourt(newCourtDraftFor(snapshot));
+                        setNewCourtAttempted(false);
+                      },
+                    });
+                  }}
+                >
+                  <div className={styles.courtDialogBody}>
+                    <div className={styles.courtBasicsGrid}>
+                      <label className={cx(styles.field, styles.fieldWide)}><span>Court name</span><input data-new-court-name required maxLength={120} placeholder="e.g. Court Alpha" value={newCourt.name} onChange={(event) => setNewCourtField("name", event.target.value)} /></label>
+                      <label className={cx(styles.field, styles.fieldWide)}><span>Description <small>Optional</small></span><textarea rows={2} maxLength={500} placeholder="e.g. Outdoor · Standard flooring" value={newCourt.description} onChange={(event) => setNewCourtField("description", event.target.value)} /></label>
+                      <label className={styles.field}><span>Status</span><select required value={newCourt.status} onChange={(event) => setNewCourtField("status", event.target.value as NewCourtDraft["status"])}><option value="active">Active</option><option value="maintenance">Maintenance</option><option value="inactive">Inactive</option></select><small>Active courts appear in live availability after setup is ready.</small></label>
+                    </div>
+                    <fieldset className={styles.courtScheduleCard}>
+                      <legend>Hours &amp; pricing</legend>
+                      <p>Choose whole hours only. The peak rate begins at the selected boundary.</p>
+                      <div className={styles.courtTimeGrid}>
+                        <label className={styles.field}><span>Opens</span><select required value={newCourt.opensAt} onChange={(event) => setNewCourtField("opensAt", event.target.value)}>{wholeHourOptions.map((option) => <option key={`open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                        <label className={styles.field}><span>Peak starts</span><select required value={newCourt.peakStartsAt} onChange={(event) => setNewCourtField("peakStartsAt", event.target.value)}>{wholeHourOptions.map((option) => <option key={`peak-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                        <label className={styles.field}><span>Closes</span><select required value={newCourt.closesAt} onChange={(event) => setNewCourtField("closesAt", event.target.value)}>{wholeHourOptions.map((option) => <option key={`close-${option.value}`} value={option.value}>{option.label}{option.value === "00:00" ? " next day" : ""}</option>)}</select></label>
+                      </div>
+                      <div className={styles.courtRateGrid}>
+                        <label className={styles.field}><span>Regular rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required inputMode="decimal" type="number" min="0.01" step="0.01" value={newCourt.dayRate} onChange={(event) => setNewCourtField("dayRate", event.target.value)} /></div></label>
+                        <label className={styles.field}><span>Peak rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required inputMode="decimal" type="number" min="0.01" step="0.01" value={newCourt.peakRate} onChange={(event) => setNewCourtField("peakRate", event.target.value)} /></div></label>
+                      </div>
+                    </fieldset>
+                    <p className={styles.systemDefaultsNote}>Court address, display order, booking guardrails, and advance rules are set automatically.</p>
+                    {newCourtAttempted && newCourtDraftError(newCourt) && <p className={styles.inlineError} role="alert">{newCourtDraftError(newCourt)}</p>}
+                  </div>
+                  <footer className={styles.courtDialogActions}>
+                    <ActionButton variant="quiet" onClick={closeNewCourtDialog}>Cancel</ActionButton>
+                    <ActionButton type="submit" disabled={!can("settings:update")}>Save court</ActionButton>
+                  </footer>
+                </form>
+              </div>
+            </dialog>
           </div>
         )}
         {section === "schedule" && (
@@ -1778,9 +1838,9 @@ function LiveSettingsView({
               <div className={styles.sharedScheduleEditor}>
                 <div className={styles.sharedScheduleRow}>
                   <div className={styles.scheduleDayLabel}><strong>Every day</strong><span>One shared daily window</span></div>
-                  <label className={styles.field}><span>Opens</span><input required type="time" step={3600} value={scheduleDraft.opensAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, opensAt: event.target.value, bands: [{ ...scheduleDraft.bands[0]!, start: event.target.value }, scheduleDraft.bands[1]!] })} /></label>
-                  <label className={styles.field}><span>Rate boundary</span><input required type="time" step={3600} value={scheduleDraft.bands[0]!.end} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, end: event.target.value }, { ...scheduleDraft.bands[1]!, start: event.target.value }] })} /></label>
-                  <label className={styles.field}><span>Closes</span><input required type="time" step={3600} value={scheduleDraft.closesAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, closesAt: event.target.value, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, end: event.target.value === "00:00" ? "24:00" : event.target.value }] })} /></label>
+                  <label className={styles.field}><span>Opens</span><select required value={scheduleDraft.opensAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, opensAt: event.target.value, bands: [{ ...scheduleDraft.bands[0]!, start: event.target.value }, scheduleDraft.bands[1]!] })}>{wholeHourOptions.map((option) => <option key={`schedule-open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                  <label className={styles.field}><span>Rate boundary</span><select required value={scheduleDraft.bands[0]!.end} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, end: event.target.value }, { ...scheduleDraft.bands[1]!, start: event.target.value }] })}>{wholeHourOptions.map((option) => <option key={`schedule-boundary-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                  <label className={styles.field}><span>Closes</span><select required value={scheduleDraft.closesAt} onChange={(event) => setScheduleDraft({ ...scheduleDraft, closesAt: event.target.value, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, end: event.target.value === "00:00" ? "24:00" : event.target.value }] })}>{wholeHourOptions.map((option) => <option key={`schedule-close-${option.value}`} value={option.value}>{option.label}{option.value === "00:00" ? " next day" : ""}</option>)}</select></label>
                   <label className={styles.field}><span>First rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.bands[0]!.hourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [{ ...scheduleDraft.bands[0]!, hourlyRate: Number(event.target.value) }, scheduleDraft.bands[1]!] })} /></div></label>
                   <label className={styles.field}><span>Second rate / hour</span><div className={styles.moneyInput}><span>₱</span><input required type="number" min="0.01" step="0.01" value={scheduleDraft.bands[1]!.hourlyRate} onChange={(event) => setScheduleDraft({ ...scheduleDraft, bands: [scheduleDraft.bands[0]!, { ...scheduleDraft.bands[1]!, hourlyRate: Number(event.target.value) }] })} /></div></label>
                 </div>

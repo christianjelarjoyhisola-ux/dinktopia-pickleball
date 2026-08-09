@@ -1349,6 +1349,216 @@ test("protects live business and payment settings from stale or unsafe writes", 
   );
 });
 
+test("keeps live Add Court and shared hours simple, safe, and responsive", async () => {
+  const [manage, manageCss] = await Promise.all([
+    readFile(files.manage, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  const courtDraftStart = manage.indexOf("type CourtDraft = {");
+  const newCourtDraftStart = manage.indexOf("type NewCourtDraft = {", courtDraftStart);
+  const emptyNewCourtStart = manage.indexOf("const emptyNewCourt", newCourtDraftStart);
+  assert.ok(
+    courtDraftStart >= 0 &&
+      newCourtDraftStart > courtDraftStart &&
+      emptyNewCourtStart > newCourtDraftStart,
+  );
+  const courtDraftSource = manage.slice(courtDraftStart, newCourtDraftStart);
+  const newCourtDraftSource = manage.slice(newCourtDraftStart, emptyNewCourtStart);
+  assert.doesNotMatch(courtDraftSource, /\b(?:slug|sortOrder)\s*:/);
+  assert.doesNotMatch(
+    newCourtDraftSource,
+    /\b(?:slug|sortOrder|minimumHours|maximumHours|minimumLeadMinutes|maximumAdvanceDays)\s*:/,
+  );
+  assert.match(
+    newCourtDraftSource,
+    /name:\s*string;[\s\S]*?description:\s*string;[\s\S]*?status:\s*CourtDraft\["status"\];[\s\S]*?opensAt:\s*string;[\s\S]*?peakStartsAt:\s*string;[\s\S]*?closesAt:\s*string;[\s\S]*?dayRate:\s*string;[\s\S]*?peakRate:\s*string;/,
+  );
+
+  const hourOptionsStart = manage.indexOf("const wholeHourOptions =");
+  const hourOptionsEnd = manage.indexOf(
+    "function newCourtDraftFor(",
+    hourOptionsStart,
+  );
+  assert.ok(hourOptionsStart >= 0 && hourOptionsEnd > hourOptionsStart);
+  const hourOptionsSource = manage.slice(hourOptionsStart, hourOptionsEnd);
+  assert.match(hourOptionsSource, /Array\.from\(\{ length: 24 \}, \(_, hour\) =>/);
+  assert.match(
+    hourOptionsSource,
+    /const value = `\$\{String\(hour\)\.padStart\(2, "0"\)\}:00`/,
+  );
+  assert.match(
+    hourOptionsSource,
+    /label: `\$\{displayHour\} \$\{hour < 12 \? "AM" : "PM"\}`/,
+  );
+
+  const slugStart = manage.indexOf("function generatedCourtSlug(");
+  const sortStart = manage.indexOf("function nextCourtSortOrder(", slugStart);
+  const hourLabelStart = manage.indexOf("function wholeHourLabel(", sortStart);
+  assert.ok(slugStart >= 0 && sortStart > slugStart && hourLabelStart > sortStart);
+  const slugSource = manage.slice(slugStart, sortStart);
+  const sortSource = manage.slice(sortStart, hourLabelStart);
+  assert.match(slugSource, /new Set\(snapshot\.courts\.map\(\(court\) => court\.slug\)\)/);
+  assert.match(slugSource, /if \(!used\.has\(base\)\) return base/);
+  assert.match(
+    slugSource,
+    /const candidate = `\$\{stem\}\$\{suffixText\}`;[\s\S]*?if \(!used\.has\(candidate\)\) return candidate/,
+  );
+  assert.match(sortSource, /Math\.max\(current, court\.sortOrder\)/);
+  assert.match(sortSource, /if \(highest < 10_000\) return highest \+ 1/);
+  assert.match(sortSource, /if \(!used\.has\(sortOrder\)\) return sortOrder/);
+
+  const editorStart = manage.indexOf("{snapshot.courts.map((court, index) => {");
+  const editorEnd = manage.indexOf("{!snapshot.courts.length", editorStart);
+  assert.ok(editorStart >= 0 && editorEnd > editorStart);
+  const editorSource = manage.slice(editorStart, editorEnd);
+  assert.match(editorSource, /<span>Display name<\/span><input\b/);
+  assert.match(editorSource, /<span>Description<\/span><input\b/);
+  assert.match(editorSource, /<span>Status<\/span><select\b/);
+  assert.doesNotMatch(editorSource, /<span>(?:Slug|Sort order)<\/span>/);
+  assert.doesNotMatch(editorSource, /\b(?:slug|sortOrder):\s*draft\./);
+  assert.match(
+    editorSource,
+    /actionType: "court:update",[\s\S]*?payload:\s*\{\s*name: draft\.name,\s*description: draft\.description \|\| null,\s*status: draft\.status,\s*\}/,
+  );
+  assert.match(
+    editorSource,
+    /internal address, order, schedule, pricing, and booking rules remain untouched/,
+  );
+
+  const dialogRef = manage.indexOf("ref={newCourtDialogRef}", editorEnd);
+  const dialogStart = manage.lastIndexOf("<dialog", dialogRef);
+  const dialogEnd = manage.indexOf("</dialog>", dialogRef);
+  assert.ok(dialogStart >= 0 && dialogRef > dialogStart && dialogEnd > dialogRef);
+  const dialogSource = manage.slice(dialogStart, dialogEnd + "</dialog>".length);
+  assert.match(
+    manage,
+    /const openNewCourtDialog = \(\) => \{[\s\S]*?dialog\.showModal\(\)[\s\S]*?querySelector<HTMLInputElement>\("\[data-new-court-name\]"\)\?\.focus\(\)/,
+  );
+  assert.match(manage, /newCourtDialogRef\.current\?\.close\(\)/);
+  assert.match(
+    dialogSource,
+    /<dialog[\s\S]*?aria-labelledby="add-court-title"[\s\S]*?aria-describedby="add-court-description"[\s\S]*?onCancel=/,
+  );
+  assert.match(dialogSource, /<h2 id="add-court-title">Add court<\/h2>/);
+  assert.match(dialogSource, /<p id="add-court-description">/);
+  assert.match(
+    dialogSource,
+    /<button type="button" className=\{styles\.dialogClose\} aria-label="Close Add court"/,
+  );
+
+  const controlsStart = dialogSource.indexOf(
+    '<div className={styles.courtDialogBody}>',
+  );
+  const controlsEnd = dialogSource.indexOf(
+    '<footer className={styles.courtDialogActions}>',
+    controlsStart,
+  );
+  assert.ok(controlsStart >= 0 && controlsEnd > controlsStart);
+  const controlsSource = dialogSource.slice(controlsStart, controlsEnd);
+  const controlledFields = [
+    ...controlsSource.matchAll(/setNewCourtField\("([^"]+)"/g),
+  ].map((match) => match[1]);
+  assert.deepEqual(controlledFields, [
+    "name",
+    "description",
+    "status",
+    "opensAt",
+    "peakStartsAt",
+    "closesAt",
+    "dayRate",
+    "peakRate",
+  ]);
+  assert.match(controlsSource, /<span>Court name<\/span><input\b[^>]*\brequired\b/);
+  assert.match(
+    controlsSource,
+    /<span>Description <small>Optional<\/small><\/span><textarea\b(?![^>]*\brequired\b)/,
+  );
+  assert.match(controlsSource, /<span>Status<\/span><select\b[^>]*\brequired\b/);
+  assert.match(
+    controlsSource,
+    /<span>Opens<\/span><select\b[^>]*value=\{newCourt\.opensAt\}[\s\S]*?key=\{`open-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}<\/option>/,
+  );
+  assert.match(
+    controlsSource,
+    /<span>Peak starts<\/span><select\b[^>]*value=\{newCourt\.peakStartsAt\}[\s\S]*?key=\{`peak-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}<\/option>/,
+  );
+  assert.match(
+    controlsSource,
+    /<span>Closes<\/span><select\b[^>]*value=\{newCourt\.closesAt\}[\s\S]*?key=\{`close-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}/,
+  );
+  assert.match(controlsSource, /<span>Regular rate \/ hour<\/span>/);
+  assert.match(controlsSource, /<span>Peak rate \/ hour<\/span>/);
+  assert.doesNotMatch(controlsSource, /type="time"/);
+  assert.doesNotMatch(
+    controlsSource,
+    /<span>(?:Slug|Sort order|Minimum hours|Maximum hours|Minimum lead minutes|Maximum advance days)<\/span>/,
+  );
+  assert.doesNotMatch(
+    controlsSource,
+    /type="file"|accept="image\/|>\s*(?:Photo|Upload)/i,
+  );
+
+  const createStart = dialogSource.indexOf("const generatedSlug =");
+  const createEnd = dialogSource.indexOf("onSuccess:", createStart);
+  assert.ok(createStart >= 0 && createEnd > createStart);
+  const createSource = dialogSource.slice(createStart, createEnd);
+  assert.match(createSource, /generatedCourtSlug\(newCourt\.name, snapshot\)/);
+  assert.match(createSource, /nextCourtSortOrder\(snapshot\)/);
+  assert.match(createSource, /slug:\s*generatedSlug/);
+  assert.match(createSource, /sortOrder:\s*generatedSortOrder/);
+  assert.match(createSource, /minimumHours:\s*1/);
+  assert.match(createSource, /maximumHours:\s*18/);
+  assert.match(createSource, /minimumLeadMinutes:\s*60/);
+  assert.match(createSource, /maximumAdvanceDays:\s*30/);
+
+  const scheduleStart = manage.indexOf('{section === "schedule" &&');
+  const businessStart = manage.indexOf('{section === "business" &&', scheduleStart);
+  assert.ok(scheduleStart >= 0 && businessStart > scheduleStart);
+  const scheduleSource = manage.slice(scheduleStart, businessStart);
+  assert.equal((scheduleSource.match(/wholeHourOptions\.map/g) ?? []).length, 3);
+  assert.match(
+    scheduleSource,
+    /<span>Opens<\/span><select\b[^>]*value=\{scheduleDraft\.opensAt\}[\s\S]*?>\{option\.label\}<\/option>/,
+  );
+  assert.match(
+    scheduleSource,
+    /<span>Rate boundary<\/span><select\b[^>]*value=\{scheduleDraft\.bands\[0\]!\.end\}[\s\S]*?>\{option\.label\}<\/option>/,
+  );
+  assert.match(
+    scheduleSource,
+    /<span>Closes<\/span><select\b[^>]*value=\{scheduleDraft\.closesAt\}[\s\S]*?>\{option\.label\}/,
+  );
+  assert.doesNotMatch(scheduleSource, /type="time"/);
+
+  assert.match(cssBlock(manageCss, ".button"), /min-height:\s*44px/);
+  assert.match(
+    cssBlock(manageCss, ".field input, .field select, .field textarea"),
+    /min-height:\s*44px/,
+  );
+  const closeButtonCss = cssBlock(manageCss, ".dialogClose");
+  assert.match(closeButtonCss, /width:\s*44px/);
+  assert.match(closeButtonCss, /height:\s*44px/);
+  const dialogCss = cssBlock(manageCss, ".courtDialog");
+  assert.match(dialogCss, /width:\s*min\(620px,\s*calc\(100vw - 28px\)\)/);
+  assert.match(dialogCss, /max-height:\s*calc\(100dvh - 28px\)/);
+  assert.match(dialogCss, /overflow:\s*hidden/);
+  assert.match(cssBlock(manageCss, ".courtDialogBody"), /overflow-y:\s*auto/);
+  const narrowCss = cssBlock(manageCss, "@media (max-width: 430px)");
+  assert.match(
+    narrowCss,
+    /\.courtDialog\s*\{[^}]*width:\s*calc\(100vw - 12px\)[^}]*max-height:\s*calc\(100dvh - 12px\)/s,
+  );
+  assert.match(
+    narrowCss,
+    /\.courtBasicsGrid\s*\{[^}]*grid-template-columns:\s*1fr/s,
+  );
+  assert.match(
+    narrowCss,
+    /\.courtDialogActions \.button\s*\{[^}]*flex:\s*1/s,
+  );
+});
+
 test("fails closed when live platform setup or authorization is incomplete", async () => {
   const [client, booking, config, managementAdapter] = await Promise.all([
     readFile(files.client, "utf8"),
