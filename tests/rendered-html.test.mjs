@@ -1404,9 +1404,9 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     slugSource,
     /const candidate = `\$\{stem\}\$\{suffixText\}`;[\s\S]*?if \(!used\.has\(candidate\)\) return candidate/,
   );
-  assert.match(sortSource, /Math\.max\(current, court\.sortOrder\)/);
-  assert.match(sortSource, /if \(highest < 10_000\) return highest \+ 1/);
-  assert.match(sortSource, /if \(!used\.has\(sortOrder\)\) return sortOrder/);
+  assert.match(sortSource, /Number\.isSafeInteger\(court\.sortOrder\)/);
+  assert.match(sortSource, /Math\.max\(current, Math\.min\(court\.sortOrder, 10_000\)\)/);
+  assert.match(sortSource, /return Math\.min\(highest \+ 1, 10_000\)/);
 
   const courtsSectionStart = manage.indexOf('{section === "courts" &&');
   const courtsHeadingStart = manage.indexOf(
@@ -1426,14 +1426,18 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(courtsHeadingSource, /<h2>Courts<\/h2>/);
   assert.match(
     courtsHeadingSource,
-    /<div className=\{styles\.courtHeadingActions\}>[\s\S]*?<span className=\{styles\.previewTag\}>Server records<\/span>[\s\S]*?<ActionButton className=\{styles\.addCourtButton\} disabled=\{!can\("settings:update"\)\} onClick=\{openNewCourtDialog\}>[\s\S]*? Add court<\/ActionButton>/,
+    /<div className=\{styles\.courtHeadingActions\}>[\s\S]*?<span className=\{styles\.previewTag\}>Server records<\/span>[\s\S]*?<button[\s\S]*?ref=\{addCourtButtonRef\}[\s\S]*?disabled=\{!can\("settings:update"\) \|\| addingCourt\}[\s\S]*?aria-expanded=\{addingCourt\}[\s\S]*?aria-controls="new-court-form"[\s\S]*?onClick=\{openNewCourtForm\}\s*>[\s\S]*? Add court[\s\S]*?<\/button>/,
   );
   assert.equal(
-    (manage.match(/onClick=\{openNewCourtDialog\}/g) ?? []).length,
+    (manage.match(/onClick=\{openNewCourtForm\}/g) ?? []).length,
     1,
   );
   assert.doesNotMatch(manage, /styles\.addCourtRow/);
   assert.doesNotMatch(manage, /Need another court\?|styles\.newCourtDetails/);
+  assert.doesNotMatch(
+    manage,
+    /newCourtDialogRef|openNewCourtDialog|closeNewCourtDialog|styles\.courtDialog/,
+  );
 
   const editorStart = manage.indexOf("{snapshot.courts.map((court, index) => {");
   const editorEnd = manage.indexOf("{!snapshot.courts.length", editorStart);
@@ -1453,43 +1457,76 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     /internal address, order, schedule, pricing, and booking rules remain untouched/,
   );
 
-  const dialogRef = manage.indexOf("ref={newCourtDialogRef}", editorEnd);
-  const dialogStart = manage.lastIndexOf("<dialog", dialogRef);
-  const dialogEnd = manage.indexOf("</dialog>", dialogRef);
-  assert.ok(dialogStart >= 0 && dialogRef > dialogStart && dialogEnd > dialogRef);
-  const dialogSource = manage.slice(dialogStart, dialogEnd + "</dialog>".length);
+  const openFormStart = manage.indexOf("const openNewCourtForm = () => {");
+  const cancelFormStart = manage.indexOf(
+    "const cancelNewCourtForm = () => {",
+    openFormStart,
+  );
+  const focusEffectStart = manage.indexOf("useEffect(() => {", cancelFormStart);
+  assert.ok(
+    openFormStart >= 0 &&
+      cancelFormStart > openFormStart &&
+      focusEffectStart > cancelFormStart,
+  );
+  const openFormSource = manage.slice(openFormStart, cancelFormStart);
+  const cancelFormSource = manage.slice(cancelFormStart, focusEffectStart);
   assert.match(
     manage,
-    /const openNewCourtDialog = \(\) => \{[\s\S]*?dialog\.showModal\(\)[\s\S]*?querySelector<HTMLInputElement>\("\[data-new-court-name\]"\)\?\.focus\(\)/,
+    /const \[addingCourt, setAddingCourt\] = useState\(false\)/,
   );
-  assert.match(manage, /newCourtDialogRef\.current\?\.close\(\)/);
   assert.match(
-    dialogSource,
-    /<dialog[\s\S]*?aria-labelledby="add-court-title"[\s\S]*?aria-describedby="add-court-description"[\s\S]*?onCancel=/,
+    openFormSource,
+    /setNewCourt\(newCourtDraftFor\(snapshot\)\)[\s\S]*?setNewCourtAttempted\(false\)[\s\S]*?setAddingCourt\(true\)/,
   );
-  assert.match(dialogSource, /<h2 id="add-court-title">Add court<\/h2>/);
-  assert.match(dialogSource, /<p id="add-court-description">/);
   assert.match(
-    dialogSource,
-    /<button type="button" className=\{styles\.dialogClose\} aria-label="Close Add court"/,
+    cancelFormSource,
+    /setNewCourt\(newCourtDraftFor\(snapshot\)\)[\s\S]*?setNewCourtAttempted\(false\)[\s\S]*?setAddingCourt\(false\)[\s\S]*?requestAnimationFrame[\s\S]*?addCourtButtonRef\.current\?\.focus\(\)/,
   );
+  assert.match(
+    manage.slice(focusEffectStart, manage.indexOf("const setBusinessField", focusEffectStart)),
+    /if \(addingCourt\) newCourtNameRef\.current\?\.focus\(\)/,
+  );
+  assert.doesNotMatch(openFormSource, /showModal|\.close\(|<dialog/);
 
-  const controlsStart = dialogSource.indexOf(
-    '<div className={styles.courtDialogBody}>',
+  const courtsSectionEnd = manage.indexOf(
+    '{section === "schedule" &&',
+    courtsIntroStart,
   );
-  const controlsEnd = dialogSource.indexOf(
-    '<footer className={styles.courtDialogActions}>',
-    controlsStart,
+  const addBranchStart = manage.indexOf("{addingCourt ? (", courtsIntroStart);
+  const formId = manage.indexOf('id="new-court-form"', addBranchStart);
+  const inlineFormStart = manage.lastIndexOf("<form", formId);
+  const inlineFormEnd = manage.indexOf("</form>", formId);
+  const listBranchStart = manage.indexOf(") : (", inlineFormEnd);
+  const courtListStart = manage.indexOf(
+    '<div className={styles.courtSettingList}>',
+    listBranchStart,
   );
-  assert.ok(controlsStart >= 0 && controlsEnd > controlsStart);
-  const controlsSource = dialogSource.slice(controlsStart, controlsEnd);
+  assert.ok(
+    courtsSectionEnd > courtsIntroStart &&
+      addBranchStart > courtsIntroStart &&
+      inlineFormStart > addBranchStart &&
+      inlineFormEnd > inlineFormStart &&
+      listBranchStart > inlineFormEnd &&
+      courtListStart > listBranchStart &&
+      courtListStart < courtsSectionEnd,
+  );
+  const courtsSectionSource = manage.slice(courtsSectionStart, courtsSectionEnd);
+  const controlsSource = manage.slice(inlineFormStart, inlineFormEnd);
+  assert.match(
+    controlsSource,
+    /<form[\s\S]*?id="new-court-form"[\s\S]*?className=\{styles\.newCourtInlineForm\}[\s\S]*?aria-labelledby="add-court-title"[\s\S]*?aria-describedby="add-court-description"/,
+  );
+  assert.match(controlsSource, /<h3 id="add-court-title">Court details<\/h3>/);
+  assert.match(controlsSource, /<p id="add-court-description">/);
+  assert.doesNotMatch(courtsSectionSource, /<dialog\b|showModal\(|onCancel=/);
+  assert.doesNotMatch(controlsSource, /<article\b|styles\.courtEditorCard/);
   const controlledFields = [
     ...controlsSource.matchAll(/setNewCourtField\("([^"]+)"/g),
   ].map((match) => match[1]);
   assert.deepEqual(controlledFields, [
     "name",
-    "description",
     "status",
+    "description",
     "opensAt",
     "peakStartsAt",
     "closesAt",
@@ -1501,7 +1538,7 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     controlsSource,
     /<span>Description <small>Optional<\/small><\/span><textarea\b(?![^>]*\brequired\b)/,
   );
-  assert.match(controlsSource, /<span>Status<\/span><select\b[^>]*\brequired\b/);
+  assert.match(controlsSource, /<span>Initial status<\/span><select\b[^>]*\brequired\b/);
   assert.match(
     controlsSource,
     /<span>Opens<\/span><select\b[^>]*value=\{newCourt\.opensAt\}[\s\S]*?key=\{`open-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}<\/option>/,
@@ -1514,7 +1551,7 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     controlsSource,
     /<span>Closes<\/span><select\b[^>]*value=\{newCourt\.closesAt\}[\s\S]*?key=\{`close-\$\{option\.value\}`\}[\s\S]*?>\{option\.label\}/,
   );
-  assert.match(controlsSource, /<span>Regular rate \/ hour<\/span>/);
+  assert.match(controlsSource, /<span>Day rate \/ hour<\/span>/);
   assert.match(controlsSource, /<span>Peak rate \/ hour<\/span>/);
   assert.doesNotMatch(controlsSource, /type="time"/);
   assert.doesNotMatch(
@@ -1526,20 +1563,36 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     /type="file"|accept="image\/|>\s*(?:Photo|Upload)/i,
   );
 
-  const createStart = dialogSource.indexOf("const generatedSlug =");
-  const createEnd = dialogSource.indexOf("onSuccess:", createStart);
-  assert.ok(createStart >= 0 && createEnd > createStart);
-  const createSource = dialogSource.slice(createStart, createEnd);
+  const requestStart = controlsSource.indexOf("request({");
+  const createEnd = controlsSource.indexOf("onSuccess:", requestStart);
+  assert.ok(requestStart >= 0 && createEnd > requestStart);
+  const beforeRequestSource = controlsSource.slice(0, requestStart);
+  const createSource = controlsSource.slice(requestStart, createEnd);
+  assert.doesNotMatch(beforeRequestSource, /setAddingCourt\(false\)|cancelNewCourtForm\(/);
   assert.match(createSource, /generatedCourtSlug\(newCourt\.name, snapshot\)/);
   assert.match(createSource, /nextCourtSortOrder\(snapshot\)/);
-  assert.match(createSource, /slug:\s*generatedSlug/);
-  assert.match(createSource, /sortOrder:\s*generatedSortOrder/);
-  assert.match(createSource, /minimumHours:\s*1/);
-  assert.match(createSource, /maximumHours:\s*18/);
-  assert.match(createSource, /minimumLeadMinutes:\s*60/);
-  assert.match(createSource, /maximumAdvanceDays:\s*30/);
+  assert.match(createSource, /slug:\s*generatedCourtSlug\(newCourt\.name, snapshot\)/);
+  assert.match(createSource, /sortOrder:\s*nextCourtSortOrder\(snapshot\)/);
+  assert.match(createSource, /minimumHours:\s*NEW_COURT_INTERNAL_DEFAULTS\.minimumHours/);
+  assert.match(createSource, /maximumHours:\s*NEW_COURT_INTERNAL_DEFAULTS\.maximumHours/);
+  assert.match(createSource, /minimumLeadMinutes:\s*NEW_COURT_INTERNAL_DEFAULTS\.minimumLeadMinutes/);
+  assert.match(createSource, /maximumAdvanceDays:\s*NEW_COURT_INTERNAL_DEFAULTS\.maximumAdvanceDays/);
+  assert.match(controlsSource, /onSuccess:\s*cancelNewCourtForm/);
+  assert.match(
+    controlsSource,
+    /<ActionButton variant="quiet" onClick=\{cancelNewCourtForm\}>Cancel<\/ActionButton>/,
+  );
 
-  const scheduleStart = manage.indexOf('{section === "schedule" &&');
+  const defaultsStart = manage.indexOf("const NEW_COURT_INTERNAL_DEFAULTS = {");
+  const defaultsEnd = manage.indexOf("} as const;", defaultsStart);
+  assert.ok(defaultsStart >= 0 && defaultsEnd > defaultsStart);
+  const defaultsSource = manage.slice(defaultsStart, defaultsEnd);
+  assert.match(defaultsSource, /minimumHours:\s*1/);
+  assert.match(defaultsSource, /maximumHours:\s*18/);
+  assert.match(defaultsSource, /minimumLeadMinutes:\s*60/);
+  assert.match(defaultsSource, /maximumAdvanceDays:\s*30/);
+
+  const scheduleStart = courtsSectionEnd;
   const businessStart = manage.indexOf('{section === "business" &&', scheduleStart);
   assert.ok(scheduleStart >= 0 && businessStart > scheduleStart);
   const scheduleSource = manage.slice(scheduleStart, businessStart);
@@ -1563,14 +1616,31 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     cssBlock(manageCss, ".field input, .field select, .field textarea"),
     /min-height:\s*44px/,
   );
-  const closeButtonCss = cssBlock(manageCss, ".dialogClose");
-  assert.match(closeButtonCss, /width:\s*44px/);
-  assert.match(closeButtonCss, /height:\s*44px/);
-  const dialogCss = cssBlock(manageCss, ".courtDialog");
-  assert.match(dialogCss, /width:\s*min\(620px,\s*calc\(100vw - 28px\)\)/);
-  assert.match(dialogCss, /max-height:\s*calc\(100dvh - 28px\)/);
-  assert.match(dialogCss, /overflow:\s*hidden/);
-  assert.match(cssBlock(manageCss, ".courtDialogBody"), /overflow-y:\s*auto/);
+  assert.doesNotMatch(
+    manageCss,
+    /\.courtDialog\b|\.courtDialogShell\b|\.courtDialogHeader\b|\.courtDialogBody\b|\.courtDialogActions\b|\.newCourtForm\b/,
+  );
+  const inlineFormCss = cssBlock(manageCss, ".newCourtInlineForm");
+  assert.match(inlineFormCss, /display:\s*grid/);
+  assert.match(inlineFormCss, /border-block:\s*1px solid var\(--line\)/);
+  assert.doesNotMatch(
+    inlineFormCss,
+    /\b(?:background|border-radius|box-shadow|max-height|overflow(?:-[xy])?)\s*:/,
+  );
+  const inlineScheduleCss = cssBlock(manageCss, ".newCourtSchedule");
+  assert.match(inlineScheduleCss, /border:\s*0/);
+  assert.doesNotMatch(
+    inlineScheduleCss,
+    /\b(?:background|border-radius|box-shadow|max-height|overflow(?:-[xy])?)\s*:/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".newCourtTimes"),
+    /grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".newCourtRates"),
+    /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
+  );
   assert.doesNotMatch(manageCss, /\.addCourtRow\b/);
   const headingActionsCss = cssBlock(manageCss, ".courtHeadingActions");
   assert.match(headingActionsCss, /display:\s*flex/);
@@ -1579,19 +1649,16 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     headingActionsCss,
     /\b(?:background|border(?:-radius)?|padding)\s*:/,
   );
+  const compactCss = cssBlock(manageCss, "@media (max-width: 680px)");
+  assert.match(
+    compactCss,
+    /\.newCourtBasics\s*\{[^}]*grid-template-columns:\s*1fr/s,
+  );
+  assert.match(
+    compactCss,
+    /\.newCourtActions \.button\s*\{[^}]*min-width:\s*0[^}]*flex:\s*1/s,
+  );
   const narrowCss = cssBlock(manageCss, "@media (max-width: 430px)");
-  assert.match(
-    narrowCss,
-    /\.courtDialog\s*\{[^}]*width:\s*calc\(100vw - 12px\)[^}]*max-height:\s*calc\(100dvh - 12px\)/s,
-  );
-  assert.match(
-    narrowCss,
-    /\.courtBasicsGrid\s*\{[^}]*grid-template-columns:\s*1fr/s,
-  );
-  assert.match(
-    narrowCss,
-    /\.courtDialogActions \.button\s*\{[^}]*flex:\s*1/s,
-  );
   assert.match(
     narrowCss,
     /\.courtPanelHeading\s*\{[^}]*align-items:\s*center[^}]*flex-direction:\s*row[^}]*gap:\s*10px/s,
@@ -1604,6 +1671,12 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
     narrowCss,
     /\.courtHeadingActions \.previewTag\s*\{[^}]*display:\s*none/s,
   );
+  assert.match(
+    narrowCss,
+    /\.newCourtInlineForm\s*\{[^}]*gap:\s*15px[^}]*padding-top:\s*15px/s,
+  );
+  assert.match(narrowCss, /\.newCourtTimes\s*\{[^}]*gap:\s*6px/s);
+  assert.match(narrowCss, /\.newCourtRates\s*\{[^}]*gap:\s*8px/s);
 });
 
 test("fails closed when live platform setup or authorization is incomplete", async () => {

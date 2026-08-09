@@ -816,45 +816,21 @@
 }
 .addCourtButton { white-space: nowrap; }
 .addCourtButton span { color: inherit; font-size: inherit; }
-.courtDialog {
-  width: min(620px, calc(100vw - 28px));
-  max-width: none;
-  max-height: calc(100dvh - 28px);
-  overflow: hidden;
-  border: 0;
-  border-radius: 20px;
-  background: transparent;
-  padding: 0;
-  color: var(--ink);
-  box-shadow: 0 28px 90px rgba(11,33,53,.32);
-}
-.courtDialog::backdrop { background: rgba(7,31,52,.66); backdrop-filter: blur(5px); }
-.courtDialogShell {
-  max-height: calc(100dvh - 28px);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid rgba(255,255,255,.74);
-  border-radius: inherit;
-  background: var(--white);
-}
-.courtDialogHeader { position: relative; flex: 0 0 auto; border-bottom: 1px solid var(--line); padding: 22px 76px 17px 24px; }
-.courtDialogHeader .eyebrow { margin: 0 0 5px; }
-.courtDialogHeader h2 { margin: 0; font-size: 1.55rem; line-height: 1.12; letter-spacing: -.035em; }
-.courtDialogHeader h2 + p { max-width: 430px; margin: 7px 0 0; color: var(--muted); font-size: var(--text-caption); }
-.newCourtForm { min-height: 0; display: flex; flex: 1 1 auto; flex-direction: column; overflow: hidden; }
-.courtDialogBody { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 24px; }
-.courtBasicsGrid { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 14px; }
-.courtBasicsGrid .fieldWide { grid-column: 1 / -1; }
-.courtBasicsGrid .field > span small { margin-left: 4px; color: var(--muted); font-weight: 600; }
-.courtScheduleCard { min-width: 0; margin: 18px 0 0; border: 1px solid var(--line); border-radius: 14px; background: var(--paper-deep); padding: 16px; }
-.courtScheduleCard legend { padding: 0 6px; color: var(--ink); font-size: var(--text-small); font-weight: 800; }
-.courtScheduleCard > p { margin: 0 0 13px; color: var(--muted); font-size: var(--text-caption); }
-.courtTimeGrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.courtRateGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
-.systemDefaultsNote { margin: 14px 0 0; color: var(--muted); font-size: var(--text-caption); }
-.courtDialogActions { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--line); background: rgba(255,255,255,.97); padding: 13px 24px max(13px, env(safe-area-inset-bottom)); }
-.courtDialogActions .button { min-width: 112px; }
+.newCourtInlineForm { display: grid; gap: 18px; border-block: 1px solid var(--line); padding-top: 18px; }
+.newCourtHeading .eyebrow { margin: 0 0 5px; }
+.newCourtHeading h3 { margin: 0; font-size: 1.25rem; letter-spacing: -.025em; line-height: 1.15; }
+.newCourtHeading h3 + p { max-width: 540px; margin: 7px 0 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.45; }
+.newCourtBasics { display: grid; grid-template-columns: minmax(0, 1fr) minmax(160px, .42fr); gap: 14px; }
+.newCourtBasics .fieldWide { grid-column: 1 / -1; }
+.newCourtBasics .field > span small { margin-left: 4px; color: var(--muted); font-weight: 600; }
+.newCourtSchedule { min-width: 0; margin: 0; border: 0; border-top: 1px solid var(--line); padding: 17px 0 0; }
+.newCourtSchedule legend { padding: 0 9px 0 0; color: var(--ink); font-size: var(--text-small); font-weight: 800; }
+.newCourtSchedule > p { margin: 0 0 13px; color: var(--muted); font-size: var(--text-caption); }
+.newCourtTimes { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.newCourtRates { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+.systemDefaultsNote { margin: -2px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.newCourtActions { position: sticky; z-index: 2; bottom: 0; display: flex; justify-content: flex-end; gap: 9px; border-top: 1px solid var(--line); background: rgba(255,255,255,.97); padding: 12px 0 max(12px, env(safe-area-inset-bottom)); backdrop-filter: blur(10px); }
+.newCourtActions .button { min-width: 112px; }
 .settingsFooter { display: flex; align-items: center; justify-content: space-between; gap: 15px; margin: 22px -27px -27px; border-radius: 0 0 18px 18px; background: var(--paper-deep); padding: 14px 27px; }
 .settingsFooter > span { color: var(--muted); font-size: var(--text-caption); }
 .rateGrid, .ruleList { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -1406,6 +1382,9 @@
   }
   .courtCardActions { width: 100%; justify-content: stretch; }
   .courtCardActions > * { width: 100%; }
+  .newCourtBasics { grid-template-columns: 1fr; }
+  .newCourtBasics .fieldWide { grid-column: auto; }
+  .newCourtActions .button { min-width: 0; flex: 1; }
   .hoursList > div { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
   .switchLabel { grid-column: 1 / -1; }
   .sharedScheduleRow { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1451,18 +1430,10 @@
   .courtPanelHeading { align-items: center; flex-direction: row; gap: 10px; }
   .courtHeadingActions { width: auto; justify-content: flex-end; margin-left: auto; }
   .courtHeadingActions .previewTag { display: none; }
-  .courtDialog { width: calc(100vw - 12px); max-height: calc(100dvh - 12px); border-radius: 17px; }
-  .courtDialogShell { max-height: calc(100dvh - 12px); }
-  .courtDialogHeader { padding: 18px 66px 14px 16px; }
-  .courtDialogHeader h2 { font-size: 1.35rem; }
-  .courtDialogBody { padding: 16px; }
-  .courtBasicsGrid { grid-template-columns: 1fr; gap: 12px; }
-  .courtBasicsGrid .fieldWide { grid-column: auto; }
-  .courtScheduleCard { margin-top: 14px; padding: 13px 10px; }
-  .courtTimeGrid { gap: 6px; }
-  .courtRateGrid { gap: 8px; }
-  .courtDialogActions { padding: 11px 16px max(11px, env(safe-area-inset-bottom)); }
-  .courtDialogActions .button { min-width: 0; flex: 1; }
+  .newCourtInlineForm { gap: 15px; padding-top: 15px; }
+  .newCourtTimes { gap: 6px; }
+  .newCourtRates { gap: 8px; }
+  .newCourtActions { padding-bottom: max(11px, env(safe-area-inset-bottom)); }
   .sharedScheduleRow { grid-template-columns: minmax(0, 1fr); }
   .scheduleDayLabel { grid-column: auto; }
   .blockItem { grid-template-columns: 43px minmax(0, 1fr); align-items: start; }
