@@ -4675,6 +4675,8 @@
 .schedule-matrix-courts .schedule-cell.is-selected .schedule-cell-mark { background: white; color: #6855e8; }
 .schedule-matrix-courts .schedule-cell.is-unavailable { background: #f0f0ed; color: #969b99; }
 
+.schedule-matrix-mobile { display: none; }
+
 .slot-step-footer {
   display: flex;
   align-items: center;
@@ -4736,6 +4738,84 @@
   .schedule-matrix-courts tbody th { width: 126px; min-width: 126px; }
   .schedule-matrix-courts thead th:not(:first-child),
   .schedule-matrix-courts .schedule-cell { width: 78px; min-width: 78px; }
+  .schedule-title-group { display: none; }
+  .schedule-heading-row { justify-content: flex-end; }
+  .schedule-matrix-desktop { display: none; }
+  .schedule-matrix-mobile {
+    display: table;
+    width: 100%;
+    min-width: 328px;
+    border-collapse: collapse;
+    border-spacing: 0;
+    padding: 0;
+    table-layout: fixed;
+  }
+  .schedule-matrix-mobile th,
+  .schedule-matrix-mobile td { border: 1px solid #dde1dd; }
+  .schedule-matrix-mobile thead th {
+    position: static;
+    width: auto;
+    min-width: 0;
+    height: 50px;
+    border-color: rgba(255, 255, 255, 0.15);
+    border-radius: 0;
+    background: #092922;
+    color: white;
+    padding: 8px 3px;
+  }
+  .schedule-matrix-mobile thead th:first-child {
+    position: sticky;
+    z-index: 3;
+    left: 0;
+    width: 70px;
+    min-width: 70px;
+    background: #092922;
+    padding: 8px;
+    text-align: left;
+  }
+  .schedule-matrix-mobile thead th strong { color: white; font-size: 12px; }
+  .schedule-matrix-mobile thead th span { margin-top: 2px; color: rgba(255, 255, 255, 0.58); font-size: 12px; }
+  .schedule-matrix-mobile tbody th {
+    width: 70px;
+    min-width: 70px;
+    height: 58px;
+    border-radius: 0;
+    background: #fafaf7;
+  }
+  .schedule-matrix-mobile tbody th strong { font-size: 12px; }
+  .schedule-matrix-mobile tbody th span { margin-top: 2px; font-size: 12px; }
+  .schedule-matrix-mobile .schedule-cell {
+    min-width: 0;
+    min-height: 58px;
+    border: 0;
+    border-radius: 0;
+    background: white;
+    padding: 6px 2px;
+    box-shadow: none;
+  }
+  .schedule-matrix-mobile .schedule-cell strong { font-size: 12px; font-weight: 600; }
+  .schedule-matrix-mobile .schedule-cell-mark {
+    position: static;
+    display: block;
+    width: auto;
+    height: auto;
+    margin-bottom: 2px;
+    background: transparent;
+    color: #76a69c;
+    font-size: 12px;
+    opacity: 1;
+  }
+  .schedule-matrix-mobile .schedule-cell.is-unavailable {
+    background: repeating-linear-gradient(135deg, #f8f8f5, #f8f8f5 5px, #eeeeea 5px, #eeeeea 10px);
+    color: #8e9793;
+  }
+  .schedule-matrix-mobile .schedule-cell.is-unavailable .schedule-cell-mark { display: block; color: #c4c9c6; }
+  .schedule-matrix-mobile .schedule-cell.is-selected {
+    border: 1px solid #9edfc9;
+    background: #e8faf3;
+    color: #087b59;
+  }
+  .schedule-matrix-mobile .schedule-cell.is-selected .schedule-cell-mark { background: transparent; color: #087b59; }
   .slot-step-footer { position: sticky; z-index: 6; bottom: 8px; margin: 14px -8px -8px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, 0.96); padding: 10px; box-shadow: 0 10px 28px rgba(16, 42, 67, 0.14); backdrop-filter: blur(12px); }
   .slot-step-footer > div { display: none; }
   .slot-step-footer .button { flex: 1; }

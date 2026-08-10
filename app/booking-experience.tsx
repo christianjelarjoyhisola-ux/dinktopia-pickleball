@@ -1457,7 +1457,7 @@ export function BookingExperience({
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
   const atomicMultiSessionBooking =
-    !isLive || bootstrap?.capabilities?.atomicMultiSessionBookingV1 === true;
+    !isLive || bootstrap?.capabilities?.atomicMultiSessionBookingV1 !== false;
   const canonicalCourt = bootstrap?.courts.find(
     (court) => court.id === canonicalSelection?.courtId,
   );
@@ -2650,7 +2650,7 @@ export function BookingExperience({
                         <legend className="sr-only">Choose court-hours</legend>
                         <div className="schedule-heading-row">
                           <div className="schedule-title-group">
-                            <h4>{visibleAvailabilityState === "loading" ? "Refreshing times" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : `${availableCount} court-hours open`}</h4>
+                            <h4>{visibleAvailabilityState === "loading" ? "Refreshing times" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : "Court schedule"}</h4>
                             <p className="schedule-help">
                               {isLive && !atomicMultiSessionBooking
                                 ? "Select consecutive hours on one court."
@@ -2713,7 +2713,7 @@ export function BookingExperience({
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
                           <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
-                            <table className="schedule-matrix schedule-matrix-courts">
+                            <table className="schedule-matrix schedule-matrix-courts schedule-matrix-desktop">
                               <thead>
                                 <tr>
                                   <th scope="col"><strong>All courts</strong><span>Hourly view</span></th>
@@ -2774,6 +2774,50 @@ export function BookingExperience({
                                     })}
                                   </tr>
                                 )})}
+                              </tbody>
+                            </table>
+                            <table className="schedule-matrix schedule-matrix-mobile">
+                              <thead>
+                                <tr>
+                                  <th scope="col"><strong>Time</strong><span>Hourly</span></th>
+                                  {displayCourts.map((court) => (
+                                    <th scope="col" key={court.id} title={court.name}>
+                                      <strong>C{Number(court.number)}</strong>
+                                      <span>{court.descriptor}</span>
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {scheduleHours.map((hour) => (
+                                  <tr key={hour}>
+                                    <th scope="row"><strong>{formatHour(hour).replace(":00", "")}</strong><span>to {formatHour(hour + 1).replace(":00", "")}</span></th>
+                                    {displayCourts.map((court) => {
+                                      const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
+                                      const key = selectionKey(court.id, hour);
+                                      const isSelected = selectedKeys.has(key);
+                                      const isClosed = !slot;
+                                      const isBooked = slot?.status === "unavailable";
+                                      const isUnavailable = isClosed || isBooked;
+                                      const stateLabel = isClosed ? "closed" : isBooked ? "booked" : isSelected ? "selected" : "available";
+                                      return (
+                                        <td key={court.id}>
+                                          <button
+                                            type="button"
+                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}`}
+                                            aria-pressed={isSelected}
+                                            disabled={isUnavailable}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
+                                            onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
+                                          >
+                                            <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "●" : "○"}</span>
+                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : isSelected ? "Selected" : "Open"}</strong>
+                                          </button>
+                                        </td>
+                                      );
+                                    })}
+                                  </tr>
+                                ))}
                               </tbody>
                             </table>
                           </div>

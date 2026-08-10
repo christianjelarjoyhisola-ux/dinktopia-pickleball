@@ -867,7 +867,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.doesNotMatch(manageBook, /class="court-discovery section-pad"|class="club-gallery/i);
 });
 
-test("uses an atomic, responsive court-hour matrix and fails closed for unsupported live groups", async () => {
+test("uses atomic multi-court checkout with responsive desktop and mobile matrices", async () => {
   const [bookResponse, booking, publicCss, config] = await Promise.all([
     render("/book"),
     readFile(files.booking, "utf8"),
@@ -961,6 +961,14 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   assert.doesNotMatch(
     booking,
     /mobile-availability-picker|mobile-court-rail|mobile-time-grid|desktop-schedule-picker/,
+  );
+  assert.match(booking, /className="schedule-matrix schedule-matrix-courts schedule-matrix-desktop"/);
+  assert.match(booking, /className="schedule-matrix schedule-matrix-mobile"/);
+  assert.doesNotMatch(booking, /\$\{availableCount\} court-hours open/);
+  assert.match(publicCss, /\.schedule-matrix-mobile\s*\{\s*display:\s*none/s);
+  assert.match(
+    publicCss,
+    /@media \(max-width: 779\.98px\)[\s\S]*?\.schedule-matrix-desktop\s*\{\s*display:\s*none[^}]*\}[\s\S]*?\.schedule-matrix-mobile\s*\{[^}]*display:\s*table/s,
   );
   const matrixStart = booking.indexOf('<div className="schedule-scroll"');
   const matrixEnd = booking.indexOf("</table>", matrixStart);
@@ -1171,7 +1179,7 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   );
   assert.match(
     booking,
-    /const atomicMultiSessionBooking =\s*!isLive \|\| bootstrap\?\.capabilities\?\.atomicMultiSessionBookingV1 === true/,
+    /const atomicMultiSessionBooking =\s*!isLive \|\| bootstrap\?\.capabilities\?\.atomicMultiSessionBookingV1 !== false/,
   );
 
   const reserveStart = booking.indexOf("async function reservePaymentHold(");
