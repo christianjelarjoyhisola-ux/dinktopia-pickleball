@@ -54,7 +54,10 @@ export type ManagementContext = {
 
 export type BookingStatus =
   | "confirmed"
-  | "awaiting_payment"
+  | "awaiting_receipt"
+  | "receipt_processing"
+  | "payment_review"
+  | "payment_attention"
   | "checked_in"
   | "completed";
 
@@ -93,6 +96,7 @@ export type PaymentEvidenceStatus =
   | "manual_review"
   | "auto_approved"
   | "approved"
+  | "short_payment"
   | "rejected";
 
 export type PaymentEvidence = {
@@ -304,6 +308,10 @@ export type ManagementActionResult = {
  */
 export interface ManagementAdapter {
   load(context: ManagementContext): Promise<ManagementSnapshot>;
+  refreshOperations(
+    context: ManagementContext,
+    current: ManagementSnapshot,
+  ): Promise<ManagementSnapshot>;
   loadPaymentReceipt(
     context: ManagementContext,
     verificationId: string,
@@ -403,7 +411,7 @@ export const previewSnapshot: ManagementSnapshot = {
       time: "7:00–9:00 PM",
       duration: "2 hrs",
       amount: 800,
-      status: "awaiting_payment",
+      status: "awaiting_receipt",
       payment: "unpaid",
       courtId: activeTenant.previewCourts[1].id,
       bookingDate: "2026-08-08",
@@ -831,6 +839,41 @@ export const managementAdapter: ManagementAdapter = {
       },
     };
   },
+  async refreshOperations(context, current) {
+    if (platformMode() === "preview") return previewSnapshot;
+    assertDinktopiaContext(context);
+    if (
+      current.tenant.mode !== "live" ||
+      current.tenant.slug !== activeTenant.identity.slug
+    ) {
+      throw new Error("LIVE_TENANT_SCOPE_MISMATCH");
+    }
+
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const [serverSessionResult, bookingResult] = await Promise.all([
+      getManagerSession(session.access_token),
+      listManagerBookings(session.access_token, { activeOnly: true, limit: 100 }),
+    ]);
+    const serverSession = normalizeManagerSession(serverSessionResult);
+    const bookingRows = bookingResult.bookings;
+    const courtNames = new Map(current.courts.map((court) => [court.id, court.name]));
+    const bookings = bookingRows.map((row) => mapLiveBooking(row, courtNames));
+
+    return {
+      ...current,
+      tenant: {
+        ...current.tenant,
+        lastSynced: formatManilaDateTime(new Date()),
+      },
+      bookings,
+      customers: deriveLiveCustomers(bookingRows),
+      session: {
+        ...serverSession,
+        capabilities: authorityCapabilities(serverSession),
+      },
+    };
+  },
   async loadPaymentReceipt(context, verificationId) {
     if (platformMode() === "preview") {
       throw new Error("PREVIEW_RECEIPT_UNAVAILABLE");
@@ -924,7 +967,7 @@ export const managementAdapter: ManagementAdapter = {
         ok: true,
         message: action.type === "payment:approve"
           ? "The receipt was approved and the booking is confirmed."
-          : "The receipt was rejected and the held court time was released.",
+          : "The receipt was rejected. The server updated the booking or balance-payment state.",
       };
     }
 
@@ -1175,6 +1218,7 @@ const PAYMENT_EVIDENCE_STATUSES = new Set<PaymentEvidenceStatus>([
   "manual_review",
   "auto_approved",
   "approved",
+  "short_payment",
   "rejected",
 ]);
 const BLOCK_LABELS = new Set([
@@ -2288,12 +2332,41 @@ function bookingAmount(row: JsonObject): number {
   return Math.max(0, (subtotal ?? 0) + (serviceFee ?? 0));
 }
 
-function liveStatus(row: JsonObject): BookingStatus {
+function liveStatus(
+  row: JsonObject,
+  payment: BookingPaymentStatus,
+  paymentEvidence: PaymentEvidence | null,
+): BookingStatus {
   const status = value(row, ["status"]).toLowerCase();
-  if (status === "confirmed") return "confirmed";
   if (status === "completed") return "completed";
+  if (value(row, ["checked_in_at"])) return "checked_in";
+  if (status === "confirmed") return "confirmed";
+
   if (status === "pending_payment" || status === "payment_review") {
-    return "awaiting_payment";
+    if (paymentEvidence?.status === "pending") {
+      return payment === "unpaid" || payment === "pending"
+        ? "receipt_processing"
+        : "payment_attention";
+    }
+
+    if (status === "pending_payment" && !paymentEvidence) {
+      if (payment === "unpaid") return "awaiting_receipt";
+      if (payment === "pending") return "receipt_processing";
+      return "payment_attention";
+    }
+
+    if (
+      status === "payment_review" &&
+      paymentEvidence?.status === "manual_review" &&
+      payment === "pending"
+    ) {
+      return "payment_review";
+    }
+
+    // Includes reviewed short payments and any active booking whose booking,
+    // payment, and receipt states disagree. Keep these visible without
+    // presenting an unsafe review action for an inconsistent server state.
+    return "payment_attention";
   }
   throw new Error("LIVE_BOOKING_STATUS_INVALID");
 }
@@ -2511,6 +2584,8 @@ function mapLiveBooking(
   const endsAt = parsedInstant(row, ["ends_at"]);
   const paymentStatus = value(row, ["payment_status", "paymentStatus"]).toLowerCase();
   const bookingStatus = value(row, ["status"]).toLowerCase();
+  const payment = livePaymentStatus(paymentStatus);
+  const paymentEvidence = latestPaymentEvidence(row, bookingStatus, paymentStatus);
   const phone = value(row, ["customer_phone", "phone", "mobile"]);
   const email = value(row, ["customer_email", "customerEmail"]);
   return {
@@ -2530,14 +2605,14 @@ function mapLiveBooking(
     time: bookingTimeLabel(startsAt, endsAt),
     duration: durationLabel(startsAt, endsAt),
     amount: bookingAmount(row),
-    status: value(row, ["checked_in_at"]) ? "checked_in" : liveStatus(row),
-    payment: livePaymentStatus(paymentStatus),
+    status: liveStatus(row, payment, paymentEvidence),
+    payment,
     courtId,
     bookingDate: DATE_PATTERN.test(value(row, ["local_booking_date"]))
       ? value(row, ["local_booking_date"])
       : null,
     startTime: startsAt ? formatManilaClock(startsAt) : null,
-    paymentEvidence: latestPaymentEvidence(row, bookingStatus, paymentStatus),
+    paymentEvidence,
   };
 }
 

@@ -1051,10 +1051,14 @@ const platformAdapter: BookingAdapter = {
       file: request.receiptFile,
     });
     const receiptBooking = receipt.booking as { status?: string } | undefined;
-    const outcome = typeof receipt.outcome === "string" ? receipt.outcome : "manual_review";
+    const verificationStatus = typeof receipt.status === "string"
+      ? receipt.status
+      : typeof receipt.outcome === "string"
+        ? receipt.outcome
+        : "manual_review";
     const record = {
       ...parsed.record,
-      status: outcome === "auto_approved"
+      status: verificationStatus === "auto_approved"
         ? "confirmed" as const
         : mappedBookingStatus(receiptBooking?.status, "payment_review"),
     };

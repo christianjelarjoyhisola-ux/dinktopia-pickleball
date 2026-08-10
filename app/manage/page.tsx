@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import styles from "./manage.module.css";
@@ -204,7 +205,10 @@ const ROLE_LABEL: Record<TenantRole, string> = {
 
 const STATUS_LABEL: Record<BookingStatus, string> = {
   confirmed: "Confirmed",
-  awaiting_payment: "Awaiting payment",
+  awaiting_receipt: "Awaiting receipt",
+  receipt_processing: "Receipt processing",
+  payment_review: "Review required",
+  payment_attention: "Payment needs attention",
   checked_in: "Checked in",
   completed: "Completed",
 };
@@ -218,10 +222,6 @@ const PAYMENT_LABEL: Record<BookingPaymentStatus, string> = {
   rejected: "Rejected",
   unknown: "Not returned",
 };
-
-const paymentNeedsAttention = (status: BookingPaymentStatus) =>
-  status === "unpaid" || status === "pending" || status === "partial" ||
-  status === "rejected" || status === "unknown";
 
 function manilaCalendarDate(): string {
   const parts = new Intl.DateTimeFormat("en", {
@@ -293,7 +293,7 @@ function ActionButton({
   children: ReactNode;
   variant?: "primary" | "secondary" | "quiet" | "danger";
   disabled?: boolean;
-  onClick?: () => void;
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   type?: "button" | "submit";
   className?: string;
   ariaLabel?: string;
@@ -471,13 +471,19 @@ function OverviewView({
   goTo,
   openNeedsReview,
   request,
+  loadPaymentReceipt,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   goTo: (view: View) => void;
   openNeedsReview: () => void;
   request: (action: ConfirmAction) => void;
+  loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
 }) {
+  const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
+  const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
+  const paymentInboxHeadingRef = useRef<HTMLHeadingElement>(null);
+  const canReviewPayments = can("payment:review");
   const completed = snapshot.setup.filter((item) => item.complete).length;
   const progress = snapshot.setup.length
     ? Math.round((completed / snapshot.setup.length) * 100)
@@ -488,13 +494,44 @@ function OverviewView({
   const paidRevenue = snapshot.bookings
     .filter((booking) => booking.payment === "paid")
     .reduce((total, booking) => total + booking.amount, 0);
-  const reviewAttention = snapshot.bookings.find((booking) =>
+  const reviewQueue = snapshot.bookings.filter((booking) =>
     booking.paymentEvidence?.reviewable === true
   );
-  const paymentAttention = reviewAttention ?? snapshot.bookings.find((booking) =>
-    paymentNeedsAttention(booking.payment)
+  const processingQueue = snapshot.bookings.filter((booking) =>
+    booking.status === "receipt_processing"
   );
+  const awaitingReceiptQueue = snapshot.bookings.filter((booking) =>
+    booking.status === "awaiting_receipt"
+  );
+  const paymentAttentionQueue = snapshot.bookings.filter((booking) =>
+    booking.status === "payment_attention"
+  );
+  const inboxBooking = reviewQueue[0] ?? processingQueue[0] ??
+    paymentAttentionQueue[0] ?? awaitingReceiptQueue[0] ?? null;
+  const reviewing = reviewingBookingId
+    ? snapshot.bookings.find((booking) =>
+        booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
+      ) ?? null
+    : null;
   const paidCount = snapshot.bookings.filter((booking) => booking.payment === "paid").length;
+
+  const closePaymentReview = () => {
+    const returnTarget = reviewReturnRef.current;
+    setReviewingBookingId(null);
+    window.requestAnimationFrame(() => {
+      if (returnTarget?.isConnected) returnTarget.focus();
+      else paymentInboxHeadingRef.current?.focus();
+    });
+  };
+
+  useEffect(() => {
+    if (!reviewingBookingId || (reviewing && canReviewPayments)) return;
+    const timer = window.setTimeout(() => {
+      setReviewingBookingId(null);
+      paymentInboxHeadingRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [canReviewPayments, reviewing, reviewingBookingId]);
 
   return (
     <>
@@ -502,15 +539,137 @@ function OverviewView({
         className={styles.metricGrid}
         aria-label={isPreview ? "Preview key numbers" : "Loaded tenant result"}
       >
-        <MetricCard label="Loaded revenue" value={formatPeso(paidRevenue)} note={isPreview ? "Preview operations dataset" : "Paid bookings in the current result"} accent />
+        <MetricCard label={isPreview ? "Loaded revenue" : "Paid revenue"} value={formatPeso(paidRevenue)} note={isPreview ? "Preview operations dataset" : "From paid bookings in this live view"} accent />
         {isPreview ? (
           <MetricCard label="Courts" value={String(snapshot.courts.length)} note="Provisional court inventory" />
         ) : (
-          <MetricCard label="Loaded blocks" value={String(snapshot.blocks.length)} note="Tenant-scoped rows in the current result" />
+          <MetricCard label="Needs review" value={String(reviewQueue.length)} note={reviewQueue.length ? "Submitted receipts waiting for a decision" : "Payment inbox is clear"} />
         )}
         <MetricCard label="Bookings" value={String(snapshot.bookings.length)} note={`${paidCount} paid · ${snapshot.bookings.length - paidCount} other payment states`} />
         <MetricCard label="Players" value={String(snapshot.customers.length)} note={isPreview ? "Preview customer profiles" : "Derived from the loaded bookings"} />
       </section>
+
+      {!isPreview && (
+        <section
+          className={cx(styles.paymentInbox, reviewQueue.length > 0 && styles.paymentInboxReady)}
+          aria-labelledby="payment-inbox-title"
+        >
+          <header className={styles.paymentInboxHeader}>
+            <div>
+              <p className={styles.eyebrow}>Payment inbox</p>
+              <h2 id="payment-inbox-title" ref={paymentInboxHeadingRef} tabIndex={-1}>
+                {reviewQueue.length > 0
+                  ? `${reviewQueue.length} ${reviewQueue.length === 1 ? "receipt" : "receipts"} ready for review`
+                  : processingQueue.length > 0
+                    ? "A receipt is being checked"
+                    : paymentAttentionQueue.length > 0
+                      ? "A payment needs attention"
+                      : awaitingReceiptQueue.length > 0
+                        ? "Waiting for player receipts"
+                        : "Payments are up to date"}
+              </h2>
+              <p>
+                {reviewQueue.length > 0
+                  ? "Compare the private receipt with the booking and make the final decision here."
+                  : processingQueue.length > 0
+                    ? "The receipt is uploaded. It will become ready for review automatically when verification finishes."
+                    : paymentAttentionQueue.length > 0
+                      ? "The returned booking, payment, and receipt states need a fresh review."
+                      : awaitingReceiptQueue.length > 0
+                        ? "These holds are waiting for players to submit payment proof."
+                        : "No submitted receipts need a decision right now."}
+              </p>
+            </div>
+            <div className={styles.paymentInboxCounts} aria-label="Payment queue counts" aria-live="polite">
+              <span><strong>{reviewQueue.length}</strong> To review</span>
+              <span><strong>{processingQueue.length}</strong> Processing</span>
+              <span><strong>{paymentAttentionQueue.length}</strong> Attention</span>
+              <span><strong>{awaitingReceiptQueue.length}</strong> Awaiting receipt</span>
+            </div>
+          </header>
+
+          {inboxBooking ? (
+            <article className={styles.paymentInboxItem}>
+              <div className={styles.paymentInboxIdentity}>
+                <Avatar initials={inboxBooking.initials} tone={0} />
+                <div>
+                  <StatusPill status={inboxBooking.status} />
+                  <h3>{inboxBooking.customer}</h3>
+                  <p>{inboxBooking.reference}</p>
+                </div>
+              </div>
+              <dl className={styles.paymentInboxFacts}>
+                <div>
+                  <dt>Expected total</dt>
+                  <dd>{formatPeso(inboxBooking.paymentEvidence?.expectedAmount ?? inboxBooking.amount)}</dd>
+                </div>
+                <div>
+                  <dt>Court & session</dt>
+                  <dd>{inboxBooking.court} · {inboxBooking.date}, {inboxBooking.time}</dd>
+                </div>
+                <div>
+                  <dt>Receipt submitted</dt>
+                  <dd>
+                    {inboxBooking.paymentEvidence?.submittedAt ? (
+                      <time dateTime={inboxBooking.paymentEvidence.submittedAt}>
+                        {new Date(inboxBooking.paymentEvidence.submittedAt).toLocaleString("en-PH", {
+                          timeZone: activeTenant.identity.timezone,
+                        })}
+                      </time>
+                    ) : "Not uploaded yet"}
+                  </dd>
+                </div>
+              </dl>
+              <div className={styles.paymentInboxAction}>
+                {inboxBooking.paymentEvidence?.reviewable ? (
+                  <ActionButton
+                    disabled={!canReviewPayments}
+                    onClick={(event) => {
+                      reviewReturnRef.current = event.currentTarget;
+                      setReviewingBookingId(inboxBooking.bookingId);
+                    }}
+                    ariaLabel={`Review payment receipt for ${inboxBooking.customer}, booking ${inboxBooking.reference}`}
+                  >
+                    Review payment
+                  </ActionButton>
+                ) : (
+                  <span className={styles.paymentInboxWaiting}>{STATUS_LABEL[inboxBooking.status]}</span>
+                )}
+                <button
+                  type="button"
+                  className={styles.textButton}
+                  onClick={() => reviewQueue.length > 0 ? openNeedsReview() : goTo("bookings")}
+                >
+                  {reviewQueue.length > 0 ? "View all to review" : "View booking"} <span aria-hidden="true">→</span>
+                </button>
+              </div>
+            </article>
+          ) : (
+            <div className={styles.paymentInboxClear} role="status">
+              <span aria-hidden="true">✓</span>
+              <div><strong>All caught up</strong><small>New receipt uploads will appear here automatically.</small></div>
+              <button type="button" className={styles.textButton} onClick={() => goTo("bookings")}>View bookings</button>
+            </div>
+          )}
+
+          <footer className={styles.paymentInboxFooter}>
+            <span>Private receipt images open only when you choose Review payment.</span>
+            <span>Overview and Bookings refresh automatically while visible.</span>
+          </footer>
+        </section>
+      )}
+
+      {!isPreview && canReviewPayments && reviewing?.paymentEvidence && (
+        <PaymentReviewWorkspace
+          key={reviewing.paymentEvidence.verificationId}
+          booking={reviewing}
+          can={can}
+          request={request}
+          loadPaymentReceipt={loadPaymentReceipt}
+          onClose={closePaymentReview}
+          headingLevel="h2"
+        />
+      )}
 
       <section className={styles.overviewGrid}>
         <article className={styles.panel}>
@@ -619,22 +778,187 @@ function OverviewView({
         </article>
       </section>
 
-      <section className={styles.focusStrip} aria-labelledby="focus-title">
-        <div>
-          <span className={styles.focusIndex}>01</span>
-          <p className={styles.eyebrow}>{isPreview ? "Owner focus" : "Tenant attention"}</p>
-          <h2 id="focus-title">{reviewAttention ? "A receipt is ready to review" : paymentAttention ? "A payment state needs review" : "Setup remains protected"}</h2>
-          <p>{reviewAttention ? `${reviewAttention.customer}'s private receipt is ready for comparison and a decision.` : paymentAttention ? `${paymentAttention.customer}'s loaded booking is marked ${PAYMENT_LABEL[paymentAttention.payment].toLowerCase()}.` : "Complete the remaining readiness checks before public booking is activated."}</p>
-        </div>
-        <ActionButton
-          variant="secondary"
-          disabled={isPreview && !can("booking:update")}
-          onClick={() => reviewAttention ? openNeedsReview() : goTo("bookings")}
-        >
-          {reviewAttention ? "Review receipt" : paymentAttention ? "Review payment state" : "Review bookings"}
-        </ActionButton>
-      </section>
     </>
+  );
+}
+
+function PaymentReviewWorkspace({
+  booking,
+  can,
+  request,
+  loadPaymentReceipt,
+  onClose,
+  headingLevel = "h3",
+}: {
+  booking: Booking;
+  can: (capability: ManagementCapability) => boolean;
+  request: (action: ConfirmAction) => void;
+  loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
+  onClose: () => void;
+  headingLevel?: "h2" | "h3";
+}) {
+  const [receiptView, setReceiptView] = useState<PaymentReceiptView | null>(null);
+  const [receiptState, setReceiptState] = useState<"loading" | "ready" | "error">("loading");
+  const [receiptReload, setReceiptReload] = useState(0);
+  const [reviewNote, setReviewNote] = useState("");
+  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const evidence = booking.paymentEvidence;
+  const verificationId = evidence?.verificationId ?? null;
+  const ReviewHeading = headingLevel;
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => reviewHeadingRef.current?.focus());
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!verificationId || !evidence?.reviewable) return;
+    loadPaymentReceipt(verificationId).then((view) => {
+      if (!active) return;
+      setReceiptView(view);
+      setReceiptState("ready");
+    }).catch(() => {
+      if (active) setReceiptState("error");
+    });
+    return () => { active = false; };
+  }, [evidence?.reviewable, loadPaymentReceipt, receiptReload, verificationId]);
+
+  if (!evidence) return null;
+
+  return (
+    <section className={styles.paymentReviewWorkspace} aria-labelledby="payment-review-title">
+      <header className={styles.paymentReviewHeader}>
+        <div>
+          <p className={styles.eyebrow}>Private payment evidence</p>
+          <ReviewHeading id="payment-review-title" ref={reviewHeadingRef} tabIndex={-1}>
+            Review {booking.reference}
+          </ReviewHeading>
+          <p>Compare the submitted proof with the booking before making a final decision.</p>
+        </div>
+        <button type="button" className={styles.textButton} onClick={onClose}>
+          Close review
+        </button>
+      </header>
+
+      <div className={styles.paymentReviewLayout}>
+        <div className={styles.receiptViewer}>
+          {receiptState === "loading" && (
+            <div className={styles.receiptState} role="status">
+              <span className={styles.spinner} aria-hidden="true" />
+              <strong>Opening the private receipt…</strong>
+              <small>The signed image link expires automatically.</small>
+            </div>
+          )}
+          {receiptState === "error" && (
+            <div className={styles.receiptState} role="alert">
+              <strong>Receipt image unavailable</strong>
+              <small>Nothing was approved or rejected. Retry the protected image request.</small>
+              <ActionButton
+                variant="secondary"
+                onClick={() => {
+                  setReceiptView(null);
+                  setReceiptState("loading");
+                  setReceiptReload((value) => value + 1);
+                }}
+              >
+                Retry image
+              </ActionButton>
+            </div>
+          )}
+          {receiptState === "ready" && receiptView && (
+            <>
+              {/* Signed receipt URLs are short-lived and must bypass the public image optimizer. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={receiptView.signedUrl}
+                alt={`Payment receipt submitted for booking ${booking.reference}`}
+                onError={() => setReceiptState("error")}
+              />
+              <a href={receiptView.signedUrl} target="_blank" rel="noreferrer">Open full image</a>
+            </>
+          )}
+        </div>
+
+        <div className={styles.paymentReviewDetails}>
+          <div className={styles.reviewDecisionSummary}>
+            <span>Expected total</span>
+            <strong>{formatPeso(evidence.expectedAmount ?? booking.amount)}</strong>
+            <small>Verify this against the receipt; detected values are hints, not proof of transfer.</small>
+          </div>
+          {receiptView && receiptView.status !== "manual_review" && (
+            <p className={styles.inlineError} role="status">
+              This receipt is already {receiptView.status.replaceAll("_", " ")}. Refresh bookings before taking another action.
+            </p>
+          )}
+          <dl className={styles.paymentFacts}>
+            <div><dt>Player</dt><dd>{booking.customer}</dd></div>
+            <div><dt>Contact</dt><dd>{booking.phone}</dd></div>
+            <div><dt>Court and time</dt><dd>{booking.court} · {booking.date}, {booking.time}</dd></div>
+            <div><dt>Payment method</dt><dd>{evidence.paymentMethod?.toUpperCase() ?? "Not returned"}</dd></div>
+            <div><dt>Player-entered reference</dt><dd>{evidence.submittedReference ?? "Not provided"}</dd></div>
+            <div><dt>Receipt-detected reference</dt><dd>{evidence.detectedReference ?? "Not detected"}</dd></div>
+            <div><dt>Receipt submitted</dt><dd>{new Date(evidence.submittedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone })}</dd></div>
+            <div><dt>Payment attempt opened</dt><dd>{evidence.paymentAttemptedAt ? new Date(evidence.paymentAttemptedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone }) : "Not returned"}</dd></div>
+            <div><dt>Receipt date detected</dt><dd>{evidence.receiptIssuedAt ? new Date(evidence.receiptIssuedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone }) : "Not detected"}</dd></div>
+            <div><dt>Amounts detected</dt><dd>{evidence.detectedAmounts.length === 0 ? "Not detected" : evidence.detectedAmounts.map(formatPeso).join(", ")}</dd></div>
+            <div><dt>Automated confidence</dt><dd>{evidence.confidence === null ? "Not returned" : `${Math.round(evidence.confidence * 100)}%`}</dd></div>
+            <div><dt>Evidence status</dt><dd>Manual review required</dd></div>
+          </dl>
+          {evidence.flags.length > 0 && (
+            <div className={styles.reviewFlags} aria-label="Automated receipt checks">
+              <strong>Checks to inspect</strong>
+              <ul>{evidence.flags.map((flag) => <li key={flag}>{flag.replaceAll("_", " ")}</li>)}</ul>
+            </div>
+          )}
+          <label className={styles.field}>
+            <span>Review note <small>required when rejecting</small></span>
+            <textarea
+              rows={3}
+              maxLength={1_000}
+              value={reviewNote}
+              onChange={(event) => setReviewNote(event.target.value)}
+              placeholder="Add a clear reason for the decision"
+            />
+          </label>
+        </div>
+      </div>
+
+      <footer className={styles.paymentReviewActions}>
+        <span>The server applies each decision to the current booking or balance-payment state.</span>
+        <div>
+          <ActionButton
+            variant="danger"
+            disabled={!can("payment:review") || receiptState !== "ready" || receiptView?.status !== "manual_review" || reviewNote.trim().length < 3}
+            onClick={() => request({
+              title: `Reject payment for ${booking.reference}?`,
+              detail: `${booking.customer}'s receipt will be rejected. The server will update the booking or balance request according to its current state.`,
+              confirmLabel: "Reject receipt",
+              actionType: "payment:reject",
+              resourceId: evidence.verificationId,
+              payload: { note: reviewNote },
+              tone: "danger",
+              onSuccess: onClose,
+            })}
+          >
+            Reject receipt
+          </ActionButton>
+          <ActionButton
+            disabled={!can("payment:review") || receiptState !== "ready" || receiptView?.status !== "manual_review"}
+            onClick={() => request({
+              title: `Approve ${formatPeso(evidence.expectedAmount ?? booking.amount)} for ${booking.reference}?`,
+              detail: "Confirm only after the receipt reference, amount, player, court, and session all match. This marks the booking paid and confirmed.",
+              confirmLabel: "Approve & confirm booking",
+              actionType: "payment:approve",
+              resourceId: evidence.verificationId,
+              payload: { note: reviewNote },
+              onSuccess: onClose,
+            })}
+          >
+            Approve payment
+          </ActionButton>
+        </div>
+      </footer>
+    </section>
   );
 }
 
@@ -661,13 +985,10 @@ function BookingsView({
   const [status, setStatus] = useState<BookingFilter>(initialStatus);
   const [creating, setCreating] = useState(false);
   const [rescheduling, setRescheduling] = useState<Booking | null>(null);
-  const [reviewing, setReviewing] = useState<Booking | null>(null);
-  const [receiptView, setReceiptView] = useState<PaymentReceiptView | null>(null);
-  const [receiptState, setReceiptState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  const [receiptReload, setReceiptReload] = useState(0);
-  const [reviewNote, setReviewNote] = useState("");
-  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
+  const bookingListHeadingRef = useRef<HTMLHeadingElement>(null);
+  const canReviewPayments = can("payment:review");
   const [manual, setManual] = useState({
     courtId: courts[0]?.id ?? "",
     bookingDate: manilaCalendarDate(),
@@ -697,34 +1018,33 @@ function BookingsView({
         : booking.status === status);
     return matchesQuery && matchesStatus;
   });
-
-  useEffect(() => {
-    let active = true;
-    const evidence = reviewing?.paymentEvidence;
-    if (!reviewing || !evidence?.reviewable) return;
-    loadPaymentReceipt(evidence.verificationId).then((view) => {
-      if (!active) return;
-      setReceiptView(view);
-      setReceiptState("ready");
-    }).catch(() => {
-      if (active) setReceiptState("error");
-    });
-    return () => { active = false; };
-  }, [loadPaymentReceipt, receiptReload, reviewing]);
+  const reviewing = reviewingBookingId
+    ? bookings.find((booking) =>
+        booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
+      ) ?? null
+    : null;
 
   const closePaymentReview = () => {
-    setReviewing(null);
-    window.requestAnimationFrame(() => reviewReturnRef.current?.focus());
+    const returnTarget = reviewReturnRef.current;
+    setReviewingBookingId(null);
+    window.requestAnimationFrame(() => {
+      if (returnTarget?.isConnected) returnTarget.focus();
+      else bookingListHeadingRef.current?.focus();
+    });
   };
+
+  useEffect(() => {
+    if (!reviewingBookingId || (reviewing && canReviewPayments)) return;
+    const timer = window.setTimeout(() => {
+      setReviewingBookingId(null);
+      bookingListHeadingRef.current?.focus();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [canReviewPayments, reviewing, reviewingBookingId]);
 
   const openPaymentReview = (booking: Booking, trigger: HTMLButtonElement) => {
     reviewReturnRef.current = trigger;
-    setReviewNote("");
-    setReceiptView(null);
-    setReceiptState("loading");
-    setReceiptReload((value) => value + 1);
-    setReviewing(booking);
-    window.requestAnimationFrame(() => reviewHeadingRef.current?.focus());
+    setReviewingBookingId(booking.bookingId);
   };
 
   return (
@@ -732,7 +1052,7 @@ function BookingsView({
       <div className={styles.panelHeading}>
         <div>
           <p className={styles.eyebrow}>Reservation register</p>
-          <h2 id="booking-list-title">{isPreview ? "All preview bookings" : "Loaded bookings"}</h2>
+          <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>{isPreview ? "All preview bookings" : "Loaded bookings"}</h2>
         </div>
         <ActionButton
           disabled={!can("booking:create") || (!isPreview && !courts.length)}
@@ -817,140 +1137,15 @@ function BookingsView({
           <div className={styles.compactFormActions}><span>Availability and price are previewed first. Higher-priced moves require cancelling and creating a new paid booking.</span><ActionButton type="submit">Review change</ActionButton></div>
         </form>
       )}
-      {!isPreview && reviewing?.paymentEvidence && (
-        <section className={styles.paymentReviewWorkspace} aria-labelledby="payment-review-title">
-          <header className={styles.paymentReviewHeader}>
-            <div>
-              <p className={styles.eyebrow}>Private payment evidence</p>
-              <h3 id="payment-review-title" ref={reviewHeadingRef} tabIndex={-1}>
-                Review {reviewing.reference}
-              </h3>
-              <p>Compare the submitted proof with the booking before making a final decision.</p>
-            </div>
-            <button type="button" className={styles.textButton} onClick={closePaymentReview}>
-              Close review
-            </button>
-          </header>
-
-          <div className={styles.paymentReviewLayout}>
-            <div className={styles.receiptViewer}>
-              {receiptState === "loading" && (
-                <div className={styles.receiptState} role="status">
-                  <span className={styles.spinner} aria-hidden="true" />
-                  <strong>Opening the private receipt…</strong>
-                  <small>The signed image link expires automatically.</small>
-                </div>
-              )}
-              {receiptState === "error" && (
-                <div className={styles.receiptState} role="alert">
-                  <strong>Receipt image unavailable</strong>
-                  <small>Nothing was approved or rejected. Retry the protected image request.</small>
-                  <ActionButton
-                    variant="secondary"
-                    onClick={() => {
-                      setReceiptView(null);
-                      setReceiptState("loading");
-                      setReceiptReload((value) => value + 1);
-                    }}
-                  >
-                    Retry image
-                  </ActionButton>
-                </div>
-              )}
-              {receiptState === "ready" && receiptView && (
-                <>
-                  {/* Signed receipt URLs are short-lived and must bypass the public image optimizer. */}
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={receiptView.signedUrl}
-                    alt={`Payment receipt submitted for booking ${reviewing.reference}`}
-                    onError={() => setReceiptState("error")}
-                  />
-                  <a href={receiptView.signedUrl} target="_blank" rel="noreferrer">Open full image</a>
-                </>
-              )}
-            </div>
-
-            <div className={styles.paymentReviewDetails}>
-              <div className={styles.reviewDecisionSummary}>
-                <span>Expected total</span>
-                <strong>{formatPeso(reviewing.paymentEvidence.expectedAmount ?? reviewing.amount)}</strong>
-                <small>Verify this against the receipt; detected values are hints, not proof of transfer.</small>
-              </div>
-              {receiptView && receiptView.status !== "manual_review" && (
-                <p className={styles.inlineError} role="status">
-                  This receipt is already {receiptView.status.replaceAll("_", " ")}. Refresh bookings before taking another action.
-                </p>
-              )}
-              <dl className={styles.paymentFacts}>
-                <div><dt>Player</dt><dd>{reviewing.customer}</dd></div>
-                <div><dt>Contact</dt><dd>{reviewing.phone}</dd></div>
-                <div><dt>Court and time</dt><dd>{reviewing.court} · {reviewing.date}, {reviewing.time}</dd></div>
-                <div><dt>Payment method</dt><dd>{reviewing.paymentEvidence.paymentMethod?.toUpperCase() ?? "Not returned"}</dd></div>
-                <div><dt>Player-entered reference</dt><dd>{reviewing.paymentEvidence.submittedReference ?? "Not provided"}</dd></div>
-                <div><dt>Receipt-detected reference</dt><dd>{reviewing.paymentEvidence.detectedReference ?? "Not detected"}</dd></div>
-                <div><dt>Receipt submitted</dt><dd>{new Date(reviewing.paymentEvidence.submittedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone })}</dd></div>
-                <div><dt>Payment attempt opened</dt><dd>{reviewing.paymentEvidence.paymentAttemptedAt ? new Date(reviewing.paymentEvidence.paymentAttemptedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone }) : "Not returned"}</dd></div>
-                <div><dt>Receipt date detected</dt><dd>{reviewing.paymentEvidence.receiptIssuedAt ? new Date(reviewing.paymentEvidence.receiptIssuedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone }) : "Not detected"}</dd></div>
-                <div><dt>Amounts detected</dt><dd>{reviewing.paymentEvidence.detectedAmounts.length === 0 ? "Not detected" : reviewing.paymentEvidence.detectedAmounts.map(formatPeso).join(", ")}</dd></div>
-                <div><dt>Automated confidence</dt><dd>{reviewing.paymentEvidence.confidence === null ? "Not returned" : `${Math.round(reviewing.paymentEvidence.confidence * 100)}%`}</dd></div>
-                <div><dt>Evidence status</dt><dd>Manual review required</dd></div>
-              </dl>
-              {reviewing.paymentEvidence.flags.length > 0 && (
-                <div className={styles.reviewFlags} aria-label="Automated receipt checks">
-                  <strong>Checks to inspect</strong>
-                  <ul>{reviewing.paymentEvidence.flags.map((flag) => <li key={flag}>{flag.replaceAll("_", " ")}</li>)}</ul>
-                </div>
-              )}
-              <label className={styles.field}>
-                <span>Review note <small>required when rejecting</small></span>
-                <textarea
-                  rows={3}
-                  maxLength={1_000}
-                  value={reviewNote}
-                  onChange={(event) => setReviewNote(event.target.value)}
-                  placeholder="Add a clear reason for the decision"
-                />
-              </label>
-            </div>
-          </div>
-
-          <footer className={styles.paymentReviewActions}>
-            <span>Approval confirms the booking. Rejection cancels it and releases the held court time.</span>
-            <div>
-              <ActionButton
-                variant="danger"
-                disabled={!can("payment:review") || receiptState !== "ready" || receiptView?.status !== "manual_review" || reviewNote.trim().length < 3}
-                onClick={() => request({
-                  title: `Reject payment for ${reviewing.reference}?`,
-                  detail: `${reviewing.customer}'s receipt will be rejected, the booking will be cancelled, and its held court time will be released.`,
-                  confirmLabel: "Reject & release slot",
-                  actionType: "payment:reject",
-                  resourceId: reviewing.paymentEvidence!.verificationId,
-                  payload: { note: reviewNote },
-                  tone: "danger",
-                  onSuccess: closePaymentReview,
-                })}
-              >
-                Reject payment
-              </ActionButton>
-              <ActionButton
-                disabled={!can("payment:review") || receiptState !== "ready" || receiptView?.status !== "manual_review"}
-                onClick={() => request({
-                  title: `Approve ${formatPeso(reviewing.paymentEvidence?.expectedAmount ?? reviewing.amount)} for ${reviewing.reference}?`,
-                  detail: "Confirm only after the receipt reference, amount, player, court, and session all match. This marks the booking paid and confirmed.",
-                  confirmLabel: "Approve & confirm booking",
-                  actionType: "payment:approve",
-                  resourceId: reviewing.paymentEvidence!.verificationId,
-                  payload: { note: reviewNote },
-                  onSuccess: closePaymentReview,
-                })}
-              >
-                Approve payment
-              </ActionButton>
-            </div>
-          </footer>
-        </section>
+      {!isPreview && canReviewPayments && reviewing?.paymentEvidence && (
+        <PaymentReviewWorkspace
+          key={reviewing.paymentEvidence.verificationId}
+          booking={reviewing}
+          can={can}
+          request={request}
+          loadPaymentReceipt={loadPaymentReceipt}
+          onClose={closePaymentReview}
+        />
       )}
       <div className={styles.filterBar}>
         <label className={styles.searchField}>
@@ -968,8 +1163,10 @@ function BookingsView({
           <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
             <option value="all">All statuses</option>
             <option value="confirmed">Confirmed</option>
-            <option value="awaiting_payment">Awaiting payment</option>
+            <option value="awaiting_receipt">Awaiting receipt</option>
+            <option value="receipt_processing">Receipt processing</option>
             <option value="needs_review">Needs payment review</option>
+            <option value="payment_attention">Payment needs attention</option>
             <option value="checked_in">Checked in</option>
             <option value="completed">Completed</option>
           </select>
@@ -1019,14 +1216,20 @@ function BookingsView({
                         <button
                           type="button"
                           className={styles.reviewPaymentButton}
-                          disabled={!can("payment:review")}
+                          disabled={!canReviewPayments}
                           onClick={(event) => openPaymentReview(booking, event.currentTarget)}
                         >
                           Review receipt
                         </button>
                       )}
-                      {booking.status === "awaiting_payment" && !booking.paymentEvidence?.reviewable && (
+                      {booking.status === "awaiting_receipt" && (
                         <small className={styles.cellSub}>Waiting for the player&apos;s receipt</small>
+                      )}
+                      {booking.status === "receipt_processing" && (
+                        <small className={styles.cellSub}>Receipt uploaded · verification in progress</small>
+                      )}
+                      {booking.status === "payment_attention" && (
+                        <small className={styles.cellSub}>Payment state needs owner attention</small>
                       )}
                     </div>
                   </td>
@@ -2956,19 +3159,29 @@ export default function ManagePage() {
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmPending, setConfirmPending] = useState(false);
   const [refreshPending, setRefreshPending] = useState(false);
+  const [syncPending, setSyncPending] = useState(false);
   const [accountPending, setAccountPending] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const syncInFlightRef = useRef(false);
+  const syncGenerationRef = useRef(0);
 
+  const liveSessionRole = snapshot?.session.role ?? "host";
+  const liveCapabilityKey = snapshot?.session.capabilities
+    .slice()
+    .sort()
+    .join("|") ?? "";
   const context = useMemo<ManagementContext>(() => ({
     tenantSlug: activeTenant.identity.slug,
-    role: isPreview ? role : snapshot?.session.role ?? "host",
+    role: isPreview ? role : liveSessionRole,
     capabilities: isPreview
       ? previewRoleSessions[role]
-      : snapshot?.session.capabilities ?? [],
-  }), [isPreview, role, snapshot]);
+      : liveCapabilityKey
+        ? liveCapabilityKey.split("|") as ManagementCapability[]
+        : [],
+  }), [isPreview, liveCapabilityKey, liveSessionRole, role]);
   const sessionRole = context.role;
 
   const can = (capability: ManagementCapability) => context.capabilities.includes(capability);
@@ -3010,6 +3223,36 @@ export default function ManagePage() {
     return asset;
   }, [context]);
 
+  const refreshWorkspace = useCallback(async (announce = false) => {
+    if (isPreview || syncInFlightRef.current) return;
+    const generation = ++syncGenerationRef.current;
+    syncInFlightRef.current = true;
+    setSyncPending(true);
+    try {
+      const refreshed = announce || !snapshot
+        ? await managementAdapter.load(context)
+        : await managementAdapter.refreshOperations(context, snapshot);
+      if (generation !== syncGenerationRef.current) return;
+      setSnapshot(refreshed);
+      setLoadError(false);
+      if (announce) {
+        setToast({ message: "Live bookings and payments are up to date.", tone: "success" });
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message === "MANAGER_SIGN_IN_REQUIRED") {
+        setAuthRequired(true);
+      } else if (announce) {
+        setToast({
+          message: "We couldn't refresh live payments. The current view was left unchanged.",
+          tone: "warning",
+        });
+      }
+    } finally {
+      syncInFlightRef.current = false;
+      setSyncPending(false);
+    }
+  }, [context, isPreview, snapshot]);
+
   useEffect(() => {
     let active = true;
     managementAdapter.load(context).then((data) => {
@@ -3028,6 +3271,25 @@ export default function ManagePage() {
   }, []);
 
   useEffect(() => {
+    if (
+      isPreview || !snapshot || authRequired || confirmAction || confirmPending || refreshPending ||
+      (view !== "overview" && view !== "bookings")
+    ) return;
+
+    const refreshIfVisible = () => {
+      if (document.visibilityState === "visible") void refreshWorkspace(false);
+    };
+    const interval = window.setInterval(refreshIfVisible, 20_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
+    };
+  }, [authRequired, confirmAction, confirmPending, isPreview, refreshPending, refreshWorkspace, snapshot, view]);
+
+  useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
     if (confirmAction && !dialog.open) dialog.showModal();
@@ -3040,7 +3302,11 @@ export default function ManagePage() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const request = (action: ConfirmAction) => setConfirmAction(action);
+  const request = (action: ConfirmAction) => {
+    // Freeze the confirmation against any silent refresh already in flight.
+    syncGenerationRef.current += 1;
+    setConfirmAction(action);
+  };
 
   const switchAccount = async () => {
     if (isPreview || accountPending) return;
@@ -3056,18 +3322,20 @@ export default function ManagePage() {
 
   const performConfirmedAction = async () => {
     if (!confirmAction) return;
+    const action = confirmAction;
+    syncGenerationRef.current += 1;
     setConfirmPending(true);
     try {
       const result = await managementAdapter.perform(context, {
-        type: confirmAction.actionType,
-        resourceId: confirmAction.resourceId,
-        payload: confirmAction.payload,
+        type: action.actionType,
+        resourceId: action.resourceId,
+        payload: action.payload,
       });
-      const isPaymentAssetRemove = confirmAction.actionType === "payment:asset-remove";
+      const isPaymentAssetRemove = action.actionType === "payment:asset-remove";
       if (isPaymentAssetRemove && result.tenantRevision) {
-        const payload = confirmAction.payload && typeof confirmAction.payload === "object" &&
-            !Array.isArray(confirmAction.payload)
-          ? confirmAction.payload as Record<string, unknown>
+        const payload = action.payload && typeof action.payload === "object" &&
+            !Array.isArray(action.payload)
+          ? action.payload as Record<string, unknown>
           : null;
         const methodCode = typeof payload?.methodCode === "string"
           ? payload.methodCode.trim().toLowerCase()
@@ -3092,7 +3360,6 @@ export default function ManagePage() {
           };
         });
       }
-      confirmAction.onSuccess?.(result);
       if (!isPreview && !isPaymentAssetRemove) {
         setRefreshPending(true);
         try {
@@ -3103,14 +3370,18 @@ export default function ManagePage() {
             message: `${result.message} The follow-up refresh failed, so refresh the workspace before making another change.`,
             tone: "warning",
           });
+          dialogRef.current?.close();
           setConfirmAction(null);
+          window.requestAnimationFrame(() => action.onSuccess?.(result));
           return;
         } finally {
           setRefreshPending(false);
         }
       }
       setToast({ message: result.message, tone: "success" });
+      dialogRef.current?.close();
       setConfirmAction(null);
+      window.requestAnimationFrame(() => action.onSuccess?.(result));
     } catch (error) {
       if (error instanceof PlatformRequestError) {
         setToast({
@@ -3132,6 +3403,7 @@ export default function ManagePage() {
           tone: "error",
         });
       }
+      dialogRef.current?.close();
       setConfirmAction(null);
     } finally {
       setConfirmPending(false);
@@ -3154,7 +3426,7 @@ export default function ManagePage() {
     }
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     switch (view) {
-      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} />;
+      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
       case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} />;
       case "schedule": return <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
       case "blocks": return <BlocksView snapshot={snapshot} can={can} request={request} />;
@@ -3298,7 +3570,20 @@ export default function ManagePage() {
               <label><span>Role</span><select value={role} onChange={(event) => setRole(event.target.value as TenantRole)}>{(Object.keys(ROLE_LABEL) as TenantRole[]).map((item) => <option value={item} key={item}>{ROLE_LABEL[item]}</option>)}</select></label>
               <label><span>State</span><select value={previewState} onChange={(event) => setPreviewState(event.target.value as PreviewState)}><option value="ready">Ready</option><option value="loading">Loading</option><option value="empty">Empty</option><option value="error">Error</option><option value="restricted">Restricted</option></select></label>
             </div>
-          ) : <span className={styles.liveReadOnly}>Live · writes capability-gated</span>}
+          ) : (
+            <div className={styles.liveSyncControls}>
+              <span className={styles.liveReadOnly}>Live · writes capability-gated</span>
+              <button
+                type="button"
+                className={styles.syncButton}
+                disabled={syncPending}
+                onClick={() => void refreshWorkspace(true)}
+              >
+                <span aria-hidden="true">↻</span>
+                {syncPending ? "Refreshing…" : "Refresh data"}
+              </button>
+            </div>
+          )}
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>

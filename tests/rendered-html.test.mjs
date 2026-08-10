@@ -1402,7 +1402,7 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
 
   assert.match(
     manage,
-    /capabilities:\s*isPreview\s*\?\s*previewRoleSessions\[role\]\s*:\s*snapshot\?\.session\.capabilities \?\? \[\]/,
+    /const liveCapabilityKey = snapshot\?\.session\.capabilities[\s\S]*?\.slice\(\)[\s\S]*?\.sort\(\)[\s\S]*?\.join\("\|"\)[\s\S]*?capabilities:\s*isPreview\s*\?\s*previewRoleSessions\[role\]\s*:\s*liveCapabilityKey\s*\?\s*liveCapabilityKey\.split\("\|"\) as ManagementCapability\[\][\s\S]*?: \[\]/,
   );
   assert.ok(
     (managementAdapter.match(/const session = await currentOwnerSession\(\)/g) ?? [])
@@ -1542,7 +1542,7 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
   );
   assert.match(
     manage,
-    /capabilities:\s*isPreview\s*\?\s*previewRoleSessions\[role\]\s*:\s*snapshot\?\.session\.capabilities \?\? \[\]/,
+    /const liveCapabilityKey = snapshot\?\.session\.capabilities[\s\S]*?\.slice\(\)[\s\S]*?\.sort\(\)[\s\S]*?\.join\("\|"\)[\s\S]*?capabilities:\s*isPreview\s*\?\s*previewRoleSessions\[role\]\s*:\s*liveCapabilityKey\s*\?\s*liveCapabilityKey\.split\("\|"\) as ManagementCapability\[\][\s\S]*?: \[\]/,
   );
 
   assert.ok(
@@ -1643,7 +1643,17 @@ test("connects create, reschedule, cancel, and check-in without confusing bookin
   assert.match(mapperSource, /bookingId,[\s\S]*?reference,[\s\S]*?id:\s*reference,/);
   assert.match(
     mapperSource,
-    /status:\s*value\(row, \["checked_in_at"\]\) \? "checked_in" : liveStatus\(row\)/,
+    /status:\s*liveStatus\(row, payment, paymentEvidence\)/,
+  );
+  const liveStatusStart = managementAdapter.indexOf("function liveStatus(");
+  const liveStatusEnd = managementAdapter.indexOf(
+    "function initialsFor(",
+    liveStatusStart,
+  );
+  assert.ok(liveStatusStart >= 0 && liveStatusEnd > liveStatusStart);
+  assert.match(
+    managementAdapter.slice(liveStatusStart, liveStatusEnd),
+    /if \(value\(row, \["checked_in_at"\]\)\) return "checked_in";/,
   );
 
   const createFormStart = manage.indexOf("function BookingsView(");
@@ -2391,6 +2401,15 @@ test("keeps payment review private, minimal, role-checked, and decision-safe", a
     reviewAction,
     /reviewPaymentReceipt\(session\.access_token, \{[\s\S]*?verificationId,[\s\S]*?decision: action\.type === "payment:approve" \? "approve" : "reject",[\s\S]*?note/,
   );
+  assert.match(
+    reviewAction,
+    /action\.type === "payment:approve"[\s\S]*?The receipt was approved and the booking is confirmed\.[\s\S]*?The receipt was rejected\. The server updated the booking or balance-payment state\./,
+  );
+  const rejectedResultCopy = reviewAction.match(
+    /"The receipt was rejected\.[^"\r\n]+"/,
+  )?.[0] ?? "";
+  assert.ok(rejectedResultCopy);
+  assert.doesNotMatch(rejectedResultCopy, /cancel|release|slot|court time/i);
 
   const noteGuardStart = managementAdapter.indexOf("function paymentReviewNote(");
   const noteGuardEnd = managementAdapter.indexOf(
@@ -2408,27 +2427,31 @@ test("keeps payment review private, minimal, role-checked, and decision-safe", a
     /\(required && note\.length < 3\) \|\| note\.length > 1_000 \|\|[\s\S]*?PAYMENT_REVIEW_NOTE_INVALID/,
   );
 
-  const reviewUiStart = manage.indexOf("function BookingsView(");
-  const reviewUiEnd = manage.indexOf("function ScheduleView(", reviewUiStart);
+  const reviewUiStart = manage.indexOf("function PaymentReviewWorkspace(");
+  const reviewUiEnd = manage.indexOf("function BookingsView(", reviewUiStart);
   assert.ok(reviewUiStart >= 0 && reviewUiEnd > reviewUiStart);
   const reviewUi = manage.slice(reviewUiStart, reviewUiEnd);
+  const bookingsUiStart = reviewUiEnd;
+  const bookingsUiEnd = manage.indexOf("function ScheduleView(", bookingsUiStart);
+  assert.ok(bookingsUiEnd > bookingsUiStart);
+  const bookingsUi = manage.slice(bookingsUiStart, bookingsUiEnd);
   assert.match(
     manage,
     /type BookingFilter = "all" \| "needs_review" \| BookingStatus;/,
   );
-  assert.match(reviewUi, /useState<BookingFilter>\(initialStatus\)/);
+  assert.match(bookingsUi, /useState<BookingFilter>\(initialStatus\)/);
   assert.match(
-    reviewUi,
+    bookingsUi,
     /status === "needs_review"[\s\S]*?booking\.paymentEvidence\?\.reviewable === true/,
   );
-  assert.match(reviewUi, /<option value="needs_review">Needs payment review<\/option>/);
+  assert.match(bookingsUi, /<option value="needs_review">Needs payment review<\/option>/);
   assert.match(
     reviewUi,
     /className=\{styles\.paymentReviewWorkspace\}[\s\S]*?Private payment evidence[\s\S]*?Opening the private receipt/,
   );
   assert.match(
     reviewUi,
-    /loadPaymentReceipt\(evidence\.verificationId\)[\s\S]*?setReceiptView\(view\)[\s\S]*?setReceiptState\("ready"\)/,
+    /const verificationId = evidence\?\.verificationId \?\? null;[\s\S]*?if \(!verificationId \|\| !evidence\?\.reviewable\) return;[\s\S]*?loadPaymentReceipt\(verificationId\)[\s\S]*?setReceiptView\(view\)[\s\S]*?setReceiptState\("ready"\)[\s\S]*?\[evidence\?\.reviewable, loadPaymentReceipt, receiptReload, verificationId\]/,
   );
   assert.match(
     reviewUi,
@@ -2436,19 +2459,54 @@ test("keeps payment review private, minimal, role-checked, and decision-safe", a
   );
   assert.match(
     reviewUi,
-    /Player-entered reference[\s\S]*?submittedReference[\s\S]*?Receipt-detected reference[\s\S]*?detectedReference[\s\S]*?Amounts detected[\s\S]*?detectedAmounts/,
+    /Player-entered reference[\s\S]*?evidence\.submittedReference[\s\S]*?Receipt-detected reference[\s\S]*?evidence\.detectedReference[\s\S]*?Amounts detected[\s\S]*?evidence\.detectedAmounts/,
   );
   assert.doesNotMatch(reviewUi, /received amount/i);
   assert.match(
     reviewUi,
-    /disabled=\{!can\("payment:review"\) \|\| receiptState !== "ready" \|\| receiptView\?\.status !== "manual_review" \|\| reviewNote\.trim\(\)\.length < 3\}[\s\S]*?actionType: "payment:reject"[\s\S]*?resourceId: reviewing\.paymentEvidence!\.verificationId/,
+    /disabled=\{!can\("payment:review"\) \|\| receiptState !== "ready" \|\| receiptView\?\.status !== "manual_review" \|\| reviewNote\.trim\(\)\.length < 3\}[\s\S]*?actionType: "payment:reject"[\s\S]*?resourceId: evidence\.verificationId/,
   );
   assert.match(
     reviewUi,
-    /disabled=\{!can\("payment:review"\) \|\| receiptState !== "ready" \|\| receiptView\?\.status !== "manual_review"\}[\s\S]*?actionType: "payment:approve"[\s\S]*?resourceId: reviewing\.paymentEvidence!\.verificationId/,
+    /disabled=\{!can\("payment:review"\) \|\| receiptState !== "ready" \|\| receiptView\?\.status !== "manual_review"\}[\s\S]*?actionType: "payment:approve"[\s\S]*?resourceId: evidence\.verificationId/,
   );
-  assert.match(reviewUi, /reviewReturnRef\.current = trigger[\s\S]*?reviewHeadingRef\.current\?\.focus\(\)/);
-  assert.match(reviewUi, /setReviewing\(null\)[\s\S]*?reviewReturnRef\.current\?\.focus\(\)/);
+  assert.match(
+    reviewUi,
+    /headingLevel = "h3"[\s\S]*?headingLevel\?: "h2" \| "h3";[\s\S]*?const ReviewHeading = headingLevel;[\s\S]*?<ReviewHeading id="payment-review-title" ref=\{reviewHeadingRef\} tabIndex=\{-1\}>/,
+  );
+  const rejectCopyStart = reviewUi.indexOf('<ActionButton\n            variant="danger"');
+  const rejectCopyEnd = reviewUi.indexOf(
+    "<ActionButton\n            disabled=",
+    rejectCopyStart,
+  );
+  assert.ok(rejectCopyStart >= 0 && rejectCopyEnd > rejectCopyStart);
+  const rejectCopy = reviewUi.slice(rejectCopyStart, rejectCopyEnd);
+  assert.match(
+    rejectCopy,
+    /receipt will be rejected\.[\s\S]*?server will update the booking or balance request according to its current state[\s\S]*?confirmLabel: "Reject receipt"[\s\S]*?>\s*Reject receipt/s,
+  );
+  assert.doesNotMatch(rejectCopy, /cancel|release(?:d|s)?(?:\s+the)?\s+(?:slot|court)|held court time/i);
+  assert.match(reviewUi, /requestAnimationFrame\(\(\) => reviewHeadingRef\.current\?\.focus\(\)\)/);
+  assert.match(
+    bookingsUi,
+    /const \[reviewingBookingId, setReviewingBookingId\] = useState<string \| null>\(null\)[\s\S]*?const reviewing = reviewingBookingId[\s\S]*?bookings\.find\(\(booking\) =>[\s\S]*?booking\.bookingId === reviewingBookingId && booking\.paymentEvidence\?\.reviewable === true/,
+  );
+  assert.match(
+    bookingsUi,
+    /reviewReturnRef\.current = trigger;[\s\S]*?setReviewingBookingId\(booking\.bookingId\)/,
+  );
+  assert.match(
+    bookingsUi,
+    /const returnTarget = reviewReturnRef\.current;[\s\S]*?setReviewingBookingId\(null\);[\s\S]*?returnTarget\?\.isConnected[\s\S]*?bookingListHeadingRef\.current\?\.focus\(\)/,
+  );
+  assert.match(
+    bookingsUi,
+    /if \(!reviewingBookingId \|\| \(reviewing && canReviewPayments\)\) return;[\s\S]*?setReviewingBookingId\(null\);[\s\S]*?bookingListHeadingRef\.current\?\.focus\(\)[\s\S]*?\[canReviewPayments, reviewing, reviewingBookingId\]/,
+  );
+  assert.match(
+    bookingsUi,
+    /<h2 id="booking-list-title" ref=\{bookingListHeadingRef\} tabIndex=\{-1\}>/,
+  );
 
   assert.match(
     cssBlock(manageCss, ".paymentReviewLayout"),
@@ -2480,6 +2538,351 @@ test("keeps payment review private, minimal, role-checked, and decision-safe", a
     reducedMotionCss,
     /\.manageShell \*[\s\S]*?animation-duration:\s*\.01ms !important[\s\S]*?animation-iteration-count:\s*1 !important/,
   );
+});
+
+test("shows truthful payment stages in a modern Overview inbox and refreshes only live operational views", async () => {
+  const [booking, manage, managementAdapter, manageCss] = await Promise.all([
+    readFile(files.booking, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  const bookingStatusStart = managementAdapter.indexOf(
+    "export type BookingStatus =",
+  );
+  const bookingStatusEnd = managementAdapter.indexOf(
+    "export type BookingPaymentStatus =",
+    bookingStatusStart,
+  );
+  assert.ok(bookingStatusStart >= 0 && bookingStatusEnd > bookingStatusStart);
+  const bookingStatuses = managementAdapter.slice(
+    bookingStatusStart,
+    bookingStatusEnd,
+  );
+  for (const status of [
+    "awaiting_receipt",
+    "receipt_processing",
+    "payment_review",
+    "payment_attention",
+  ]) {
+    assert.match(bookingStatuses, new RegExp(`\\| "${status}"`));
+  }
+  assert.doesNotMatch(bookingStatuses, /awaiting_payment/);
+
+  const evidenceStatusStart = managementAdapter.indexOf(
+    "export type PaymentEvidenceStatus =",
+  );
+  const evidenceStatusEnd = managementAdapter.indexOf(
+    "export type PaymentEvidence =",
+    evidenceStatusStart,
+  );
+  assert.ok(evidenceStatusStart >= 0 && evidenceStatusEnd > evidenceStatusStart);
+  assert.match(
+    managementAdapter.slice(evidenceStatusStart, evidenceStatusEnd),
+    /\| "pending"[\s\S]*?\| "manual_review"[\s\S]*?\| "short_payment"/,
+  );
+
+  const liveStatusStart = managementAdapter.indexOf("function liveStatus(");
+  const liveStatusEnd = managementAdapter.indexOf(
+    "function initialsFor(",
+    liveStatusStart,
+  );
+  assert.ok(liveStatusStart >= 0 && liveStatusEnd > liveStatusStart);
+  const liveStatus = managementAdapter.slice(liveStatusStart, liveStatusEnd);
+  assert.match(
+    liveStatus,
+    /if \(status === "completed"\) return "completed";[\s\S]*?if \(value\(row, \["checked_in_at"\]\)\) return "checked_in";[\s\S]*?if \(status === "confirmed"\) return "confirmed";/,
+  );
+  assert.match(
+    liveStatus,
+    /if \(status === "pending_payment" \|\| status === "payment_review"\)[\s\S]*?if \(paymentEvidence\?\.status === "pending"\) \{[\s\S]*?return payment === "unpaid" \|\| payment === "pending"[\s\S]*?\? "receipt_processing"[\s\S]*?: "payment_attention";/,
+  );
+  assert.match(
+    liveStatus,
+    /if \(status === "pending_payment" && !paymentEvidence\) \{[\s\S]*?if \(payment === "unpaid"\) return "awaiting_receipt";[\s\S]*?if \(payment === "pending"\) return "receipt_processing";[\s\S]*?return "payment_attention";/,
+  );
+  assert.match(
+    liveStatus,
+    /status === "payment_review" &&[\s\S]*?paymentEvidence\?\.status === "manual_review" &&[\s\S]*?payment === "pending"[\s\S]*?return "payment_review"/,
+  );
+  assert.match(liveStatus, /return "payment_attention";[\s\S]*?LIVE_BOOKING_STATUS_INVALID/);
+  assert.doesNotMatch(liveStatus, /awaiting_payment/);
+  assert.match(
+    managementAdapter,
+    /const payment = livePaymentStatus\(paymentStatus\);[\s\S]*?const paymentEvidence = latestPaymentEvidence\(row, bookingStatus, paymentStatus\);[\s\S]*?status: liveStatus\(row, payment, paymentEvidence\)/,
+  );
+
+  const checkoutSubmitStart = booking.indexOf("async submitPayment(request)");
+  const checkoutSubmitEnd = booking.indexOf("async findBooking(", checkoutSubmitStart);
+  assert.ok(checkoutSubmitStart >= 0 && checkoutSubmitEnd > checkoutSubmitStart);
+  const checkoutSubmit = booking.slice(checkoutSubmitStart, checkoutSubmitEnd);
+  assert.match(
+    checkoutSubmit,
+    /const verificationStatus = typeof receipt\.status === "string"[\s\S]*?typeof receipt\.outcome === "string"[\s\S]*?verificationStatus === "auto_approved"[\s\S]*?"confirmed"/,
+  );
+  assert.doesNotMatch(checkoutSubmit, /const outcome = typeof receipt\.outcome/);
+
+  const statusLabelsStart = manage.indexOf(
+    "const STATUS_LABEL: Record<BookingStatus, string> =",
+  );
+  const statusLabelsEnd = manage.indexOf(
+    "const PAYMENT_LABEL:",
+    statusLabelsStart,
+  );
+  assert.ok(statusLabelsStart >= 0 && statusLabelsEnd > statusLabelsStart);
+  const statusLabels = manage.slice(statusLabelsStart, statusLabelsEnd);
+  assert.match(statusLabels, /awaiting_receipt: "Awaiting receipt"/);
+  assert.match(statusLabels, /receipt_processing: "Receipt processing"/);
+  assert.match(statusLabels, /payment_review: "Review required"/);
+  assert.match(statusLabels, /payment_attention: "Payment needs attention"/);
+  assert.doesNotMatch(statusLabels, /Awaiting payment/i);
+
+  const overviewStart = manage.indexOf("function OverviewView(");
+  const overviewEnd = manage.indexOf(
+    "function PaymentReviewWorkspace(",
+    overviewStart,
+  );
+  assert.ok(overviewStart >= 0 && overviewEnd > overviewStart);
+  const overview = manage.slice(overviewStart, overviewEnd);
+  assert.match(
+    overview,
+    /const reviewQueue = snapshot\.bookings\.filter[\s\S]*?paymentEvidence\?\.reviewable === true[\s\S]*?const processingQueue = snapshot\.bookings\.filter[\s\S]*?booking\.status === "receipt_processing"[\s\S]*?const awaitingReceiptQueue = snapshot\.bookings\.filter[\s\S]*?booking\.status === "awaiting_receipt"[\s\S]*?const paymentAttentionQueue = snapshot\.bookings\.filter[\s\S]*?booking\.status === "payment_attention"/,
+  );
+  assert.match(
+    overview,
+    /const inboxBooking = reviewQueue\[0\] \?\? processingQueue\[0\] \?\?[\s\S]*?paymentAttentionQueue\[0\] \?\? awaitingReceiptQueue\[0\] \?\? null/,
+  );
+  assert.match(
+    overview,
+    /className=\{cx\(styles\.paymentInbox,[\s\S]*?aria-labelledby="payment-inbox-title"[\s\S]*?>Payment inbox<[\s\S]*?ready for review[\s\S]*?A receipt is being checked[\s\S]*?Waiting for player receipts/,
+  );
+  assert.match(
+    overview,
+    /aria-label="Payment queue counts" aria-live="polite"[\s\S]*?reviewQueue\.length[\s\S]*?To review[\s\S]*?processingQueue\.length[\s\S]*?Processing[\s\S]*?paymentAttentionQueue\.length[\s\S]*?Attention[\s\S]*?awaitingReceiptQueue\.length[\s\S]*?Awaiting receipt/,
+  );
+  assert.match(
+    overview,
+    /<dl className=\{styles\.paymentInboxFacts\}>[\s\S]*?Expected total[\s\S]*?expectedAmount \?\? inboxBooking\.amount[\s\S]*?Court & session[\s\S]*?inboxBooking\.court[\s\S]*?inboxBooking\.date[\s\S]*?inboxBooking\.time[\s\S]*?Receipt submitted[\s\S]*?inboxBooking\.paymentEvidence\?\.submittedAt/,
+  );
+  assert.match(
+    overview,
+    /inboxBooking\.paymentEvidence\?\.reviewable[\s\S]*?disabled=\{!canReviewPayments\}[\s\S]*?reviewReturnRef\.current = event\.currentTarget;[\s\S]*?setReviewingBookingId\(inboxBooking\.bookingId\)[\s\S]*?Review payment/,
+  );
+  assert.match(
+    overview,
+    /!isPreview && canReviewPayments && reviewing\?\.paymentEvidence[\s\S]*?<PaymentReviewWorkspace[\s\S]*?key=\{reviewing\.paymentEvidence\.verificationId\}[\s\S]*?booking=\{reviewing\}[\s\S]*?loadPaymentReceipt=\{loadPaymentReceipt\}[\s\S]*?headingLevel="h2"/,
+  );
+  assert.match(
+    overview,
+    /const \[reviewingBookingId, setReviewingBookingId\] = useState<string \| null>\(null\)[\s\S]*?const paymentInboxHeadingRef = useRef<HTMLHeadingElement>\(null\);[\s\S]*?const canReviewPayments = can\("payment:review"\)[\s\S]*?const reviewing = reviewingBookingId[\s\S]*?snapshot\.bookings\.find\(\(booking\) =>[\s\S]*?booking\.bookingId === reviewingBookingId && booking\.paymentEvidence\?\.reviewable === true/,
+  );
+  assert.match(
+    overview,
+    /const returnTarget = reviewReturnRef\.current;[\s\S]*?setReviewingBookingId\(null\);[\s\S]*?returnTarget\?\.isConnected[\s\S]*?paymentInboxHeadingRef\.current\?\.focus\(\)/,
+  );
+  assert.match(
+    overview,
+    /if \(!reviewingBookingId \|\| \(reviewing && canReviewPayments\)\) return;[\s\S]*?setReviewingBookingId\(null\);[\s\S]*?paymentInboxHeadingRef\.current\?\.focus\(\)[\s\S]*?\[canReviewPayments, reviewing, reviewingBookingId\]/,
+  );
+  assert.match(
+    overview,
+    /<h2 id="payment-inbox-title" ref=\{paymentInboxHeadingRef\} tabIndex=\{-1\}>/,
+  );
+  assert.match(
+    overview,
+    /Private receipt images open only when you choose Review payment\.[\s\S]*?Overview and Bookings refresh automatically while visible\./,
+  );
+  assert.doesNotMatch(overview, /src=\{[^}]*signedUrl/);
+
+  const bookingsStart = manage.indexOf("function BookingsView(");
+  const bookingsEnd = manage.indexOf("function ScheduleView(", bookingsStart);
+  assert.ok(bookingsStart >= 0 && bookingsEnd > bookingsStart);
+  const bookingsUi = manage.slice(bookingsStart, bookingsEnd);
+  assert.match(
+    bookingsUi,
+    /<option value="awaiting_receipt">Awaiting receipt<\/option>[\s\S]*?<option value="receipt_processing">Receipt processing<\/option>[\s\S]*?<option value="needs_review">Needs payment review<\/option>[\s\S]*?<option value="payment_attention">Payment needs attention<\/option>/,
+  );
+  assert.match(
+    bookingsUi,
+    /booking\.status === "awaiting_receipt"[\s\S]*?Waiting for the player&apos;s receipt/,
+  );
+  assert.match(
+    bookingsUi,
+    /booking\.status === "receipt_processing"[\s\S]*?Receipt uploaded[\s\S]*?verification in progress/,
+  );
+  assert.match(
+    bookingsUi,
+    /booking\.status === "payment_attention"[\s\S]*?Payment state needs owner attention/,
+  );
+
+  assert.match(
+    managementAdapter,
+    /export interface ManagementAdapter \{[\s\S]*?refreshOperations\([\s\S]*?context: ManagementContext,[\s\S]*?current: ManagementSnapshot,[\s\S]*?\): Promise<ManagementSnapshot>;/,
+  );
+  const operationsStart = managementAdapter.indexOf(
+    "async refreshOperations(context, current)",
+  );
+  const operationsEnd = managementAdapter.indexOf(
+    "async loadPaymentReceipt(context, verificationId)",
+    operationsStart,
+  );
+  assert.ok(operationsStart >= 0 && operationsEnd > operationsStart);
+  const operationsRefresh = managementAdapter.slice(
+    operationsStart,
+    operationsEnd,
+  );
+  assert.match(
+    operationsRefresh,
+    /platformMode\(\) === "preview"[\s\S]*?assertDinktopiaContext\(context\)[\s\S]*?current\.tenant\.mode !== "live"[\s\S]*?current\.tenant\.slug !== activeTenant\.identity\.slug[\s\S]*?LIVE_TENANT_SCOPE_MISMATCH/,
+  );
+  assert.match(
+    operationsRefresh,
+    /currentOwnerSession\(\)[\s\S]*?Promise\.all\(\[[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?listManagerBookings\(session\.access_token, \{ activeOnly: true, limit: 100 \}\)[\s\S]*?\]\)/,
+  );
+  assert.doesNotMatch(
+    operationsRefresh,
+    /listManagerBlocks|getActivationSettings|getManagerCourts|getTenantPolicy|getRemittanceDestination/,
+  );
+  assert.match(
+    operationsRefresh,
+    /return \{\s*\.\.\.current,[\s\S]*?tenant: \{\s*\.\.\.current\.tenant,[\s\S]*?lastSynced:[\s\S]*?bookings,[\s\S]*?customers: deriveLiveCustomers\(bookingRows\),[\s\S]*?session: \{[\s\S]*?capabilities: authorityCapabilities\(serverSession\)/,
+  );
+  assert.doesNotMatch(
+    operationsRefresh,
+    /\b(?:schedule|blocks|setup|configuration):/,
+  );
+
+  const refreshStart = manage.indexOf(
+    "const refreshWorkspace = useCallback(async (announce = false) =>",
+  );
+  const refreshEnd = manage.indexOf("\n\n  useEffect(() =>", refreshStart);
+  assert.ok(refreshStart >= 0 && refreshEnd > refreshStart);
+  const refreshSource = manage.slice(refreshStart, refreshEnd);
+  assert.match(
+    refreshSource,
+    /if \(isPreview \|\| syncInFlightRef\.current\) return;[\s\S]*?const generation = \+\+syncGenerationRef\.current;[\s\S]*?const refreshed = announce \|\| !snapshot[\s\S]*?\? await managementAdapter\.load\(context\)[\s\S]*?: await managementAdapter\.refreshOperations\(context, snapshot\)[\s\S]*?generation !== syncGenerationRef\.current[\s\S]*?setSnapshot\(refreshed\)[\s\S]*?finally[\s\S]*?syncInFlightRef\.current = false/,
+  );
+
+  const operationalGuard = manage.indexOf(
+    '(view !== "overview" && view !== "bookings")',
+  );
+  const autoRefreshStart = manage.lastIndexOf("useEffect(() =>", operationalGuard);
+  const autoRefreshEnd = manage.indexOf("\n\n  useEffect(() =>", operationalGuard);
+  assert.ok(
+    operationalGuard >= 0 &&
+      autoRefreshStart >= 0 &&
+      autoRefreshEnd > operationalGuard,
+  );
+  const autoRefresh = manage.slice(autoRefreshStart, autoRefreshEnd);
+  assert.match(
+    autoRefresh,
+    /isPreview \|\| !snapshot \|\| authRequired \|\| confirmAction \|\| confirmPending \|\| refreshPending \|\|[\s\S]*?\(view !== "overview" && view !== "bookings"\)/,
+  );
+  assert.match(
+    autoRefresh,
+    /document\.visibilityState === "visible"[\s\S]*?refreshWorkspace\(false\)/,
+  );
+  assert.match(autoRefresh, /window\.setInterval\(refreshIfVisible, 20_000\)/);
+  assert.match(
+    autoRefresh,
+    /window\.addEventListener\("focus", refreshIfVisible\)[\s\S]*?document\.addEventListener\("visibilitychange", refreshIfVisible\)[\s\S]*?window\.clearInterval\(interval\)[\s\S]*?window\.removeEventListener\("focus", refreshIfVisible\)[\s\S]*?document\.removeEventListener\("visibilitychange", refreshIfVisible\)/,
+  );
+  assert.match(
+    autoRefresh,
+    /\[authRequired, confirmAction, confirmPending, isPreview, refreshPending, refreshWorkspace, snapshot, view\]/,
+  );
+  assert.doesNotMatch(autoRefresh, /settings/);
+  assert.match(
+    manage,
+    /className=\{styles\.liveSyncControls\}[\s\S]*?className=\{styles\.syncButton\}[\s\S]*?disabled=\{syncPending\}[\s\S]*?onClick=\{\(\) => void refreshWorkspace\(true\)\}[\s\S]*?Refreshing[\s\S]*?Refresh data/,
+  );
+  assert.match(
+    manage,
+    /const request = \(action: ConfirmAction\) => \{[\s\S]*?syncGenerationRef\.current \+= 1;[\s\S]*?setConfirmAction\(action\);[\s\S]*?\};/,
+  );
+
+  const confirmedActionStart = manage.indexOf(
+    "const performConfirmedAction = async () =>",
+  );
+  const confirmedActionEnd = manage.indexOf(
+    "const selectedCopy =",
+    confirmedActionStart,
+  );
+  assert.ok(
+    confirmedActionStart >= 0 && confirmedActionEnd > confirmedActionStart,
+  );
+  const confirmedAction = manage.slice(
+    confirmedActionStart,
+    confirmedActionEnd,
+  );
+  assert.match(
+    confirmedAction,
+    /if \(!confirmAction\) return;[\s\S]*?const action = confirmAction;[\s\S]*?syncGenerationRef\.current \+= 1;[\s\S]*?managementAdapter\.perform\(context/,
+  );
+  const closeThenSuccess = confirmedAction.match(
+    /dialogRef\.current\?\.close\(\);\s*setConfirmAction\(null\);\s*window\.requestAnimationFrame\(\(\) => action\.onSuccess\?\.\(result\)\);/g,
+  ) ?? [];
+  assert.equal(
+    closeThenSuccess.length,
+    2,
+    "expected both successful completion paths to close the modal before delayed UI cleanup",
+  );
+  assert.equal(
+    (confirmedAction.match(/action\.onSuccess\?\.\(result\)/g) ?? []).length,
+    closeThenSuccess.length,
+    "expected every post-write onSuccess callback to be delayed until after modal dismissal",
+  );
+
+  const paymentInboxCssStart = manageCss.indexOf("\n.paymentInbox {\n");
+  assert.ok(paymentInboxCssStart >= 0);
+  assert.match(
+    cssBlock(manageCss.slice(paymentInboxCssStart), ".paymentInbox"),
+    /overflow:\s*hidden[\s\S]*?border-radius:\s*20px[\s\S]*?background:[\s\S]*?var\(--ink\)/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".paymentInboxItem"),
+    /grid-template-columns:\s*minmax\(190px, \.7fr\) minmax\(360px, 1\.5fr\) auto/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".paymentInboxCounts"),
+    /grid-template-columns:\s*repeat\(4, minmax\(72px, 1fr\)\)/,
+  );
+  assert.match(
+    manageCss,
+    /\.paymentReviewHeader :is\(h2, h3\):focus-visible,\s*\.paymentInboxHeader h2:focus-visible,\s*\.panelHeading h2:focus-visible\s*\{[^}]*outline:\s*3px solid var\(--citrus\)[^}]*outline-offset:\s*2px[^}]*box-shadow:/s,
+  );
+  const compactCss = cssBlock(manageCss, "@media (max-width: 680px)");
+  assert.match(
+    compactCss,
+    /\.paymentInboxHeader\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    compactCss,
+    /\.paymentInboxCounts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s,
+  );
+  assert.match(
+    compactCss,
+    /\.paymentInboxItem\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    compactCss,
+    /\.paymentInboxFacts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s,
+  );
+  assert.match(
+    compactCss,
+    /\.paymentInboxFooter\s*\{[^}]*flex-direction:\s*column/s,
+  );
+  const phoneCss = cssBlock(manageCss, "@media (max-width: 430px)");
+  assert.match(
+    phoneCss,
+    /\.paymentInboxFacts\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    phoneCss,
+    /\.paymentInboxAction\s*\{[^}]*flex-direction:\s*column/s,
+  );
+  assert.match(phoneCss, /\.paymentInboxAction \.button\s*\{[^}]*width:\s*100%/s);
 });
 
 test("keeps live Add Court and shared hours simple, safe, and responsive", async () => {
