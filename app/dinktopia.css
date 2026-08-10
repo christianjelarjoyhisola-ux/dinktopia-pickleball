@@ -5099,14 +5099,6 @@
 .booking-app-search kbd { border: 1px solid #dedfd9; border-radius: 6px; padding: 3px 5px; background: #f6f4ee; font: inherit; font-size: 0.61rem; }
 .booking-app-notification { position: relative; display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid #dedfd9; border-radius: 12px; background: white; color: #43534d; font-size: 18px; }
 .booking-app-notification b { position: absolute; top: -5px; right: -4px; display: grid; width: 16px; height: 16px; place-items: center; border-radius: 50%; background: #ff6b55; color: white; font-size: 0.52rem; }
-.booking-app-player { display: grid; min-width: 147px; min-height: 48px; grid-template-columns: 34px 1fr auto; align-items: center; gap: 9px; border: 1px solid #dedfd9; border-radius: 13px; background: white; padding: 5px 10px; }
-.booking-app-player > span,
-.booking-player-chip > span { display: grid; place-items: center; border-radius: 9px; background: #6558e8; color: white; font-size: 0.68rem; font-weight: 800; }
-.booking-app-player > span { width: 34px; height: 34px; }
-.booking-app-player small { display: grid; color: #71807a; font-size: 0.56rem; line-height: 1.2; }
-.booking-app-player small strong { color: #12211d; font-size: 0.68rem; }
-.booking-app-player i,
-.booking-player-chip i { color: #71807a; font-style: normal; }
 .booking-app-navigation { top: calc(100% - 1px); display: none; }
 
 .booking-new-route .booking-zone-heading { display: none; }
@@ -5154,7 +5146,7 @@
   .booking-app-mobile-bar {
     display: grid;
     min-height: 75px;
-    grid-template-columns: 44px minmax(0, 1fr) 64px;
+    grid-template-columns: 44px minmax(0, 1fr);
     align-items: center;
     gap: 10px;
     padding: 0 15px;
@@ -5162,8 +5154,6 @@
   .booking-app-mobile-bar > strong { font-family: var(--font-display), sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.04em; }
   .booking-app-menu-button { display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid #dedfd9; border-radius: 12px; background: #fffefa; }
   .booking-app-menu-button .menu-lines { width: 15px; height: 12px; }
-  .booking-player-chip { display: grid; min-height: 44px; grid-template-columns: 32px 1fr; align-items: center; gap: 6px; border: 1px solid #dedfd9; border-radius: 13px; background: #fffefa; padding: 5px 7px; }
-  .booking-player-chip > span { width: 32px; height: 32px; }
   .booking-app-navigation { right: 13px; left: 13px; }
 
   .booking-route .booking-zone.section-pad { padding-block: 19px 56px; }

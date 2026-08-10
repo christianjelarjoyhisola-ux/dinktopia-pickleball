@@ -2332,9 +2332,6 @@ export function BookingExperience({
               <span className="menu-lines" aria-hidden="true" />
             </button>
             <strong>Book a court</strong>
-            <Link className="booking-player-chip" href="/book?mode=manage" aria-label="Manage your booking">
-              <span>P</span><i aria-hidden="true">⌄</i>
-            </Link>
           </div>
           <div className="booking-app-desktop-bar">
             <div className="booking-app-title">
@@ -2348,9 +2345,6 @@ export function BookingExperience({
                 <kbd>⌘ K</kbd>
               </label>
               <Link className="booking-app-notification" href="/book?mode=manage" aria-label="Manage booking notifications">♧<b>2</b></Link>
-              <Link className="booking-app-player" href="/book?mode=manage">
-                <span>P</span><small>Viewing as<strong>Player</strong></small><i aria-hidden="true">⌄</i>
-              </Link>
             </div>
           </div>
           <nav
