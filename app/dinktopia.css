@@ -203,15 +203,6 @@
 
 .booking-route .booking-details-view .details-hold-gate { margin-top: 18px; }
 
-.booking-route .turnstile-background {
-  display: flex;
-  justify-content: flex-end;
-  max-width: 100%;
-  margin-top: 12px;
-}
-
-.booking-route .turnstile-background:empty { display: none; }
-
 .booking-route .booking-details-view .form-footer {
   display: flex;
   align-items: center;
@@ -3210,51 +3201,6 @@
 .checkout-snapshot small { color: var(--muted); font-size: var(--text-caption); }
 .checkout-snapshot b { flex: 0 0 auto; color: var(--blue); }
 
-.security-boundary {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: #f6f7f3;
-  padding: 14px;
-}
-
-.details-security-boundary { margin-top: 12px; }
-
-.security-boundary > div:first-child strong {
-  font-size: var(--text-meta);
-}
-
-.security-boundary > div:first-child p {
-  color: var(--muted);
-  font-size: var(--text-caption);
-}
-
-.turnstile-container {
-  min-height: 65px;
-  overflow-x: auto;
-}
-
-.security-ready,
-.security-waiting {
-  justify-self: start;
-  border-radius: 999px;
-  padding: 5px 9px;
-  font-size: var(--text-caption);
-  font-weight: 800;
-}
-
-.security-ready {
-  background: #dff4e5;
-  color: #206b3a;
-}
-
-.security-waiting {
-  background: #fff0c7;
-  color: #785810;
-}
-
 .confirmation-card {
   position: relative;
   max-width: 720px;
@@ -3935,7 +3881,6 @@
 .upload-control strong,
 .upload-control small,
 .payment-error p,
-.security-boundary > div:first-child p,
 .manage-placeholder p,
 .reschedule-help p,
 .cancel-panel > div:first-child > p {
@@ -3991,7 +3936,6 @@
 .check-row strong,
 .policy-grid h4,
 .payment-error strong,
-.security-boundary > div:first-child strong,
 .reschedule-help strong {
   font-size: var(--text-small);
 }
@@ -4618,12 +4562,6 @@
   .payment-instructions ol { margin-top: 8px; }
   .payment-fields { margin-top: 12px; }
   .upload-control { min-height: 58px; }
-
-  .security-boundary {
-    gap: 8px;
-    margin-top: 12px;
-    padding: 10px;
-  }
 
   .secure-note { margin-top: 10px; }
 

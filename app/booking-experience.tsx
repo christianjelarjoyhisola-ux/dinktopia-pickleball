@@ -11,7 +11,6 @@ import {
   useReducer,
   useRef,
   useState,
-  useCallback,
 } from "react";
 import { TransitionLink as Link } from "./transition-link";
 import { activeTenant } from "./tenants/registry";
@@ -31,7 +30,6 @@ import {
   getTenantBootstrap,
   platformMode,
   submitPaymentReceipt,
-  turnstileSiteKey,
 } from "./lib/platform/client";
 import type {
   BookingConfirmation,
@@ -125,7 +123,6 @@ export type BookingHoldRequest = {
   customer: CustomerDetails;
   policyAccepted: boolean;
   policyVersion: string | null;
-  turnstileToken?: string;
   clientRequestId: string;
   atomicMultiSessionBooking?: boolean;
   detailsPending?: boolean;
@@ -1003,7 +1000,6 @@ const platformAdapter: BookingAdapter = {
           policyAccepted: request.policyAccepted,
           policyVersion: request.policyVersion,
           clientRequestId: request.clientRequestId,
-          turnstileToken: request.turnstileToken,
           notes: request.detailsPending ? "__details_pending_v1__" : null,
         })
       : await createPlatformBooking({
@@ -1016,7 +1012,6 @@ const platformAdapter: BookingAdapter = {
           policyAccepted: request.policyAccepted,
           policyVersion: request.policyVersion,
           clientRequestId: request.clientRequestId,
-          turnstileToken: request.turnstileToken,
           notes: request.detailsPending ? "__details_pending_v1__" : null,
         });
 
@@ -1380,29 +1375,6 @@ function calculateBookingFee(
 
 const fieldErrorId = (id: string, field: string) => `${id}-${field}-error`;
 
-type TurnstileApi = {
-  render: (
-    container: HTMLElement,
-    options: {
-      sitekey: string;
-      action: "booking_create";
-      theme: "light";
-      appearance?: "always" | "execute" | "interaction-only";
-      callback: (token: string) => void;
-      "expired-callback": () => void;
-      "error-callback": () => void;
-    },
-  ) => string;
-  remove: (widgetId: string) => void;
-  reset: (widgetId: string) => void;
-};
-
-declare global {
-  interface Window {
-    turnstile?: TurnstileApi;
-  }
-}
-
 export function BookingExperience({
   adapter = platformAdapter,
   surface = "home",
@@ -1417,14 +1389,6 @@ export function BookingExperience({
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
-  const turnstileContainerRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetRef = useRef<string | null>(null);
-  const turnstileTokenRef = useRef("");
-  const turnstileWaiterRef = useRef<{
-    resolve: (token: string) => void;
-    reject: (error: Error) => void;
-    timeoutId: number;
-  } | null>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
@@ -1466,52 +1430,6 @@ export function BookingExperience({
   const [liveMessage, setLiveMessage] = useState("");
   const [bootstrap, setBootstrap] = useState<TenantBootstrap | null>(null);
   const [bootstrapState, setBootstrapState] = useState<"loading" | "ready" | "error">("loading");
-  const [turnstileTokenValue, setTurnstileTokenValue] = useState("");
-
-  const acceptTurnstileToken = useCallback((token: string) => {
-    turnstileTokenRef.current = token;
-    setTurnstileTokenValue(token);
-    const waiter = turnstileWaiterRef.current;
-    if (!waiter) return;
-    window.clearTimeout(waiter.timeoutId);
-    turnstileWaiterRef.current = null;
-    waiter.resolve(token);
-  }, []);
-
-  const clearTurnstileToken = useCallback(() => {
-    turnstileTokenRef.current = "";
-    setTurnstileTokenValue("");
-  }, []);
-
-  const rejectTurnstileToken = useCallback((message: string) => {
-    clearTurnstileToken();
-    const waiter = turnstileWaiterRef.current;
-    if (!waiter) return;
-    window.clearTimeout(waiter.timeoutId);
-    turnstileWaiterRef.current = null;
-    waiter.reject(new Error(message));
-  }, [clearTurnstileToken]);
-
-  const waitForTurnstileToken = useCallback(() => {
-    if (turnstileTokenRef.current) {
-      return Promise.resolve(turnstileTokenRef.current);
-    }
-    return new Promise<string>((resolve, reject) => {
-      const timeoutId = window.setTimeout(() => {
-        if (turnstileWaiterRef.current?.timeoutId !== timeoutId) return;
-        turnstileWaiterRef.current = null;
-        reject(new Error("The secure hold check could not finish. Check your connection or privacy blocker, then try again."));
-      }, 15_000);
-      turnstileWaiterRef.current = { resolve, reject, timeoutId };
-
-      // The callback can win the race while the button event is preparing this waiter.
-      if (turnstileTokenRef.current) {
-        window.clearTimeout(timeoutId);
-        turnstileWaiterRef.current = null;
-        resolve(turnstileTokenRef.current);
-      }
-    });
-  }, []);
 
   const [lookupReference, setLookupReference] = useState("");
   const [lookupEmail, setLookupEmail] = useState("");
@@ -1606,7 +1524,6 @@ export function BookingExperience({
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
-  const securitySiteKey = turnstileSiteKey();
   const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods[0] ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
   const paymentLabel = paymentMethod?.displayName ?? "GCash";
@@ -1667,7 +1584,6 @@ export function BookingExperience({
       bootstrap?.readiness.publicBookingEnabled === true &&
       Boolean(paymentMethod) &&
       Boolean(policyVersion) &&
-      Boolean(securitySiteKey) &&
       bookingFee !== null);
   const availabilityBootstrapState = isLive ? bootstrapState : "ready";
   const visibleAvailabilityState =
@@ -1895,51 +1811,6 @@ export function BookingExperience({
   }, [isBookingPage, step]);
 
   useEffect(() => {
-    if (!isBookingPage || !isLive || step !== 1 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
-    let disposed = false;
-    const container = turnstileContainerRef.current;
-    const renderWidget = () => {
-      if (disposed || !window.turnstile || turnstileWidgetRef.current) return;
-      turnstileWidgetRef.current = window.turnstile.render(container, {
-        sitekey: securitySiteKey,
-        action: "booking_create",
-        theme: "light",
-        appearance: "interaction-only",
-        callback: acceptTurnstileToken,
-        "expired-callback": clearTurnstileToken,
-        "error-callback": () => rejectTurnstileToken("The secure hold check could not load. Refresh the page and try again."),
-      });
-    };
-    const scriptId = "dinktopia-turnstile-script";
-    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
-    if (window.turnstile) {
-      renderWidget();
-    } else {
-      if (!script) {
-        script = document.createElement("script");
-        script.id = scriptId;
-        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-        script.async = true;
-        script.defer = true;
-        document.head.appendChild(script);
-      }
-      script.addEventListener("load", renderWidget);
-      script.addEventListener("error", () => rejectTurnstileToken("The secure hold check could not load. Check your connection or privacy blocker, then try again."), { once: true });
-    }
-
-    return () => {
-      disposed = true;
-      script?.removeEventListener("load", renderWidget);
-      rejectTurnstileToken("The secure hold check was cancelled.");
-      if (turnstileWidgetRef.current && window.turnstile) {
-        window.turnstile.remove(turnstileWidgetRef.current);
-        turnstileWidgetRef.current = null;
-      }
-      clearTurnstileToken();
-    };
-  }, [acceptTurnstileToken, clearTurnstileToken, isBookingPage, isLive, pendingBooking, rejectTurnstileToken, securitySiteKey, step]);
-
-  useEffect(() => {
     if (!isBookingPage) return;
     let active = true;
     queueMicrotask(() => {
@@ -2112,10 +1983,6 @@ export function BookingExperience({
       setPaymentError("The current booking policy has not been published yet.");
       return;
     }
-    if (isLive && !securitySiteKey) {
-      setPaymentError("The secure hold check is unavailable. Refresh the page before trying again.");
-      return;
-    }
     if (!selectedSlots.length) {
       setStep(1);
       return;
@@ -2131,9 +1998,6 @@ export function BookingExperience({
 
     setIsSubmitting(true);
     try {
-      const securityToken = isLive
-        ? turnstileTokenValue || await waitForTurnstileToken()
-        : undefined;
       const clientRequestId = bookingAttemptIdRef.current || crypto.randomUUID();
       bookingAttemptIdRef.current = clientRequestId;
       const primary = canonicalSelection ?? {
@@ -2152,7 +2016,6 @@ export function BookingExperience({
         customer,
         policyAccepted: true,
         policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
-        turnstileToken: securityToken,
         clientRequestId,
         atomicMultiSessionBooking,
         detailsPending: true,
@@ -2167,12 +2030,6 @@ export function BookingExperience({
           : `Preview hold ${booking.reference} was created. No real court is reserved.`,
       );
     } catch (error) {
-      if (isLive) {
-        clearTurnstileToken();
-        if (turnstileWidgetRef.current && window.turnstile) {
-          window.turnstile.reset(turnstileWidgetRef.current);
-        }
-      }
       setPaymentError(
         error instanceof Error
           ? error.message
@@ -2318,7 +2175,6 @@ export function BookingExperience({
     setReceiptFile(null);
     setPaymentError("");
     setAcceptedPolicy(false);
-    clearTurnstileToken();
     bookingAttemptIdRef.current = "";
     setStep(1);
     scrollToBooking();
@@ -2379,7 +2235,6 @@ export function BookingExperience({
     setPendingBooking(null);
     setConfirmedBooking(null);
     setAcceptedPolicy(false);
-    clearTurnstileToken();
     bookingAttemptIdRef.current = "";
     scrollToBooking();
   }
@@ -3049,7 +2904,6 @@ export function BookingExperience({
                         )}
                       </fieldset>
 
-                      {isLive && securitySiteKey && <div ref={turnstileContainerRef} className="turnstile-background" aria-label="Security check" />}
                       {step === 1 && paymentError && (
                         <div className="payment-error booking-selection-error" role="alert">
                           <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slots</strong><p>{paymentError}</p></div>

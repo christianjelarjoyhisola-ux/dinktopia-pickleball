@@ -97,7 +97,6 @@ type CreateBookingCommonInput = {
   policyAccepted?: boolean;
   policyVersion?: string | null;
   clientRequestId?: string;
-  turnstileToken?: string;
 };
 
 /**

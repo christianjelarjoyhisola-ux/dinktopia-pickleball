@@ -216,10 +216,6 @@ export function platformMode(): PlatformMode {
   return validBrowserPlatformConfiguration() ? "live" : "preview";
 }
 
-export function turnstileSiteKey(): string | null {
-  return process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || null;
-}
-
 function currentHostname(): string {
   if (typeof window === "undefined") return "localhost";
   return window.location.hostname.toLowerCase();
@@ -439,13 +435,6 @@ export async function createBooking(
       preview: true,
     };
   }
-  if (!input.turnstileToken) {
-    throw new PlatformRequestError(
-      400,
-      "TURNSTILE_REQUIRED",
-      "Complete the security check before booking.",
-    );
-  }
   const response = await fetch(edgeUrl("create-booking"), {
     method: "POST",
     headers: publicHeaders(),
@@ -467,7 +456,6 @@ export async function createBooking(
       clientRequestId,
       policyAccepted: input.policyAccepted === true,
       policyVersion: input.policyVersion || null,
-      turnstileToken: input.turnstileToken,
     }),
   });
   const result = await responseJson<{ ok: true; booking: BookingConfirmation }>(response);

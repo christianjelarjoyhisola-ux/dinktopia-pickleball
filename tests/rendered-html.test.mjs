@@ -588,7 +588,6 @@ test("sends one canonical atomic-session payload without legacy scalar fields", 
     clientRequestId: "11111111-1111-4111-8111-111111111111",
     policyAccepted: true,
     policyVersion: "policy-v1",
-    turnstileToken: "turnstile-test-token",
   });
 
   const captured = capturedRequest();
@@ -616,7 +615,7 @@ test("sends one canonical atomic-session payload without legacy scalar fields", 
   assert.equal(payload.tenantSlug, "dinktopia");
   assert.deepEqual(payload.customer, customer);
   assert.equal(payload.clientRequestId, "11111111-1111-4111-8111-111111111111");
-  assert.equal(payload.turnstileToken, "turnstile-test-token");
+  assert.equal("turnstileToken" in payload, false);
   for (const legacyField of [
     "courtId",
     "bookingDate",
@@ -1813,7 +1812,6 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
     [
       "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
       "NEXT_PUBLIC_SUPABASE_URL",
-      "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
     ],
   );
   assert.doesNotMatch(
@@ -4198,8 +4196,7 @@ test("fails closed when live platform setup or authorization is incomplete", asy
     /return validBrowserPlatformConfiguration\(\) \? "live" : "preview"/,
   );
   assert.match(client, /"TENANT_ORIGIN_NOT_REGISTERED"/);
-  assert.match(client, /if \(!input\.turnstileToken\)/);
-  assert.match(client, /"TURNSTILE_REQUIRED"/);
+  assert.doesNotMatch(client, /turnstile|TURNSTILE/i);
   assert.match(config, /status:\s*"setup_required"/);
   assert.match(config, /publicBookingEnabled:\s*false/);
   assert.match(
@@ -4208,11 +4205,7 @@ test("fails closed when live platform setup or authorization is incomplete", asy
   );
   assert.match(booking, /if \(isLive && !paymentMethod\)/);
   assert.match(booking, /if \(isLive && !policyVersion\)/);
-  assert.match(
-    booking,
-    /if \(isLive && !securitySiteKey\)/,
-  );
-  assert.match(booking, /turnstileTokenValue \|\| await waitForTurnstileToken\(\)/);
+  assert.doesNotMatch(booking, /turnstile|securitySiteKey/i);
   assert.match(managementAdapter, /if \(!session\) throw new Error\("MANAGER_SIGN_IN_REQUIRED"\)/);
   assert.match(managementAdapter, /assertDinktopiaContext\(context\)/);
   assert.match(
@@ -4286,7 +4279,6 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
     ["public-booking readiness", /if \(isLive && !bootstrap\?\.readiness\.publicBookingEnabled\)/],
     ["payment readiness", /if \(isLive && !paymentMethod\)/],
     ["published policy", /if \(isLive && !policyVersion\)/],
-    ["Turnstile security", /if \(isLive && !securitySiteKey\)/],
     ["non-empty selection", /if \(!selectedSlots\.length\)/],
     ["fail-closed live selection", /if \(isLive && !liveSelectionSupported\)/],
   ]) {
@@ -4300,7 +4292,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
 
   assert.match(
     reserveSource,
-    /const booking = await adapter\.createHold\(\{[\s\S]*?items: selectedSlots,[\s\S]*?customer,[\s\S]*?policyAccepted: true,[\s\S]*?policyVersion:[\s\S]*?turnstileToken:[\s\S]*?detailsPending: true/,
+    /const booking = await adapter\.createHold\(\{[\s\S]*?items: selectedSlots,[\s\S]*?customer,[\s\S]*?policyAccepted: true,[\s\S]*?policyVersion:[\s\S]*?detailsPending: true/,
   );
   assert.ok(
     reserveSource.indexOf("setPendingBooking(booking)") > createHoldIndex &&
@@ -4376,16 +4368,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
     "expected the sole availability-pruning dispatch to remain behind the booking ownership guard",
   );
 
-  assert.match(
-    booking,
-    /if \(!isBookingPage \|\| !isLive \|\| step !== 1 \|\| pendingBooking \|\| !securitySiteKey \|\| !turnstileContainerRef\.current\) return;/,
-  );
-  assert.match(
-    booking,
-    /window\.turnstile\.render\(container,[\s\S]*?action: "booking_create"[\s\S]*?appearance: "interaction-only"[\s\S]*?callback: acceptTurnstileToken[\s\S]*?"expired-callback": clearTurnstileToken/,
-  );
-  assert.match(booking, /await waitForTurnstileToken\(\)/);
-  assert.match(booking, /15_000/);
+  assert.doesNotMatch(booking, /turnstile|challenges\.cloudflare\.com/i);
 });
 
 test("renders accessible labels, control states, and announcements", async () => {
@@ -4525,10 +4508,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepTwo, /className="policy-grid policy-grid-single"/);
   assert.match(stepTwo, /className=\{`check-row policy-check/);
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
-  assert.match(
-    stepOne,
-    /\{isLive && securitySiteKey && <div ref=\{turnstileContainerRef\} className="turnstile-background" aria-label="Security check" \/>\}/,
-  );
+  assert.doesNotMatch(stepOne, /turnstile|Security check/i);
   assert.doesNotMatch(stepTwo, /details-security-boundary|Verification required|Required before we hold the court/);
   assert.match(
     stepTwo,
