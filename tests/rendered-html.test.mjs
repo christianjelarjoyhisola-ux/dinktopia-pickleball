@@ -119,6 +119,38 @@ export function capturedRequest() {
   );
 }
 
+async function loadBookingSelectionHarness() {
+  const [bookingSource, typescriptModule] = await Promise.all([
+    readFile(files.booking, "utf8"),
+    import("typescript"),
+  ]);
+  const typescript = typescriptModule.default ?? typescriptModule;
+  const selectionStart = bookingSource.indexOf("function selectionKey(");
+  const selectionEnd = bookingSource.indexOf("function getPrice(", selectionStart);
+  assert.ok(
+    selectionStart >= 0 && selectionEnd > selectionStart,
+    "expected the booking selection helper boundaries",
+  );
+  const harnessSource = `
+function nextIsoDate(date) {
+  const next = new Date(date + "T12:00:00Z");
+  next.setUTCDate(next.getUTCDate() + 1);
+  return next.toISOString().slice(0, 10);
+}
+${bookingSource.slice(selectionStart, selectionEnd)}
+export { selectionReducer, bookingSessionsFromSelections, groupSelectionDetails };
+`;
+  const transpiled = typescript.transpileModule(harnessSource, {
+    compilerOptions: {
+      module: typescript.ModuleKind.ES2022,
+      target: typescript.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  return import(
+    `data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`
+  );
+}
+
 test("models overnight court hours as one clearly labelled operating day", async () => {
   const operatingHoursUrl = new URL(files.operatingHours);
   operatingHoursUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
@@ -406,6 +438,123 @@ test("normalizes atomic booking sessions without collapsing distinct court-hours
       error instanceof PlatformRequestError && error.status === 400 &&
       error.code === "BOOKING_SESSION_HOURS_EXCEEDED",
   );
+});
+
+test("selects and groups 1 PM to 5 PM on two courts without changing the matrix model", async () => {
+  const {
+    selectionReducer,
+    bookingSessionsFromSelections,
+    groupSelectionDetails,
+  } = await loadBookingSelectionHarness();
+  const initialState = { items: [], announcement: "" };
+  const selections = ["court-1", "court-2"].flatMap((courtId) =>
+    [13, 14, 15, 16].map((startHour) => ({
+      courtId,
+      startHour,
+      durationHours: 1,
+      amount: courtId === "court-1" ? 300 : 350,
+    }))
+  );
+  const state = selections.reduce(
+    (current, item) => selectionReducer(current, {
+      type: "toggle",
+      item,
+      courtName: item.courtId === "court-1" ? "Court 1" : "Court 2",
+      startsAt: `${item.startHour}:00`,
+      endsAt: `${item.startHour + 1}:00`,
+      restrictToSingleRun: false,
+      maximumTotalHours: 18,
+    }),
+    initialState,
+  );
+
+  assert.equal(state.items.length, 8);
+  assert.match(state.announcement, /8 court-hours across 2 courts selected\./);
+  assert.deepEqual(
+    bookingSessionsFromSelections("2026-08-10", state.items),
+    [
+      {
+        courtId: "court-1",
+        bookingDate: "2026-08-10",
+        startTime: "13:00",
+        durationHours: 4,
+      },
+      {
+        courtId: "court-2",
+        bookingDate: "2026-08-10",
+        startTime: "13:00",
+        durationHours: 4,
+      },
+    ],
+  );
+
+  const courts = {
+    "court-1": { id: "court-1", number: "01", name: "Court 1" },
+    "court-2": { id: "court-2", number: "02", name: "Court 2" },
+  };
+  const details = state.items.map((selection) => ({
+    selection,
+    court: courts[selection.courtId],
+    slot: {
+      hour: selection.startHour,
+      price: selection.amount,
+      startsAt: `${selection.startHour}:00`,
+      endsAt: `${selection.startHour + 1}:00`,
+      status: "available",
+    },
+  }));
+  assert.deepEqual(
+    groupSelectionDetails(details).map((group) => ({
+      court: group.court.name,
+      startHour: group.startHour,
+      endHour: group.endHour,
+      courtHours: group.courtHours,
+      subtotal: group.subtotal,
+    })),
+    [
+      { court: "Court 1", startHour: 13, endHour: 17, courtHours: 4, subtotal: 1200 },
+      { court: "Court 2", startHour: 13, endHour: 17, courtHours: 4, subtotal: 1400 },
+    ],
+  );
+
+  const afterDeselect = selectionReducer(state, {
+    type: "toggle",
+    item: selections.find((item) => item.courtId === "court-1" && item.startHour === 14),
+    courtName: "Court 1",
+    startsAt: "14:00",
+    endsAt: "15:00",
+    restrictToSingleRun: false,
+    maximumTotalHours: 18,
+  });
+  assert.equal(afterDeselect.items.length, 7);
+  assert.ok(!afterDeselect.items.some(
+    (item) => item.courtId === "court-1" && item.startHour === 14,
+  ));
+  assert.match(afterDeselect.announcement, /removed\. 7 court-hours across 2 courts selected\./);
+});
+
+test("atomic matrix selection enforces an 18 court-hour total cap", async () => {
+  const { selectionReducer } = await loadBookingSelectionHarness();
+  const fullState = {
+    items: Array.from({ length: 18 }, (_, startHour) => ({
+      courtId: "court-1",
+      startHour,
+      durationHours: 1,
+      amount: 300,
+    })),
+    announcement: "",
+  };
+  const cappedState = selectionReducer(fullState, {
+    type: "toggle",
+    item: { courtId: "court-2", startHour: 13, durationHours: 1, amount: 350 },
+    courtName: "Court 2",
+    startsAt: "13:00",
+    endsAt: "14:00",
+    restrictToSingleRun: false,
+    maximumTotalHours: 18,
+  });
+  assert.equal(cappedState.items.length, 18);
+  assert.match(cappedState.announcement, /up to 18 total court-hours/);
 });
 
 test("sends one canonical atomic-session payload without legacy scalar fields", async () => {

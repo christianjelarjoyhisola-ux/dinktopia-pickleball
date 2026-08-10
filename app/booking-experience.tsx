@@ -420,9 +420,10 @@ function selectionReducer(state: SelectionState, action: SelectionAction): Selec
     ? items.filter((item) => selectionKey(item.courtId, item.startHour) !== key)
     : [...items, action.item];
   const nextCount = nextItems.length;
+  const nextCourtCount = new Set(nextItems.map((item) => item.courtId)).size;
   return {
     items: nextItems,
-    announcement: `${action.courtName}, ${action.startsAt} to ${action.endsAt} ${isSelected ? "removed" : "added"}. ${nextCount} court-hour${nextCount === 1 ? "" : "s"} selected.`,
+    announcement: `${action.courtName}, ${action.startsAt} to ${action.endsAt} ${isSelected ? "removed" : "added"}. ${nextCount} court-hour${nextCount === 1 ? "" : "s"} across ${nextCourtCount} court${nextCourtCount === 1 ? "" : "s"} selected.`,
   };
 }
 
@@ -1449,10 +1450,6 @@ export function BookingExperience({
     [displayCourts, schedule, selectedSlots],
   );
   const selectedSlot = selectedSlotDetails[0]?.slot ?? null;
-  const groupedSelections = useMemo(
-    () => groupSelectionDetails(selectedSlotDetails),
-    [selectedSlotDetails],
-  );
   const selectedDateDetails = dates.find((date) => date.iso === selectedDate);
   const selectedBaseDateLabel = selectedDateDetails?.long ?? selectedDate;
   const selectedFollowingDate = nextIsoDate(selectedDate);
@@ -1477,21 +1474,10 @@ export function BookingExperience({
   const canonicalPricing = canonicalCourt?.pricingConfig as
     | { regular?: { minimumHours?: number; maximumHours?: number } }
     | undefined;
+  // Atomic group checkout is limited by total court-hours, not by the old
+  // single-court session maximum. The server validates all sessions together.
   const atomicSelectionWithinLimits =
-    selectedSlots.length > 0 &&
-    selectedSlots.length <= 18 &&
-    groupedSelections.every((group) => {
-      const publicCourt = bootstrap?.courts.find(
-        (court) => court.id === group.court.id,
-      );
-      const pricing = publicCourt?.pricingConfig as
-        | { regular?: { minimumHours?: number; maximumHours?: number } }
-        | undefined;
-      return (
-        group.courtHours >= (pricing?.regular?.minimumHours ?? 1) &&
-        group.courtHours <= (pricing?.regular?.maximumHours ?? 18)
-      );
-    });
+    selectedSlots.length > 0 && selectedSlots.length <= 18;
   const liveSelectionSupported =
     !isLive ||
     (atomicMultiSessionBooking
@@ -2795,9 +2781,9 @@ export function BookingExperience({
                         )}
                         {isLive && selectedSlots.length > 0 && !liveSelectionSupported && (
                           <div className="schedule-live-guard" role="status">
-                            <strong>{atomicMultiSessionBooking ? "Check each session" : "Group checkout is being prepared"}</strong>
+                            <strong>{atomicMultiSessionBooking ? "Selection limit reached" : "Group checkout is being prepared"}</strong>
                             <p>{atomicMultiSessionBooking
-                              ? "One or more sessions is outside that court's minimum or maximum duration."
+                              ? "A booking can include up to 18 total court-hours."
                               : "Live checkout currently accepts adjacent hours on one court. We will never split this into partial reservations."}</p>
                           </div>
                         )}
