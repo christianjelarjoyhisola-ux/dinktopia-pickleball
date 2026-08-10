@@ -15,6 +15,19 @@ const files = {
   loading: new URL("../app/loading.tsx", import.meta.url),
   manage: new URL("../app/manage/page.tsx", import.meta.url),
   manageLoading: new URL("../app/manage/loading.tsx", import.meta.url),
+  calendarView: new URL("../app/manage/calendar-view.tsx", import.meta.url),
+  calendarCss: new URL(
+    "../app/manage/calendar-view.module.css",
+    import.meta.url,
+  ),
+  analyticsFinance: new URL(
+    "../app/manage/analytics-finance.tsx",
+    import.meta.url,
+  ),
+  analyticsFinanceCss: new URL(
+    "../app/manage/analytics-finance.module.css",
+    import.meta.url,
+  ),
   managementAdapter: new URL(
     "../app/manage/management-adapter.ts",
     import.meta.url,
@@ -1530,11 +1543,11 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
   assert.match(manage, /Account authority and tool readiness are separate\./);
   assert.match(
     manage,
-    /capabilities\.includes\(capability\)[\s\S]*?className=\{styles\.granted\}/,
+    /const visibleCapabilities: ManagementCapability\[\] = capabilities\.filter\([\s\S]*?capability !== "booking:check-in"[\s\S]*?\.filter\(\(capability\) => visibleCapabilities\.includes\(capability\)\)[\s\S]*?className=\{styles\.granted\}/,
   );
   assert.match(
     manage,
-    /toolAvailability\[capability\] === false \? "setup unavailable" : "connected"/,
+    /visibleCapabilities\.map\(\(capability\) => \([\s\S]*?toolAvailability\[capability\] === false \? styles\.toolUnavailable : styles\.toolReady[\s\S]*?toolAvailability\[capability\] === false \? "setup unavailable" : "connected"/,
   );
   assert.doesNotMatch(
     manage,
@@ -1611,7 +1624,7 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
   );
 });
 
-test("connects create, reschedule, cancel, and check-in without confusing booking UUIDs and references", async () => {
+test("connects create, reschedule, and cancel without exposing check-in or confusing booking identifiers", async () => {
   const [client, manage, managementAdapter] = await Promise.all([
     readFile(files.client, "utf8"),
     readFile(files.manage, "utf8"),
@@ -1653,7 +1666,7 @@ test("connects create, reschedule, cancel, and check-in without confusing bookin
   assert.ok(liveStatusStart >= 0 && liveStatusEnd > liveStatusStart);
   assert.match(
     managementAdapter.slice(liveStatusStart, liveStatusEnd),
-    /if \(value\(row, \["checked_in_at"\]\)\) return "checked_in";/,
+    /if \(status === "cancelled"\) return "cancelled";[\s\S]*?if \(status === "expired"\) return "expired";[\s\S]*?if \(status === "completed"\) return "completed";[\s\S]*?if \(value\(row, \["checked_in_at"\]\)\) return "checked_in";/,
   );
 
   const createFormStart = manage.indexOf("function BookingsView(");
@@ -1673,28 +1686,30 @@ test("connects create, reschedule, cancel, and check-in without confusing bookin
   assert.match(bookingUi, /confirmLabel:\s*"Reschedule booking"/);
   assert.match(
     bookingUi,
-    /actionType:\s*"booking:check-in",\s*resourceId:\s*booking\.bookingId/,
-  );
-  assert.match(
-    bookingUi,
     /actionType:\s*"booking:cancel",\s*resourceId:\s*booking\.bookingId,\s*payload:\s*\{ reason:/,
   );
   assert.match(bookingUi, /aria-label=\{`Cancel booking \$\{booking\.id\}`\}/);
+  assert.doesNotMatch(bookingUi, /booking:check-in|>\s*Check in\s*</i);
   assert.match(
     bookingUi,
-    /booking\.status === "confirmed" && booking\.bookingType === "regular"[\s\S]*?disabled=\{!can\("booking:check-in"\) \|\| booking\.payment !== "paid"\}[\s\S]*?actionType:\s*"booking:check-in"/,
+    /const canMoveBooking = !isPreview && booking\.status === "confirmed" && booking\.payment === "paid";[\s\S]*?\{canMoveBooking && \([\s\S]*?>\s*Move\s*<\/button>/,
   );
   assert.match(
     bookingUi,
-    /!isPreview && booking\.status === "confirmed" && booking\.payment === "paid"[\s\S]*?>\s*Move\s*<\/button>/,
+    /const terminal = booking\.status === "completed" \|\|[\s\S]*?booking\.status === "cancelled" \|\| booking\.status === "expired";[\s\S]*?const canCancelBooking = !terminal && booking\.status !== "checked_in";/,
+  );
+
+  const accessStart = manage.indexOf("function AccessView(");
+  const accessEnd = manage.indexOf("function SignInGate(", accessStart);
+  assert.ok(accessStart >= 0 && accessEnd > accessStart);
+  const accessUi = manage.slice(accessStart, accessEnd);
+  assert.match(
+    accessUi,
+    /const visibleCapabilities:[\s\S]*?capabilities\.filter\([\s\S]*?capability !== "booking:check-in"/,
   );
   assert.match(
-    bookingUi,
-    /disabled=\{!can\("booking:cancel"\) \|\| booking\.status === "completed" \|\| booking\.status === "checked_in"\}/,
-  );
-  assert.doesNotMatch(
-    bookingUi,
-    /booking\.status === "checked_in"[\s\S]{0,300}actionType:\s*"booking:(?:update|cancel)"/,
+    accessUi,
+    /visibleCapabilities\.includes\(capability\)[\s\S]*?visibleCapabilities\.map\(\(capability\)/,
   );
 
   assert.match(
@@ -1706,10 +1721,6 @@ test("connects create, reschedule, cancel, and check-in without confusing bookin
     /"reschedule-booking",\s*accessToken,\s*\{ action:\s*"reschedule", \.\.\.input \}/,
   );
   assert.match(client, /"cancel_tenant_booking"[\s\S]*?p_booking_id:\s*bookingId/);
-  assert.match(
-    client,
-    /"check_in_tenant_booking"[\s\S]*?p_tenant_slug:\s*activeTenant\.identity\.slug,[\s\S]*?p_hostname:\s*managementHostname\(\{ mutation:\s*true \}\),[\s\S]*?p_booking_id:\s*bookingId/,
-  );
   assert.match(
     client,
     /export type BookingReschedulePreview = \{[\s\S]*?booking:\s*\{[\s\S]*?id:\s*string;[\s\S]*?reference:\s*string;[\s\S]*?status:\s*string;[\s\S]*?paymentStatus:\s*string;[\s\S]*?options:\s*Array<\{[\s\S]*?additionalAmount:\s*number;[\s\S]*?paymentRequired:\s*boolean;[\s\S]*?amountPolicy:\s*"preserve_original"/,
@@ -2437,14 +2448,25 @@ test("keeps payment review private, minimal, role-checked, and decision-safe", a
   const bookingsUi = manage.slice(bookingsUiStart, bookingsUiEnd);
   assert.match(
     manage,
-    /type BookingFilter = "all" \| "needs_review" \| BookingStatus;/,
+    /type BookingFilter =[\s\S]*?\| "all"[\s\S]*?\| "awaiting"[\s\S]*?\| "pending"[\s\S]*?\| "confirmed"[\s\S]*?\| "completed"[\s\S]*?\| "cancelled";/,
+  );
+  assert.match(
+    manage,
+    /const BOOKING_FILTERS:[\s\S]*?value: "all", label: "All"[\s\S]*?value: "awaiting", label: "Awaiting"[\s\S]*?value: "pending", label: "Pending"[\s\S]*?value: "confirmed", label: "Confirmed"[\s\S]*?value: "completed", label: "Completed"[\s\S]*?value: "cancelled", label: "Cancelled"/,
   );
   assert.match(bookingsUi, /useState<BookingFilter>\(initialStatus\)/);
   assert.match(
-    bookingsUi,
-    /status === "needs_review"[\s\S]*?booking\.paymentEvidence\?\.reviewable === true/,
+    manage,
+    /function bookingMatchesFilter[\s\S]*?filter === "pending"[\s\S]*?booking\.status === "receipt_processing"[\s\S]*?booking\.status === "payment_review"[\s\S]*?booking\.status === "payment_attention"/,
   );
-  assert.match(bookingsUi, /<option value="needs_review">Needs payment review<\/option>/);
+  assert.match(
+    bookingsUi,
+    /BOOKING_FILTERS\.map\(\(filter\) => \([\s\S]*?aria-pressed=\{status === filter\.value\}[\s\S]*?filterCounts\[filter\.value\]/,
+  );
+  assert.match(
+    bookingsUi,
+    /booking\.paymentEvidence\?\.reviewable && !terminal[\s\S]*?disabled=\{!canReviewPayments\}[\s\S]*?>\s*Review payment\s*<\/button>/,
+  );
   assert.match(
     reviewUi,
     /className=\{styles\.paymentReviewWorkspace\}[\s\S]*?Private payment evidence[\s\S]*?Opening the private receipt/,
@@ -2565,6 +2587,8 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     "receipt_processing",
     "payment_review",
     "payment_attention",
+    "cancelled",
+    "expired",
   ]) {
     assert.match(bookingStatuses, new RegExp(`\\| "${status}"`));
   }
@@ -2592,7 +2616,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   const liveStatus = managementAdapter.slice(liveStatusStart, liveStatusEnd);
   assert.match(
     liveStatus,
-    /if \(status === "completed"\) return "completed";[\s\S]*?if \(value\(row, \["checked_in_at"\]\)\) return "checked_in";[\s\S]*?if \(status === "confirmed"\) return "confirmed";/,
+    /if \(status === "cancelled"\) return "cancelled";[\s\S]*?if \(status === "expired"\) return "expired";[\s\S]*?if \(status === "completed"\) return "completed";[\s\S]*?if \(value\(row, \["checked_in_at"\]\)\) return "checked_in";[\s\S]*?if \(status === "confirmed"\) return "confirmed";/,
   );
   assert.match(
     liveStatus,
@@ -2636,6 +2660,8 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   assert.match(statusLabels, /receipt_processing: "Receipt processing"/);
   assert.match(statusLabels, /payment_review: "Review required"/);
   assert.match(statusLabels, /payment_attention: "Payment needs attention"/);
+  assert.match(statusLabels, /cancelled: "Cancelled"/);
+  assert.match(statusLabels, /expired: "Expired"/);
   assert.doesNotMatch(statusLabels, /Awaiting payment/i);
 
   const overviewStart = manage.indexOf("function OverviewView(");
@@ -2701,19 +2727,55 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   const bookingsUi = manage.slice(bookingsStart, bookingsEnd);
   assert.match(
     bookingsUi,
-    /<option value="awaiting_receipt">Awaiting receipt<\/option>[\s\S]*?<option value="receipt_processing">Receipt processing<\/option>[\s\S]*?<option value="needs_review">Needs payment review<\/option>[\s\S]*?<option value="payment_attention">Payment needs attention<\/option>/,
+    /BOOKING_FILTERS\.map\(\(filter\) => \([\s\S]*?<button[\s\S]*?aria-pressed=\{status === filter\.value\}[\s\S]*?<span>\{filter\.label\}<\/span>[\s\S]*?<strong>\{filterCounts\[filter\.value\]\}<\/strong>/,
+  );
+  assert.match(
+    manage,
+    /const BOOKING_FILTERS:[\s\S]*?value: "all", label: "All"[\s\S]*?value: "awaiting", label: "Awaiting"[\s\S]*?value: "pending", label: "Pending"[\s\S]*?value: "confirmed", label: "Confirmed"[\s\S]*?value: "completed", label: "Completed"[\s\S]*?value: "cancelled", label: "Cancelled"/,
   );
   assert.match(
     bookingsUi,
-    /booking\.status === "awaiting_receipt"[\s\S]*?Waiting for the player&apos;s receipt/,
+    /const filterCounts = BOOKING_FILTERS\.reduce<Record<BookingFilter, number>>\([\s\S]*?bookings\.filter\(\(booking\) => bookingMatchesFilter\(booking, filter\.value\)\)\.length[\s\S]*?all: 0, awaiting: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0/,
   );
   assert.match(
     bookingsUi,
-    /booking\.status === "receipt_processing"[\s\S]*?Receipt uploaded[\s\S]*?verification in progress/,
+    /<strong>\{filtered\.length\}<\/strong> shown[\s\S]*?counts reflect \{bookings\.length\} loaded/,
   );
   assert.match(
     bookingsUi,
-    /booking\.status === "payment_attention"[\s\S]*?Payment state needs owner attention/,
+    /<ol className=\{styles\.bookingRecordList\} aria-label="Booking results">[\s\S]*?<article className=\{styles\.bookingRecord\}[\s\S]*?bookingRecordIdentity[\s\S]*?bookingRecordSession[\s\S]*?bookingRecordPayment[\s\S]*?bookingRecordFooter/,
+  );
+  assert.doesNotMatch(bookingsUi, /<table\b|role="table"|className=\{styles\.dataTable\}/i);
+  assert.doesNotMatch(bookingsUi, /booking:check-in|>\s*Check in\s*</i);
+  assert.match(
+    manage,
+    /function bookingMatchesFilter[\s\S]*?filter === "pending"[\s\S]*?"receipt_processing"[\s\S]*?"payment_review"[\s\S]*?"payment_attention"[\s\S]*?filter === "confirmed"[\s\S]*?"checked_in"[\s\S]*?filter === "completed"[\s\S]*?"cancelled" \|\| booking\.status === "expired"/,
+  );
+
+  const liveOverviewStart = manage.indexOf("function OverviewView(");
+  const liveOverviewEnd = manage.indexOf("function PaymentReviewWorkspace(", liveOverviewStart);
+  const liveOverview = manage.slice(liveOverviewStart, liveOverviewEnd);
+  assert.match(
+    liveOverview,
+    /const operationalBookings = snapshot\.bookings\.filter\([\s\S]*?booking\.status !== "cancelled" && booking\.status !== "expired"[\s\S]*?const loadedBookings = operationalBookings\.slice\(0, 3\)/,
+  );
+  assert.match(
+    liveOverview,
+    /const paidRevenue = operationalBookings[\s\S]*?const paidCount = operationalBookings\.filter[\s\S]*?<MetricCard label="Active bookings" value=\{String\(operationalBookings\.length\)\}[\s\S]*?operationalBookings\.length - paidCount/,
+  );
+  const scheduleMapperStart = managementAdapter.indexOf("function deriveLiveSchedule(");
+  const scheduleMapperEnd = managementAdapter.indexOf("type CustomerAccumulator", scheduleMapperStart);
+  assert.ok(scheduleMapperStart >= 0 && scheduleMapperEnd > scheduleMapperStart);
+  assert.match(
+    managementAdapter.slice(scheduleMapperStart, scheduleMapperEnd),
+    /bookingRows[\s\S]*?\.filter\(\(row\) => \{[\s\S]*?status !== "cancelled" && status !== "expired"[\s\S]*?\.map\(\(row\) =>/,
+  );
+
+  assert.ok(
+    (managementAdapter.match(
+      /listManagerBookings\(session\.access_token, \{ activeOnly: false, limit: 100 \}\)/g,
+    ) ?? []).length >= 2,
+    "expected initial and operational booking loads to include terminal history for workflow filtering",
   );
 
   assert.match(
@@ -2738,7 +2800,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   );
   assert.match(
     operationsRefresh,
-    /currentOwnerSession\(\)[\s\S]*?Promise\.all\(\[[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?listManagerBookings\(session\.access_token, \{ activeOnly: true, limit: 100 \}\)[\s\S]*?\]\)/,
+    /currentOwnerSession\(\)[\s\S]*?Promise\.all\(\[[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?listManagerBookings\(session\.access_token, \{ activeOnly: false, limit: 100 \}\)[\s\S]*?\]\)/,
   );
   assert.doesNotMatch(
     operationsRefresh,
@@ -2883,6 +2945,424 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     /\.paymentInboxAction\s*\{[^}]*flex-direction:\s*column/s,
   );
   assert.match(phoneCss, /\.paymentInboxAction \.button\s*\{[^}]*width:\s*100%/s);
+
+  assert.match(
+    cssBlock(manageCss, ".bookingRegisterPanel"),
+    /min-width:\s*0;[\s\S]*?overflow:\s*hidden/,
+  );
+  assert.match(
+    manageCss,
+    /\.bookingRecord\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(205px, 1fr\)/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".bookingFilterRail"),
+    /max-width:\s*100%;[\s\S]*?overflow-x:\s*auto;[\s\S]*?overscroll-behavior-inline:\s*contain/,
+  );
+  const tabletShellCss = cssBlock(manageCss, "@media (max-width: 900px)");
+  assert.match(tabletShellCss, /\.manageShell\s*\{[^}]*display:\s*block/s);
+  assert.match(tabletShellCss, /\.main\s*\{[^}]*padding:\s*26px 18px 22px/s);
+  const bookingCompactCss = cssBlock(manageCss, "@media (max-width: 680px)");
+  assert.match(
+    bookingCompactCss,
+    /\.bookingRecord\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)[^}]*grid-template-areas:\s*"identity"\s*"session"\s*"payment"\s*"footer"/s,
+  );
+  assert.match(
+    bookingCompactCss,
+    /\.bookingRecordFooter\s*\{[^}]*align-items:\s*stretch;[^}]*flex-direction:\s*column/s,
+  );
+  assert.match(
+    bookingCompactCss,
+    /\.bookingRecordActions > \*\s*\{[^}]*min-width:\s*0;[^}]*flex:\s*1 1 108px/s,
+  );
+  assert.match(
+    phoneCss,
+    /\.bookingRegisterPanel \.panelHeading \.button\s*\{[^}]*width:\s*100%/s,
+  );
+  assert.match(phoneCss, /\.bookingRecord\s*\{[^}]*padding:\s*13px/s);
+  assert.match(
+    manageCss,
+    /\.bookingRecordActions \.reviewPaymentButton\s*\{[^}]*min-height:\s*44px[\s\S]*?\.bookingRecordActions \.miniButton,\s*\.bookingRecordActions \.moreButton\s*\{[^}]*min-height:\s*44px/s,
+  );
+  assert.ok(
+    manageCss.includes("@media (max-width: 390px)"),
+    "expected the phone cascade to include a 390px refinement",
+  );
+});
+
+test("loads an exact accessible calendar day and separates bookings, payment holds, and court blocks", async () => {
+  const [calendar, calendarCss, manage, managementAdapter] = await Promise.all([
+    readFile(files.calendarView, "utf8"),
+    readFile(files.calendarCss, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+  ]);
+
+  assert.match(
+    manage,
+    /\{ id: "schedule", label: "Calendar", short: "CA" \}/,
+  );
+  assert.match(
+    manage,
+    /case "schedule": return snapshot\.tenant\.mode === "live" \? \([\s\S]*?<CalendarView[\s\S]*?initialBookings=\{snapshot\.bookings\}[\s\S]*?initialBlocks=\{snapshot\.blocks\}[\s\S]*?loadDay=\{loadCalendarDay\}[\s\S]*?timezone=\{snapshot\.tenant\.timezone\}[\s\S]*?currency=\{snapshot\.tenant\.currency\}/,
+  );
+
+  const dayLoaderStart = managementAdapter.indexOf(
+    "async loadCalendarDay(context, current, date)",
+  );
+  const dayLoaderEnd = managementAdapter.indexOf(
+    "async loadInsights(context, filters)",
+    dayLoaderStart,
+  );
+  assert.ok(dayLoaderStart >= 0 && dayLoaderEnd > dayLoaderStart);
+  const dayLoader = managementAdapter.slice(dayLoaderStart, dayLoaderEnd);
+  assert.match(dayLoader, /if \(!DATE_PATTERN\.test\(date\)\)[\s\S]*?CALENDAR_DATE_INVALID/);
+  assert.match(
+    dayLoader,
+    /current\.tenant\.mode !== "live"[\s\S]*?current\.tenant\.slug !== activeTenant\.identity\.slug[\s\S]*?LIVE_TENANT_SCOPE_MISMATCH/,
+  );
+  assert.match(
+    dayLoader,
+    /currentOwnerSession\(\)[\s\S]*?Promise\.all\(\[[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?listManagerBookings\(session\.access_token, \{[\s\S]*?date,[\s\S]*?activeOnly: true,[\s\S]*?limit: 500,[\s\S]*?listManagerBlocks\(session\.access_token, \{ date, limit: 500 \}\)/,
+  );
+  assert.match(
+    dayLoader,
+    /if \(!authorityCapabilities\(serverSession\)\.length\)[\s\S]*?CALENDAR_VIEW_ACCESS_DENIED[\s\S]*?bookingResult\.bookings\.map[\s\S]*?blockResult\.blockedDates\.map/,
+  );
+
+  assert.match(
+    calendar,
+    /export type CalendarViewProps = \{[\s\S]*?initialBookings: Booking\[\];[\s\S]*?initialBlocks: CourtBlock\[\];[\s\S]*?loadDay: \(date: string\) => Promise<CalendarDayData>;/,
+  );
+  const rowsStart = calendar.indexOf("function rowsForDate(");
+  const rowsEnd = calendar.indexOf("function bookingEntry(", rowsStart);
+  assert.ok(rowsStart >= 0 && rowsEnd > rowsStart);
+  const rowsSource = calendar.slice(rowsStart, rowsEnd);
+  assert.match(
+    rowsSource,
+    /booking\.bookingDate === date &&[\s\S]*?!TERMINAL_HIDDEN_STATUSES\.has\(booking\.status\)/,
+  );
+  assert.match(rowsSource, /blocks\.filter\(\(block\) => block\.dateValue === date\)/);
+
+  const loaderStart = calendar.indexOf("useEffect(() => {", calendar.indexOf("const requestSequence"));
+  const loaderEnd = calendar.indexOf("const effectiveCourtFilter", loaderStart);
+  assert.ok(loaderStart >= 0 && loaderEnd > loaderStart);
+  const loaderSource = calendar.slice(loaderStart, loaderEnd);
+  assert.match(
+    loaderSource,
+    /const requestId = \+\+requestSequence\.current;[\s\S]*?loadDayRef\.current\(selectedDate\)[\s\S]*?requestSequence\.current !== requestId[\s\S]*?setDayData\(rowsForDate\(selectedDate, result\.bookings, result\.blocks\)\)/,
+  );
+  assert.match(
+    loaderSource,
+    /setPhase\("error"\)[\s\S]*?return \(\) => \{[\s\S]*?active = false;[\s\S]*?\[refreshKey, selectedDate\]/,
+  );
+
+  assert.match(
+    calendar,
+    /const TERMINAL_HIDDEN_STATUSES = new Set<Booking\["status"\]>\(\[[\s\S]*?"cancelled"[\s\S]*?"expired"/,
+  );
+  assert.match(
+    calendar,
+    /const HOLD_STATUSES = new Set<Booking\["status"\]>\(\[[\s\S]*?"awaiting_receipt"[\s\S]*?"receipt_processing"[\s\S]*?"payment_review"[\s\S]*?"payment_attention"/,
+  );
+  assert.match(
+    calendar,
+    /const isHold = HOLD_STATUSES\.has\(booking\.status\);[\s\S]*?\{isHold \? "Hold" : "Booking"\}/,
+  );
+  assert.match(
+    calendar,
+    /<span className=\{styles\.kindLabel\}>Block<\/span>[\s\S]*?Private note: \{block\.internalReason\}/,
+  );
+  assert.match(
+    calendar,
+    /<dt>Bookings<\/dt>[\s\S]*?Confirmed or completed[\s\S]*?<dt>Payment holds<\/dt>[\s\S]*?Awaiting payment action[\s\S]*?<dt>Court blocks<\/dt>/,
+  );
+  assert.match(
+    calendar,
+    /const allCourtBlocks = blocks\.filter\(\(block\) => normalized\(block\.court\) === "all courts"\)[\s\S]*?name: "All courts"[\s\S]*?detail: "Venue-wide restriction"/,
+  );
+  assert.doesNotMatch(calendar, /\bCheck[ -]?in\b/i);
+
+  assert.match(
+    calendar,
+    /<section className=\{styles\.calendar\} aria-labelledby="calendar-view-title" aria-busy=\{phase === "loading"\}>/,
+  );
+  assert.match(calendar, /<div className=\{styles\.toolbar\} aria-label="Calendar controls">/);
+  assert.match(calendar, /aria-label="Previous day"[\s\S]*?aria-label="Next day"/);
+  assert.match(
+    calendar,
+    /<input[\s\S]*?type="date"[\s\S]*?value=\{selectedDate\}[\s\S]*?DATE_PATTERN\.test\(event\.target\.value\)/,
+  );
+  assert.match(calendar, /role="status" aria-live="polite"/);
+  assert.match(calendar, /className=\{styles\.srOnly\} aria-live="polite"/);
+  assert.match(calendar, /className=\{styles\.errorState\} role="alert"/);
+  assert.match(
+    calendar,
+    /<time dateTime=\{bookingDateTime\(booking, selectedDate\)\}>\{booking\.time\}<\/time>/,
+  );
+  assert.match(
+    calendar,
+    /Status: \{STATUS_LABEL\[booking\.status\]\}[\s\S]*?Payment: \{PAYMENT_LABEL\[booking\.payment\]\}/,
+  );
+
+  assert.match(
+    cssBlock(calendarCss, ".calendar"),
+    /width:\s*100%;[\s\S]*?min-width:\s*0;[\s\S]*?overflow:\s*hidden/,
+  );
+  assert.match(
+    calendarCss,
+    /\.calendar button,\s*\.calendar input,\s*\.calendar select\s*\{[^}]*min-height:\s*44px/s,
+  );
+  assert.match(
+    calendarCss,
+    /\.calendar button:focus-visible,[\s\S]*?outline:\s*3px solid var\(--citrus/,
+  );
+  assert.match(
+    cssBlock(calendarCss, ".courtBoard"),
+    /grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(100%, 430px\), 1fr\)\)/,
+  );
+  assert.match(
+    cssBlock(calendarCss, ".agendaItem"),
+    /grid-template-columns:\s*minmax\(108px, 0\.34fr\) minmax\(0, 1fr\);[\s\S]*?min-width:\s*0/,
+  );
+
+  const tabletCss = cssBlock(calendarCss, "@media (max-width: 768px)");
+  assert.match(tabletCss, /\.toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s);
+  assert.match(tabletCss, /\.summary\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(tabletCss, /\.courtBoard\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.doesNotMatch(tabletCss, /overflow-x:\s*auto/);
+
+  const phoneCss = cssBlock(calendarCss, "@media (max-width: 520px)");
+  assert.match(phoneCss, /\.toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.match(phoneCss, /\.agendaItem\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.match(phoneCss, /\.semanticRow\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
+  assert.doesNotMatch(phoneCss, /overflow-x:\s*auto/);
+
+  const narrowCss = cssBlock(calendarCss, "@media (max-width: 360px)");
+  assert.match(narrowCss, /\.courtHeader\s*\{[^}]*display:\s*grid/s);
+  assert.match(narrowCss, /\.courtBoard\s*\{[^}]*padding:\s*8px/s);
+  assert.doesNotMatch(calendarCss, /min-width:\s*[4-9]\d{2}px/);
+});
+
+test("keeps analytics and finance complete, server-authoritative, capability-gated, and mobile-first", async () => {
+  const [analyticsFinance, analyticsCss, client, manage, managementAdapter] =
+    await Promise.all([
+      readFile(files.analyticsFinance, "utf8"),
+      readFile(files.analyticsFinanceCss, "utf8"),
+      readFile(files.client, "utf8"),
+      readFile(files.manage, "utf8"),
+      readFile(files.managementAdapter, "utf8"),
+    ]);
+
+  assert.match(
+    client,
+    /export async function getManagerRegularBookingReport\([\s\S]*?"get_manager_regular_booking_report",[\s\S]*?p_tenant_slug: activeTenant\.identity\.slug,[\s\S]*?p_hostname: managementHostname\(\),[\s\S]*?p_date_from: input\.dateFrom,[\s\S]*?p_date_to: input\.dateTo,[\s\S]*?p_court_id: input\.courtId \|\| null/,
+  );
+  assert.match(
+    client,
+    /export async function getBookingFeeRemittanceDashboard\([\s\S]*?"get_booking_fee_remittance_dashboard",[\s\S]*?p_tenant_slug: activeTenant\.identity\.slug,[\s\S]*?p_hostname: managementHostname\(\)/,
+  );
+  assert.match(
+    client,
+    /export async function getBookingFeeRemittanceHistory\([\s\S]*?"get_booking_fee_remittance_history",[\s\S]*?p_limit: options\.limit \?\? 50,[\s\S]*?p_before: options\.before \|\| null/,
+  );
+
+  assert.match(
+    managementAdapter,
+    /export type ManagementCapability =[\s\S]*?\| "report:view"[\s\S]*?\| "finance:view"/,
+  );
+  assert.match(
+    managementAdapter,
+    /export type RegularBookingReport = \{[\s\S]*?allMatchingRowsAggregated: true;[\s\S]*?currentStateSnapshot: true;[\s\S]*?fullPaymentEventLedgerIncluded: false;[\s\S]*?fullRefundEventLedgerIncluded: false;[\s\S]*?netRevenueIncluded: false;[\s\S]*?remittanceDueIncluded: false;[\s\S]*?remittanceContract: "get_booking_fee_remittance_dashboard";/,
+  );
+
+  const insightGuardStart = managementAdapter.indexOf(
+    "function assertInsightsViewer(",
+  );
+  const insightGuardEnd = managementAdapter.indexOf(
+    "function assertBookingManager(",
+    insightGuardStart,
+  );
+  assert.ok(insightGuardStart >= 0 && insightGuardEnd > insightGuardStart);
+  assert.match(
+    managementAdapter.slice(insightGuardStart, insightGuardEnd),
+    /!session\.isSystemOwner && session\.membershipRole !== "owner" &&[\s\S]*?session\.membershipRole !== "admin"[\s\S]*?FINANCE_VIEW_ACCESS_DENIED/,
+  );
+
+  const insightLoaderStart = managementAdapter.indexOf(
+    "async loadInsights(context, filters)",
+  );
+  const insightLoaderEnd = managementAdapter.indexOf(
+    "async refreshOperations(context, current)",
+    insightLoaderStart,
+  );
+  assert.ok(insightLoaderStart >= 0 && insightLoaderEnd > insightLoaderStart);
+  const insightLoader = managementAdapter.slice(insightLoaderStart, insightLoaderEnd);
+  assert.match(
+    insightLoader,
+    /platformMode\(\) === "preview"[\s\S]*?mode: "preview",[\s\S]*?report: null,[\s\S]*?finance: null/,
+  );
+  assert.match(
+    insightLoader,
+    /assertDinktopiaContext\(context\)[\s\S]*?const normalizedFilters = insightFilters\(filters\)[\s\S]*?currentOwnerSession\(\)[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?assertInsightsViewer\(authority\)/,
+  );
+  assert.match(
+    insightLoader,
+    /Promise\.all\(\[[\s\S]*?getManagerRegularBookingReport\(session\.access_token, normalizedFilters\)[\s\S]*?getBookingFeeRemittanceDashboard\(session\.access_token\)[\s\S]*?getBookingFeeRemittanceHistory\(session\.access_token, \{ limit: 50 \}\)[\s\S]*?report: regularBookingReport\(reportResult, normalizedFilters\)[\s\S]*?dashboard: remittanceDashboard\(remittanceResult\)[\s\S]*?history: remittanceHistory\(historyResult\)/,
+  );
+
+  const reportParserStart = managementAdapter.indexOf(
+    "function assertReportHasNoPii(",
+  );
+  const reportParserEnd = managementAdapter.indexOf(
+    "const REMITTANCE_STATUSES",
+    reportParserStart,
+  );
+  assert.ok(reportParserStart >= 0 && reportParserEnd > reportParserStart);
+  const reportParser = managementAdapter.slice(reportParserStart, reportParserEnd);
+  assert.match(
+    reportParser,
+    /customername[\s\S]*?customeremail[\s\S]*?customerphone[\s\S]*?bookingreference[\s\S]*?paymentreference[\s\S]*?receipturl[\s\S]*?REGULAR_BOOKING_REPORT_PII_REJECTED/,
+  );
+  assert.match(
+    reportParser,
+    /allMatchingRowsAggregated !== true[\s\S]*?currentStateSnapshot !== true[\s\S]*?fullPaymentEventLedgerIncluded !== false[\s\S]*?fullRefundEventLedgerIncluded !== false/,
+  );
+  assert.match(
+    reportParser,
+    /boundaryRow\.netRevenueIncluded !== false[\s\S]*?boundaryRow\.remittanceDueIncluded !== false[\s\S]*?boundaryRow\.remittanceContract !== "get_booking_fee_remittance_dashboard"/,
+  );
+  assert.match(
+    reportParser,
+    /daily\.length !== dayCount[\s\S]*?sameAggregate\([\s\S]*?daily\.reduce[\s\S]*?summary\.grossPaid[\s\S]*?courts\.reduce[\s\S]*?paymentStatuses\.reduce[\s\S]*?lifecycleStatuses\.reduce/,
+  );
+
+  const remittanceParserStart = managementAdapter.indexOf(
+    "const REMITTANCE_STATUSES",
+  );
+  const remittanceParserEnd = managementAdapter.indexOf(
+    "function record(candidate",
+    remittanceParserStart,
+  );
+  assert.ok(remittanceParserStart >= 0 && remittanceParserEnd > remittanceParserStart);
+  const remittanceParser = managementAdapter.slice(
+    remittanceParserStart,
+    remittanceParserEnd,
+  );
+  assert.match(
+    remittanceParser,
+    /"draft"[\s\S]*?"due"[\s\S]*?"submitted"[\s\S]*?"under_review"[\s\S]*?"settled"[\s\S]*?"rejected"[\s\S]*?"void"/,
+  );
+  assert.match(
+    remittanceParser,
+    /amountSettled > amountDue \+ 0\.01[\s\S]*?sameAggregate\(Math\.max\(amountDue - amountSettled, 0\), remainingBalance\)/,
+  );
+  assert.match(
+    remittanceParser,
+    /accumulated:[\s\S]*?amountDue: reportNumber\(accumulatedRow\.amount_due[\s\S]*?openRemittances: reportArray\(row\.open_remittances[\s\S]*?settledTotal: reportNumber\(row\.settled_total/,
+  );
+
+  assert.match(
+    manage,
+    /\{ id: "reports", label: "Analytics", short: "AN" \}[\s\S]*?\{ id: "finance", label: "Finance", short: "FN" \}/,
+  );
+  assert.match(
+    manage,
+    /reports: "report:view",[\s\S]*?finance: "finance:view"/,
+  );
+  assert.match(
+    manage,
+    /const \[analyticsPeriod, setAnalyticsPeriod\] = useState<AnalyticsPeriod>\("30d"\)[\s\S]*?const \[analyticsCourtId, setAnalyticsCourtId\] = useState<string \| null>\(null\)/,
+  );
+  assert.match(
+    manage,
+    /if \(!snapshot \|\| \(view !== "reports" && view !== "finance"\)\) return;[\s\S]*?const capability = view === "finance" \? "finance:view" : "report:view";[\s\S]*?managementAdapter\.loadInsights\(context, \{[\s\S]*?courtId: analyticsCourtId/,
+  );
+  assert.match(
+    manage,
+    /case "reports": return <AnalyticsView[\s\S]*?report=\{insights\?\.report \?\? null\}[\s\S]*?onPeriodChange=\{setAnalyticsPeriod\}[\s\S]*?onCourtChange=\{setAnalyticsCourtId\}[\s\S]*?case "finance": return <FinanceView[\s\S]*?finance=\{insights\?\.finance \?\? null\}/,
+  );
+
+  assert.match(
+    analyticsFinance,
+    /if \(loading && !report\) return <LoadingPanel label="analytics" \/>;[\s\S]*?No sample totals are shown\./,
+  );
+  assert.match(
+    analyticsFinance,
+    /role="group" aria-label="Analytics date range"[\s\S]*?aria-pressed=\{period === option\.value\}[\s\S]*?<option value="">All courts<\/option>/,
+  );
+  assert.match(
+    analyticsFinance,
+    /aria-label="Booking financial summary"[\s\S]*?Paid customer gross[\s\S]*?summary\.grossPaid[\s\S]*?Venue court sales[\s\S]*?summary\.venueSalesPaid[\s\S]*?Platform booking fees[\s\S]*?summary\.platformBookingFeesPaid[\s\S]*?Paid bookings[\s\S]*?summary\.paidBookingCount/,
+  );
+  assert.match(
+    analyticsFinance,
+    /<svg[\s\S]*?role="img"[\s\S]*?aria-labelledby="daily-gross-chart-title daily-gross-chart-description"[\s\S]*?<title id="daily-gross-chart-title">Paid customer gross by booking date<\/title>[\s\S]*?<desc id="daily-gross-chart-description">\{description\}<\/desc>/,
+  );
+  assert.match(
+    analyticsFinance,
+    /This is not a payment-event or full refund ledger, so net revenue and occupancy are intentionally not estimated\. Remittance due comes from the separate platform-fee ledger\./,
+  );
+
+  const financeStart = analyticsFinance.indexOf("export function FinanceView(");
+  assert.ok(financeStart >= 0);
+  const financeView = analyticsFinance.slice(financeStart);
+  assert.match(
+    financeView,
+    /if \(loading && !finance\) return <LoadingPanel label="finance" \/>;[\s\S]*?No sample balances are shown\./,
+  );
+  assert.match(
+    financeView,
+    /const \{ dashboard, history \} = finance;[\s\S]*?dashboard\.openRemittances\.reduce[\s\S]*?dashboard\.accumulated\.amountDue[\s\S]*?dashboard\.settledTotal[\s\S]*?dashboard\.nextDueOn/,
+  );
+  assert.match(
+    financeView,
+    /dashboard\.role === "system_owner"[\s\S]*?Monitor access[\s\S]*?System Owner access is read-only here\. The venue owner prepares and submits remittance/,
+  );
+  assert.match(
+    financeView,
+    /dashboard\.openRemittances\.map\(\(item\) => <RemittanceCard[\s\S]*?history\.map\(\(item\) =>/,
+  );
+  assert.match(
+    financeView,
+    /Open and settled values come from remittance records and accepted payments—not from the analytics chart or a browser-side fee estimate\./,
+  );
+  assert.doesNotMatch(financeView, /snapshot\.bookings|platformBilling|feeMode|feeAmount/);
+
+  assert.match(
+    cssBlock(analyticsCss, ".workspace"),
+    /display:\s*grid;[\s\S]*?min-width:\s*0/,
+  );
+  assert.match(
+    cssBlock(analyticsCss, ".kpiGrid"),
+    /grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+  );
+  assert.match(
+    analyticsCss,
+    /\.segmentedControl button\s*\{[^}]*min-width:\s*76px;[^}]*min-height:\s*44px/s,
+  );
+  const tabletAnalyticsCss = cssBlock(analyticsCss, "@media (max-width: 768px)");
+  assert.match(
+    tabletAnalyticsCss,
+    /\.sectionHeader,[\s\S]*?\.controlRow\s*\{[^}]*flex-direction:\s*column/s,
+  );
+  assert.match(
+    tabletAnalyticsCss,
+    /\.financeGrid,[\s\S]*?\.remittanceGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  const phoneAnalyticsCss = cssBlock(analyticsCss, "@media (max-width: 480px)");
+  assert.match(
+    phoneAnalyticsCss,
+    /\.kpiGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    phoneAnalyticsCss,
+    /\.historyList li\s*\{[^}]*flex-direction:\s*column/s,
+  );
+  const narrowAnalyticsCss = cssBlock(analyticsCss, "@media (max-width: 340px)");
+  assert.match(
+    narrowAnalyticsCss,
+    /\.segmentedControl\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s,
+  );
 });
 
 test("keeps live Add Court and shared hours simple, safe, and responsive", async () => {
@@ -3881,7 +4361,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /@media\s*\(max-width:\s*680px\)[\s\S]*?\.dataTable[^\{]*\{[^}]*display:\s*block/s,
+    /@media\s*\(max-width:\s*680px\)[\s\S]*?\.bookingRecord\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-areas:\s*"identity"\s*"session"\s*"payment"\s*"footer"[^}]*\}[\s\S]*?\.bookingRecordFooter\s*\{[^}]*flex-direction:\s*column/s,
+  );
+  assert.match(
+    manageCss,
+    /\.bookingRecordActions \.reviewPaymentButton\s*\{[^}]*min-height:\s*44px[^}]*\}[\s\S]*?\.bookingRecordActions \.miniButton,[\s\S]*?\.bookingRecordActions \.moreButton\s*\{[^}]*min-height:\s*44px/s,
   );
   assert.match(
     manageCss,
@@ -3930,7 +4414,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     );
     assert.ok(
       numericWeights.every((weight) =>
-        [400, 500, 600, 700, 800].includes(weight),
+        [400, 500, 600, 700, 750, 800].includes(weight),
       ),
     );
   }

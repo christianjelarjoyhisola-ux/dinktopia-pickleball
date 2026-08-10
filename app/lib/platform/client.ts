@@ -811,6 +811,56 @@ export async function getManagerSession(accessToken: string) {
   );
 }
 
+export async function getManagerRegularBookingReport(
+  accessToken: string,
+  input: {
+    dateFrom: string;
+    dateTo: string;
+    courtId?: string | null;
+  },
+): Promise<unknown> {
+  return rpc<unknown>(
+    "get_manager_regular_booking_report",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+      p_date_from: input.dateFrom,
+      p_date_to: input.dateTo,
+      p_court_id: input.courtId || null,
+    },
+    accessToken,
+  );
+}
+
+export async function getBookingFeeRemittanceDashboard(
+  accessToken: string,
+): Promise<unknown> {
+  return rpc<unknown>(
+    "get_booking_fee_remittance_dashboard",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+    },
+    accessToken,
+  );
+}
+
+export async function getBookingFeeRemittanceHistory(
+  accessToken: string,
+  options: { limit?: number; before?: string | null } = {},
+): Promise<unknown> {
+  return rpc<unknown>(
+    "get_booking_fee_remittance_history",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+      p_limit: options.limit ?? 50,
+      p_before: options.before || null,
+    },
+    accessToken,
+  );
+}
+
 export async function getManagerCourts(accessToken: string) {
   return rpc<Array<Record<string, unknown>>>(
     "get_tenant_courts_for_manager",

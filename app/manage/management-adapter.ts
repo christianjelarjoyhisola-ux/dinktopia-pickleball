@@ -11,7 +11,10 @@ import {
   deleteTenantPaymentQr,
   getActivationSettings,
   getBlockedDateAccess,
+  getBookingFeeRemittanceDashboard,
+  getBookingFeeRemittanceHistory,
   getManagerCourts,
+  getManagerRegularBookingReport,
   getManagerSession,
   getPaymentReceiptView,
   getRemittanceDestination,
@@ -43,6 +46,7 @@ export type ManagementCapability =
   | "schedule:block"
   | "customer:view"
   | "report:view"
+  | "finance:view"
   | "settings:update"
   | "tenant:publish";
 
@@ -59,7 +63,9 @@ export type BookingStatus =
   | "payment_review"
   | "payment_attention"
   | "checked_in"
-  | "completed";
+  | "completed"
+  | "cancelled"
+  | "expired";
 
 export type BookingPaymentStatus =
   | "unpaid"
@@ -145,6 +151,186 @@ export type RemittanceDestination = {
   dueDay: number;
   instructions: string | null;
   qrUrl: string | null;
+};
+
+export type ReportLifecycleCounts = {
+  pendingPayment: number;
+  paymentReview: number;
+  confirmed: number;
+  completed: number;
+  cancelled: number;
+  expired: number;
+};
+
+export type ReportPaymentCounts = {
+  unpaid: number;
+  pending: number;
+  partial: number;
+  paid: number;
+  refunded: number;
+  rejected: number;
+};
+
+export type RegularBookingReport = {
+  contractVersion: 1;
+  tenantSlug: string;
+  asOf: string;
+  timezone: string;
+  range: {
+    dateFrom: string;
+    dateTo: string;
+    dayCount: number;
+    inclusive: true;
+    basis: "local_booking_date";
+  };
+  courtId: string | null;
+  currency: string;
+  complete: boolean;
+  completeness: {
+    allMatchingRowsAggregated: true;
+    aggregationComplete: boolean;
+    anomalyCount: number;
+    currentStateSnapshot: true;
+    fullPaymentEventLedgerIncluded: false;
+    fullRefundEventLedgerIncluded: false;
+  };
+  boundary: {
+    bookingType: "regular";
+    dateBasis: "local_booking_date";
+    overnightHoursSplitAcrossDays: false;
+    financialBasis: string;
+    paidGrossDefinition: string;
+    venueSalesDefinition: string;
+    platformBookingFeeDefinition: string;
+    recordedRefundDefinition: string;
+    netRevenueIncluded: false;
+    remittanceDueIncluded: false;
+    remittanceContract: "get_booking_fee_remittance_dashboard";
+  };
+  summary: {
+    totalBookingCount: number;
+    recordedBookingHours: number;
+    bookedHours: number;
+    paidBookingCount: number;
+    venueSalesPaid: number;
+    platformBookingFeesPaid: number;
+    grossPaid: number;
+    recordedRefundedBookingCount: number;
+    recordedRefunds: number;
+    averagePaidBookingValue: number;
+    lifecycleCounts: ReportLifecycleCounts;
+    paymentCounts: ReportPaymentCounts;
+  };
+  breakdowns: {
+    daily: Array<{
+      date: string;
+      totalBookingCount: number;
+      recordedBookingHours: number;
+      bookedHours: number;
+      paidBookingCount: number;
+      venueSalesPaid: number;
+      platformBookingFeesPaid: number;
+      grossPaid: number;
+      recordedRefunds: number;
+      lifecycleCounts: ReportLifecycleCounts;
+    }>;
+    courts: Array<{
+      courtId: string;
+      courtName: string;
+      courtStatus: string;
+      totalBookingCount: number;
+      recordedBookingHours: number;
+      bookedHours: number;
+      paidBookingCount: number;
+      venueSalesPaid: number;
+      platformBookingFeesPaid: number;
+      grossPaid: number;
+      recordedRefunds: number;
+    }>;
+    paymentStatuses: Array<{
+      status: keyof ReportPaymentCounts;
+      bookingCount: number;
+      customerTotalSnapshot: number;
+      grossPaid: number;
+      recordedRefunds: number;
+    }>;
+    lifecycleStatuses: Array<{
+      status: "pending_payment" | "payment_review" | "confirmed" | "completed" | "cancelled" | "expired";
+      bookingCount: number;
+      recordedBookingHours: number;
+      bookedHours: number;
+      grossPaid: number;
+      recordedRefunds: number;
+    }>;
+  };
+};
+
+export type RemittanceStatus =
+  | "draft"
+  | "due"
+  | "submitted"
+  | "under_review"
+  | "settled"
+  | "rejected"
+  | "void";
+
+export type RemittanceSummary = {
+  id: string;
+  reference: string;
+  venueName: string;
+  status: RemittanceStatus;
+  cycleDueOn: string | null;
+  periodStart: string | null;
+  periodEnd: string | null;
+  preparedAt: string;
+  submittedAt: string | null;
+  settledAt: string | null;
+  cancelledAt: string | null;
+  amountDue: number;
+  amountSettled: number;
+  remainingBalance: number;
+  currency: string;
+  bookingsCount: number;
+  billableHours: number;
+};
+
+export type RemittanceDashboard = {
+  serverNow: string;
+  timezone: string;
+  role: "system_owner" | "court_owner";
+  nextDueOn: string;
+  canPrepare: { allowed: boolean; reason: string };
+  accumulated: {
+    bookingsCount: number;
+    billableHours: number;
+    flatFeeBookingCount: number;
+    amountDue: number;
+  };
+  openRemittances: RemittanceSummary[];
+  settledTotal: number;
+  paymentDestination: {
+    method: "gcash" | "maya" | "bank_transfer" | "other";
+    accountName: string | null;
+    accountReference: string | null;
+    instructions: string | null;
+    configured: boolean;
+  } | null;
+};
+
+export type ManagementInsights = {
+  mode: "preview" | "live";
+  report: RegularBookingReport | null;
+  finance: {
+    dashboard: RemittanceDashboard;
+    history: RemittanceSummary[];
+  } | null;
+  loadedAt: string;
+};
+
+export type ManagementInsightFilters = {
+  dateFrom: string;
+  dateTo: string;
+  courtId?: string | null;
 };
 
 export type Customer = {
@@ -267,6 +453,11 @@ export type CourtBlock = {
   createdBy: string | null;
 };
 
+export type CalendarDaySnapshot = {
+  bookings: Booking[];
+  blocks: CourtBlock[];
+};
+
 export type SetupItem = {
   id: string;
   label: string;
@@ -308,6 +499,15 @@ export type ManagementActionResult = {
  */
 export interface ManagementAdapter {
   load(context: ManagementContext): Promise<ManagementSnapshot>;
+  loadCalendarDay(
+    context: ManagementContext,
+    current: ManagementSnapshot,
+    date: string,
+  ): Promise<CalendarDaySnapshot>;
+  loadInsights(
+    context: ManagementContext,
+    filters: ManagementInsightFilters,
+  ): Promise<ManagementInsights>;
   refreshOperations(
     context: ManagementContext,
     current: ManagementSnapshot,
@@ -336,6 +536,7 @@ export const previewRoleSessions: Record<TenantRole, ManagementCapability[]> = {
     "payment:asset",
     "customer:view",
     "report:view",
+    "finance:view",
     "settings:update",
   ],
   admin: [
@@ -345,6 +546,7 @@ export const previewRoleSessions: Record<TenantRole, ManagementCapability[]> = {
     "payment:review",
     "customer:view",
     "report:view",
+    "finance:view",
     "settings:update",
   ],
   staff: [
@@ -734,7 +936,7 @@ export const managementAdapter: ManagementAdapter = {
       policyResult,
       remittanceResult,
     ] = await Promise.all([
-      listManagerBookings(session.access_token, { activeOnly: true, limit: 100 }),
+      listManagerBookings(session.access_token, { activeOnly: false, limit: 100 }),
       listManagerBlocks(session.access_token, { limit: 100 }),
       canReadManagerSettings
         ? getActivationSettings(session.access_token).catch(() => null)
@@ -822,6 +1024,7 @@ export const managementAdapter: ManagementAdapter = {
           "schedule:block": blockAccess?.canManage === true,
           "customer:view": true,
           "report:view": true,
+          "finance:view": canReadManagerSettings,
           "settings:update": courtResult !== null &&
             activationPermissions.canManageVenueSettings,
           "tenant:publish": activationPermissions.canActivatePublicBooking,
@@ -839,6 +1042,80 @@ export const managementAdapter: ManagementAdapter = {
       },
     };
   },
+  async loadCalendarDay(context, current, date) {
+    if (!DATE_PATTERN.test(date)) {
+      throw new Error("CALENDAR_DATE_INVALID");
+    }
+    if (platformMode() === "preview") {
+      return {
+        bookings: previewSnapshot.bookings.filter((booking) => booking.bookingDate === date),
+        blocks: previewSnapshot.blocks.filter((block) => block.dateValue === date),
+      };
+    }
+
+    assertDinktopiaContext(context);
+    if (
+      current.tenant.mode !== "live" ||
+      current.tenant.slug !== activeTenant.identity.slug
+    ) {
+      throw new Error("LIVE_TENANT_SCOPE_MISMATCH");
+    }
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const [serverSessionResult, bookingResult, blockResult] = await Promise.all([
+      getManagerSession(session.access_token),
+      listManagerBookings(session.access_token, {
+        date,
+        activeOnly: true,
+        limit: 500,
+      }),
+      listManagerBlocks(session.access_token, { date, limit: 500 }),
+    ]);
+    const serverSession = normalizeManagerSession(serverSessionResult);
+    if (!authorityCapabilities(serverSession).length) {
+      throw new Error("CALENDAR_VIEW_ACCESS_DENIED");
+    }
+    const courtNames = new Map(current.courts.map((court) => [court.id, court.name]));
+    return {
+      bookings: bookingResult.bookings.map((row) => mapLiveBooking(row, courtNames)),
+      blocks: blockResult.blockedDates.map((row) => mapLiveBlock(row, courtNames)),
+    };
+  },
+  async loadInsights(context, filters) {
+    if (platformMode() === "preview") {
+      return {
+        mode: "preview",
+        report: null,
+        finance: null,
+        loadedAt: formatManilaDateTime(new Date()),
+      };
+    }
+
+    assertDinktopiaContext(context);
+    const normalizedFilters = insightFilters(filters);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(
+      await getManagerSession(session.access_token),
+    );
+    assertInsightsViewer(authority);
+
+    const [reportResult, remittanceResult, historyResult] = await Promise.all([
+      getManagerRegularBookingReport(session.access_token, normalizedFilters),
+      getBookingFeeRemittanceDashboard(session.access_token),
+      getBookingFeeRemittanceHistory(session.access_token, { limit: 50 }),
+    ]);
+
+    return {
+      mode: "live",
+      report: regularBookingReport(reportResult, normalizedFilters),
+      finance: {
+        dashboard: remittanceDashboard(remittanceResult),
+        history: remittanceHistory(historyResult),
+      },
+      loadedAt: formatManilaDateTime(new Date()),
+    };
+  },
   async refreshOperations(context, current) {
     if (platformMode() === "preview") return previewSnapshot;
     assertDinktopiaContext(context);
@@ -853,7 +1130,7 @@ export const managementAdapter: ManagementAdapter = {
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const [serverSessionResult, bookingResult] = await Promise.all([
       getManagerSession(session.access_token),
-      listManagerBookings(session.access_token, { activeOnly: true, limit: 100 }),
+      listManagerBookings(session.access_token, { activeOnly: false, limit: 100 }),
     ]);
     const serverSession = normalizeManagerSession(serverSessionResult);
     const bookingRows = bookingResult.bookings;
@@ -1346,6 +1623,15 @@ function assertPaymentAssetManager(session: VerifiedManagerSession): void {
   }
 }
 
+function assertInsightsViewer(session: VerifiedManagerSession): void {
+  if (
+    !session.isSystemOwner && session.membershipRole !== "owner" &&
+    session.membershipRole !== "admin"
+  ) {
+    throw new Error("FINANCE_VIEW_ACCESS_DENIED");
+  }
+}
+
 function assertBookingManager(
   session: VerifiedManagerSession,
   action: "create" | "reschedule" | "cancel" | "check-in",
@@ -1559,6 +1845,7 @@ function authorityCapabilities(session: VerifiedManagerSession): ManagementCapab
       "schedule:block",
       "customer:view",
       "report:view",
+      "finance:view",
       "settings:update",
       "tenant:publish",
     ];
@@ -1574,6 +1861,7 @@ function authorityCapabilities(session: VerifiedManagerSession): ManagementCapab
       "schedule:block",
       "customer:view",
       "report:view",
+      "finance:view",
       "settings:update",
     ];
   }
@@ -1587,6 +1875,7 @@ function authorityCapabilities(session: VerifiedManagerSession): ManagementCapab
       "schedule:block",
       "customer:view",
       "report:view",
+      "finance:view",
       "settings:update",
     ];
   }
@@ -2291,6 +2580,518 @@ function assertNoPayload(candidate: unknown): void {
   if (candidate !== undefined) throw new Error("LIVE_ACTION_PAYLOAD_UNEXPECTED");
 }
 
+function insightFilters(
+  candidate: ManagementInsightFilters,
+): Required<Omit<ManagementInsightFilters, "courtId">> & { courtId: string | null } {
+  const dateFrom = validDate(candidate.dateFrom, "REPORT_DATE_RANGE_INVALID");
+  const dateTo = validDate(candidate.dateTo, "REPORT_DATE_RANGE_INVALID");
+  const start = Date.parse(`${dateFrom}T00:00:00Z`);
+  const end = Date.parse(`${dateTo}T00:00:00Z`);
+  const elapsedDays = Math.round((end - start) / 86_400_000);
+  if (elapsedDays < 0 || elapsedDays > 365) {
+    throw new Error("REPORT_DATE_RANGE_INVALID");
+  }
+  return {
+    dateFrom,
+    dateTo,
+    courtId: candidate.courtId
+      ? requiredUuid(candidate.courtId, "REPORT_COURT_ID_INVALID")
+      : null,
+  };
+}
+
+function reportObject(candidate: unknown, errorCode: string): JsonObject {
+  const result = record(candidate);
+  if (!result) throw new Error(errorCode);
+  return result;
+}
+
+function reportArray(candidate: unknown, errorCode: string): unknown[] {
+  if (!Array.isArray(candidate)) throw new Error(errorCode);
+  return candidate;
+}
+
+function reportText(
+  candidate: unknown,
+  errorCode: string,
+  maximum = 500,
+): string {
+  const result = typeof candidate === "string" ? candidate.trim() : "";
+  if (!result || result.length > maximum) throw new Error(errorCode);
+  return result;
+}
+
+function reportNullableText(
+  candidate: unknown,
+  errorCode: string,
+  maximum = 500,
+): string | null {
+  if (candidate === null || candidate === undefined) return null;
+  return reportText(candidate, errorCode, maximum);
+}
+
+function reportNumber(candidate: unknown, errorCode: string): number {
+  const result = typeof candidate === "number"
+    ? candidate
+    : typeof candidate === "string" && candidate.trim()
+      ? Number(candidate)
+      : Number.NaN;
+  if (!Number.isFinite(result) || result < 0) throw new Error(errorCode);
+  return result;
+}
+
+function reportInteger(candidate: unknown, errorCode: string): number {
+  const result = reportNumber(candidate, errorCode);
+  if (!Number.isSafeInteger(result)) throw new Error(errorCode);
+  return result;
+}
+
+function reportBoolean(candidate: unknown, errorCode: string): boolean {
+  if (typeof candidate !== "boolean") throw new Error(errorCode);
+  return candidate;
+}
+
+function reportDate(candidate: unknown, errorCode: string): string {
+  return validDate(reportText(candidate, errorCode, 10), errorCode);
+}
+
+function reportNullableDate(candidate: unknown, errorCode: string): string | null {
+  if (candidate === null || candidate === undefined) return null;
+  return reportDate(candidate, errorCode);
+}
+
+function reportInstant(candidate: unknown, errorCode: string): string {
+  const result = reportText(candidate, errorCode, 80);
+  if (!Number.isFinite(new Date(result).getTime())) throw new Error(errorCode);
+  return result;
+}
+
+function reportNullableInstant(candidate: unknown, errorCode: string): string | null {
+  if (candidate === null || candidate === undefined) return null;
+  return reportInstant(candidate, errorCode);
+}
+
+function reportCurrency(candidate: unknown, errorCode: string): string {
+  const result = reportText(candidate, errorCode, 3).toUpperCase();
+  if (!/^[A-Z]{3}$/.test(result)) throw new Error(errorCode);
+  return result;
+}
+
+function reportLifecycleCounts(
+  candidate: unknown,
+  errorCode: string,
+): ReportLifecycleCounts {
+  const row = reportObject(candidate, errorCode);
+  return {
+    pendingPayment: reportInteger(row.pendingPayment, errorCode),
+    paymentReview: reportInteger(row.paymentReview, errorCode),
+    confirmed: reportInteger(row.confirmed, errorCode),
+    completed: reportInteger(row.completed, errorCode),
+    cancelled: reportInteger(row.cancelled, errorCode),
+    expired: reportInteger(row.expired, errorCode),
+  };
+}
+
+function reportPaymentCounts(
+  candidate: unknown,
+  errorCode: string,
+): ReportPaymentCounts {
+  const row = reportObject(candidate, errorCode);
+  return {
+    unpaid: reportInteger(row.unpaid, errorCode),
+    pending: reportInteger(row.pending, errorCode),
+    partial: reportInteger(row.partial, errorCode),
+    paid: reportInteger(row.paid, errorCode),
+    refunded: reportInteger(row.refunded, errorCode),
+    rejected: reportInteger(row.rejected, errorCode),
+  };
+}
+
+function assertReportHasNoPii(candidate: unknown): void {
+  if (!candidate || typeof candidate !== "object") return;
+  if (Array.isArray(candidate)) {
+    candidate.forEach(assertReportHasNoPii);
+    return;
+  }
+  for (const [key, nested] of Object.entries(candidate as JsonObject)) {
+    const normalized = key.replaceAll("_", "").toLowerCase();
+    if (
+      normalized === "customername" || normalized === "customeremail" ||
+      normalized === "customerphone" || normalized === "bookingreference" ||
+      normalized === "paymentreference" || normalized === "receipt" ||
+      normalized === "receipturl"
+    ) {
+      throw new Error("REGULAR_BOOKING_REPORT_PII_REJECTED");
+    }
+    assertReportHasNoPii(nested);
+  }
+}
+
+function sameAggregate(left: number, right: number): boolean {
+  return Math.abs(left - right) < 0.011;
+}
+
+function regularBookingReport(
+  candidate: unknown,
+  expected: { dateFrom: string; dateTo: string; courtId: string | null },
+): RegularBookingReport {
+  const errorCode = "REGULAR_BOOKING_REPORT_RESPONSE_INVALID";
+  assertReportHasNoPii(candidate);
+  const row = reportObject(candidate, errorCode);
+  const server = reportObject(row.server, errorCode);
+  const rangeRow = reportObject(row.range, errorCode);
+  const completenessRow = reportObject(row.completeness, errorCode);
+  const boundaryRow = reportObject(row.boundary, errorCode);
+  const summaryRow = reportObject(row.summary, errorCode);
+  const breakdownsRow = reportObject(row.breakdowns, errorCode);
+  const asOf = reportInstant(row.asOf, errorCode);
+  const timezone = reportText(row.timezone, errorCode, 80);
+  const dateFrom = reportDate(rangeRow.dateFrom, errorCode);
+  const dateTo = reportDate(rangeRow.dateTo, errorCode);
+  const dayCount = reportInteger(rangeRow.dayCount, errorCode);
+  const courtId = row.courtId === null
+    ? null
+    : requiredUuid(row.courtId, errorCode);
+  const expectedDayCount = Math.round(
+    (Date.parse(`${dateTo}T00:00:00Z`) - Date.parse(`${dateFrom}T00:00:00Z`)) /
+      86_400_000,
+  ) + 1;
+  if (
+    row.contractVersion !== 1 || row.tenantSlug !== activeTenant.identity.slug ||
+    reportInstant(server.asOf, errorCode) !== asOf ||
+    reportText(server.timezone, errorCode, 80) !== timezone ||
+    dateFrom !== expected.dateFrom || dateTo !== expected.dateTo ||
+    courtId !== expected.courtId || dayCount !== expectedDayCount ||
+    dayCount < 1 || dayCount > 366 ||
+    rangeRow.inclusive !== true || rangeRow.basis !== "local_booking_date"
+  ) {
+    throw new Error(errorCode);
+  }
+
+  const completeness = {
+    allMatchingRowsAggregated: reportBoolean(
+      completenessRow.allMatchingRowsAggregated,
+      errorCode,
+    ),
+    aggregationComplete: reportBoolean(completenessRow.aggregationComplete, errorCode),
+    anomalyCount: reportInteger(completenessRow.anomalyCount, errorCode),
+    currentStateSnapshot: reportBoolean(completenessRow.currentStateSnapshot, errorCode),
+    fullPaymentEventLedgerIncluded: reportBoolean(
+      completenessRow.fullPaymentEventLedgerIncluded,
+      errorCode,
+    ),
+    fullRefundEventLedgerIncluded: reportBoolean(
+      completenessRow.fullRefundEventLedgerIncluded,
+      errorCode,
+    ),
+  };
+  const complete = reportBoolean(row.complete, errorCode);
+  if (
+    completeness.allMatchingRowsAggregated !== true ||
+    completeness.currentStateSnapshot !== true ||
+    completeness.fullPaymentEventLedgerIncluded !== false ||
+    completeness.fullRefundEventLedgerIncluded !== false ||
+    complete !== completeness.aggregationComplete ||
+    complete !== (completeness.anomalyCount === 0)
+  ) {
+    throw new Error(errorCode);
+  }
+
+  if (
+    boundaryRow.bookingType !== "regular" ||
+    boundaryRow.dateBasis !== "local_booking_date" ||
+    boundaryRow.overnightHoursSplitAcrossDays !== false ||
+    boundaryRow.netRevenueIncluded !== false ||
+    boundaryRow.remittanceDueIncluded !== false ||
+    boundaryRow.remittanceContract !== "get_booking_fee_remittance_dashboard"
+  ) {
+    throw new Error(errorCode);
+  }
+
+  const summary = {
+    totalBookingCount: reportInteger(summaryRow.totalBookingCount, errorCode),
+    recordedBookingHours: reportNumber(summaryRow.recordedBookingHours, errorCode),
+    bookedHours: reportNumber(summaryRow.bookedHours, errorCode),
+    paidBookingCount: reportInteger(summaryRow.paidBookingCount, errorCode),
+    venueSalesPaid: reportNumber(summaryRow.venueSalesPaid, errorCode),
+    platformBookingFeesPaid: reportNumber(
+      summaryRow.platformBookingFeesPaid,
+      errorCode,
+    ),
+    grossPaid: reportNumber(summaryRow.grossPaid, errorCode),
+    recordedRefundedBookingCount: reportInteger(
+      summaryRow.recordedRefundedBookingCount,
+      errorCode,
+    ),
+    recordedRefunds: reportNumber(summaryRow.recordedRefunds, errorCode),
+    averagePaidBookingValue: reportNumber(
+      summaryRow.averagePaidBookingValue,
+      errorCode,
+    ),
+    lifecycleCounts: reportLifecycleCounts(summaryRow.lifecycleCounts, errorCode),
+    paymentCounts: reportPaymentCounts(summaryRow.paymentCounts, errorCode),
+  };
+
+  const daily = reportArray(breakdownsRow.daily, errorCode).map((entry) => {
+    const item = reportObject(entry, errorCode);
+    return {
+      date: reportDate(item.date, errorCode),
+      totalBookingCount: reportInteger(item.totalBookingCount, errorCode),
+      recordedBookingHours: reportNumber(item.recordedBookingHours, errorCode),
+      bookedHours: reportNumber(item.bookedHours, errorCode),
+      paidBookingCount: reportInteger(item.paidBookingCount, errorCode),
+      venueSalesPaid: reportNumber(item.venueSalesPaid, errorCode),
+      platformBookingFeesPaid: reportNumber(item.platformBookingFeesPaid, errorCode),
+      grossPaid: reportNumber(item.grossPaid, errorCode),
+      recordedRefunds: reportNumber(item.recordedRefunds, errorCode),
+      lifecycleCounts: reportLifecycleCounts(item.lifecycleCounts, errorCode),
+    };
+  });
+  if (daily.length !== dayCount) throw new Error(errorCode);
+  const start = Date.parse(`${dateFrom}T00:00:00Z`);
+  daily.forEach((entry, index) => {
+    const expectedDate = new Date(start + index * 86_400_000)
+      .toISOString()
+      .slice(0, 10);
+    if (entry.date !== expectedDate) throw new Error(errorCode);
+  });
+
+  const courts = reportArray(breakdownsRow.courts, errorCode).map((entry) => {
+    const item = reportObject(entry, errorCode);
+    return {
+      courtId: requiredUuid(item.courtId, errorCode),
+      courtName: reportText(item.courtName, errorCode, 160),
+      courtStatus: reportText(item.courtStatus, errorCode, 40),
+      totalBookingCount: reportInteger(item.totalBookingCount, errorCode),
+      recordedBookingHours: reportNumber(item.recordedBookingHours, errorCode),
+      bookedHours: reportNumber(item.bookedHours, errorCode),
+      paidBookingCount: reportInteger(item.paidBookingCount, errorCode),
+      venueSalesPaid: reportNumber(item.venueSalesPaid, errorCode),
+      platformBookingFeesPaid: reportNumber(item.platformBookingFeesPaid, errorCode),
+      grossPaid: reportNumber(item.grossPaid, errorCode),
+      recordedRefunds: reportNumber(item.recordedRefunds, errorCode),
+    };
+  });
+
+  const paymentStatusSet = new Set<keyof ReportPaymentCounts>();
+  const paymentStatuses = reportArray(
+    breakdownsRow.paymentStatuses,
+    errorCode,
+  ).map((entry) => {
+    const item = reportObject(entry, errorCode);
+    const status = reportText(item.status, errorCode, 30) as keyof ReportPaymentCounts;
+    if (
+      !["unpaid", "pending", "partial", "paid", "refunded", "rejected"].includes(status) ||
+      paymentStatusSet.has(status)
+    ) throw new Error(errorCode);
+    paymentStatusSet.add(status);
+    return {
+      status,
+      bookingCount: reportInteger(item.bookingCount, errorCode),
+      customerTotalSnapshot: reportNumber(item.customerTotalSnapshot, errorCode),
+      grossPaid: reportNumber(item.grossPaid, errorCode),
+      recordedRefunds: reportNumber(item.recordedRefunds, errorCode),
+    };
+  });
+
+  type LifecycleStatus = RegularBookingReport["breakdowns"]["lifecycleStatuses"][number]["status"];
+  const lifecycleStatusSet = new Set<LifecycleStatus>();
+  const lifecycleStatuses = reportArray(
+    breakdownsRow.lifecycleStatuses,
+    errorCode,
+  ).map((entry) => {
+    const item = reportObject(entry, errorCode);
+    const status = reportText(item.status, errorCode, 30) as LifecycleStatus;
+    if (
+      !["pending_payment", "payment_review", "confirmed", "completed", "cancelled", "expired"].includes(status) ||
+      lifecycleStatusSet.has(status)
+    ) throw new Error(errorCode);
+    lifecycleStatusSet.add(status);
+    return {
+      status,
+      bookingCount: reportInteger(item.bookingCount, errorCode),
+      recordedBookingHours: reportNumber(item.recordedBookingHours, errorCode),
+      bookedHours: reportNumber(item.bookedHours, errorCode),
+      grossPaid: reportNumber(item.grossPaid, errorCode),
+      recordedRefunds: reportNumber(item.recordedRefunds, errorCode),
+    };
+  });
+
+  if (
+    paymentStatusSet.size !== 6 || lifecycleStatusSet.size !== 6 ||
+    !sameAggregate(
+      daily.reduce((sum, entry) => sum + entry.grossPaid, 0),
+      summary.grossPaid,
+    ) ||
+    !sameAggregate(
+      courts.reduce((sum, entry) => sum + entry.grossPaid, 0),
+      summary.grossPaid,
+    ) ||
+    !sameAggregate(
+      paymentStatuses.reduce((sum, entry) => sum + entry.grossPaid, 0),
+      summary.grossPaid,
+    ) ||
+    !sameAggregate(
+      lifecycleStatuses.reduce((sum, entry) => sum + entry.grossPaid, 0),
+      summary.grossPaid,
+    )
+  ) {
+    throw new Error(errorCode);
+  }
+
+  return {
+    contractVersion: 1,
+    tenantSlug: activeTenant.identity.slug,
+    asOf,
+    timezone,
+    range: {
+      dateFrom,
+      dateTo,
+      dayCount,
+      inclusive: true,
+      basis: "local_booking_date",
+    },
+    courtId,
+    currency: reportCurrency(row.currency, errorCode),
+    complete,
+    completeness: {
+      ...completeness,
+      allMatchingRowsAggregated: true,
+      currentStateSnapshot: true,
+      fullPaymentEventLedgerIncluded: false,
+      fullRefundEventLedgerIncluded: false,
+    },
+    boundary: {
+      bookingType: "regular",
+      dateBasis: "local_booking_date",
+      overnightHoursSplitAcrossDays: false,
+      financialBasis: reportText(boundaryRow.financialBasis, errorCode),
+      paidGrossDefinition: reportText(boundaryRow.paidGrossDefinition, errorCode),
+      venueSalesDefinition: reportText(boundaryRow.venueSalesDefinition, errorCode),
+      platformBookingFeeDefinition: reportText(
+        boundaryRow.platformBookingFeeDefinition,
+        errorCode,
+      ),
+      recordedRefundDefinition: reportText(
+        boundaryRow.recordedRefundDefinition,
+        errorCode,
+      ),
+      netRevenueIncluded: false,
+      remittanceDueIncluded: false,
+      remittanceContract: "get_booking_fee_remittance_dashboard",
+    },
+    summary,
+    breakdowns: { daily, courts, paymentStatuses, lifecycleStatuses },
+  };
+}
+
+const REMITTANCE_STATUSES = new Set<RemittanceStatus>([
+  "draft",
+  "due",
+  "submitted",
+  "under_review",
+  "settled",
+  "rejected",
+  "void",
+]);
+
+function remittanceSummary(candidate: unknown): RemittanceSummary {
+  const errorCode = "REMITTANCE_SUMMARY_RESPONSE_INVALID";
+  const row = reportObject(candidate, errorCode);
+  const status = reportText(row.status, errorCode, 30) as RemittanceStatus;
+  if (!REMITTANCE_STATUSES.has(status)) throw new Error(errorCode);
+  const amountDue = reportNumber(row.amount_due, errorCode);
+  const amountSettled = reportNumber(row.amount_settled, errorCode);
+  const remainingBalance = reportNumber(row.remaining_balance, errorCode);
+  if (
+    amountSettled > amountDue + 0.01 ||
+    !sameAggregate(Math.max(amountDue - amountSettled, 0), remainingBalance)
+  ) throw new Error(errorCode);
+  return {
+    id: requiredUuid(row.id ?? row.remittance_id, errorCode),
+    reference: reportText(row.reference ?? row.remittance_ref, errorCode, 120),
+    venueName: reportText(row.venue_name, errorCode, 160),
+    status,
+    cycleDueOn: reportNullableDate(row.cycle_due_on, errorCode),
+    periodStart: reportNullableDate(row.period_start, errorCode),
+    periodEnd: reportNullableDate(row.period_end, errorCode),
+    preparedAt: reportInstant(row.prepared_at, errorCode),
+    submittedAt: reportNullableInstant(row.submitted_at, errorCode),
+    settledAt: reportNullableInstant(row.settled_at, errorCode),
+    cancelledAt: reportNullableInstant(row.cancelled_at, errorCode),
+    amountDue,
+    amountSettled,
+    remainingBalance,
+    currency: reportCurrency(row.currency, errorCode),
+    bookingsCount: reportInteger(row.bookings_count, errorCode),
+    billableHours: reportNumber(row.billable_hours, errorCode),
+  };
+}
+
+function remittanceDashboard(candidate: unknown): RemittanceDashboard {
+  const errorCode = "REMITTANCE_DASHBOARD_RESPONSE_INVALID";
+  const row = reportObject(candidate, errorCode);
+  const permission = reportObject(row.can_prepare, errorCode);
+  const accumulatedRow = reportObject(row.accumulated, errorCode);
+  const rawRole = reportText(row.role, errorCode, 30);
+  if (rawRole !== "owner" && rawRole !== "court_owner") throw new Error(errorCode);
+  const destinationRow = row.payment_destination === null
+    ? null
+    : reportObject(row.payment_destination, errorCode);
+  const paymentDestination = destinationRow
+    ? (() => {
+        const method = reportText(destinationRow.method, errorCode, 30);
+        if (!["gcash", "maya", "bank_transfer", "other"].includes(method)) {
+          throw new Error(errorCode);
+        }
+        const accountName = reportNullableText(destinationRow.account_name, errorCode, 160);
+        const accountReference = reportNullableText(
+          destinationRow.account_reference,
+          errorCode,
+          120,
+        );
+        return {
+          method: method as "gcash" | "maya" | "bank_transfer" | "other",
+          accountName,
+          accountReference,
+          instructions: reportNullableText(destinationRow.instructions, errorCode, 2_000),
+          configured: Boolean(accountName && accountReference),
+        };
+      })()
+    : null;
+
+  return {
+    serverNow: reportInstant(row.server_now, errorCode),
+    timezone: reportText(row.timezone, errorCode, 80),
+    role: rawRole === "owner" ? "system_owner" : "court_owner",
+    nextDueOn: reportDate(row.next_due_on, errorCode),
+    canPrepare: {
+      allowed: reportBoolean(permission.allowed, errorCode),
+      reason: reportText(permission.reason, errorCode, 500),
+    },
+    accumulated: {
+      bookingsCount: reportInteger(accumulatedRow.bookings_count, errorCode),
+      billableHours: reportNumber(accumulatedRow.billable_hours, errorCode),
+      flatFeeBookingCount: reportInteger(
+        accumulatedRow.flat_fee_booking_count,
+        errorCode,
+      ),
+      amountDue: reportNumber(accumulatedRow.amount_due, errorCode),
+    },
+    openRemittances: reportArray(row.open_remittances, errorCode).map(
+      remittanceSummary,
+    ),
+    settledTotal: reportNumber(row.settled_total, errorCode),
+    paymentDestination,
+  };
+}
+
+function remittanceHistory(candidate: unknown): RemittanceSummary[] {
+  return reportArray(candidate, "REMITTANCE_HISTORY_RESPONSE_INVALID").map(
+    remittanceSummary,
+  );
+}
+
 function record(candidate: unknown): JsonObject | null {
   return candidate && typeof candidate === "object" && !Array.isArray(candidate)
     ? (candidate as JsonObject)
@@ -2338,6 +3139,8 @@ function liveStatus(
   paymentEvidence: PaymentEvidence | null,
 ): BookingStatus {
   const status = value(row, ["status"]).toLowerCase();
+  if (status === "cancelled") return "cancelled";
+  if (status === "expired") return "expired";
   if (status === "completed") return "completed";
   if (value(row, ["checked_in_at"])) return "checked_in";
   if (status === "confirmed") return "confirmed";
@@ -2783,24 +3586,29 @@ function deriveLiveSchedule(
   blockRows: JsonObject[],
   courtNames: ReadonlyMap<string, string>,
 ): ScheduleSlot[] {
-  const bookingSlots = bookingRows.map((row) => {
-    const booking = mapLiveBooking(row, courtNames);
-    const startsAt = parsedInstant(row, ["starts_at"]);
-    const endsAt = parsedInstant(row, ["ends_at"]);
-    const rawStatus = value(row, ["status"]);
-    return {
-      id: booking.id,
-      courtId: value(row, ["court_id"]),
-      start: startsAt ? formatManilaClock(startsAt) : "00:00",
-      end: endsAt ? formatManilaClock(endsAt) : "00:00",
-      label: booking.customer,
-      detail: `${humanizeReason(rawStatus)} · ${booking.duration}`,
-      kind:
-        rawStatus === "pending_payment" || rawStatus === "payment_review"
-          ? "hold"
-          : "booking",
-    } satisfies ScheduleSlot;
-  });
+  const bookingSlots = bookingRows
+    .filter((row) => {
+      const status = value(row, ["status"]).toLowerCase();
+      return status !== "cancelled" && status !== "expired";
+    })
+    .map((row) => {
+      const booking = mapLiveBooking(row, courtNames);
+      const startsAt = parsedInstant(row, ["starts_at"]);
+      const endsAt = parsedInstant(row, ["ends_at"]);
+      const rawStatus = value(row, ["status"]);
+      return {
+        id: booking.id,
+        courtId: value(row, ["court_id"]),
+        start: startsAt ? formatManilaClock(startsAt) : "00:00",
+        end: endsAt ? formatManilaClock(endsAt) : "00:00",
+        label: booking.customer,
+        detail: `${humanizeReason(rawStatus)} · ${booking.duration}`,
+        kind:
+          rawStatus === "pending_payment" || rawStatus === "payment_review"
+            ? "hold"
+            : "booking",
+      } satisfies ScheduleSlot;
+    });
 
   const blockSlots = blockRows.map((row) => {
     const block = mapLiveBlock(row, courtNames);

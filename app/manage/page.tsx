@@ -12,6 +12,12 @@ import {
   type ReactNode,
 } from "react";
 import styles from "./manage.module.css";
+import { CalendarView } from "./calendar-view";
+import {
+  AnalyticsView,
+  FinanceView,
+  type AnalyticsPeriod,
+} from "./analytics-finance";
 import {
   formatPeso,
   isAllowedCustomerQrUrl,
@@ -24,6 +30,7 @@ import {
   type ManagementCapability,
   type ManagementActionResult,
   type ManagementContext,
+  type ManagementInsights,
   type ManagementSnapshot,
   type PaymentReceiptView,
   type RemittanceDestination,
@@ -58,12 +65,19 @@ type View =
   | "blocks"
   | "customers"
   | "reports"
+  | "finance"
   | "settings"
   | "launch"
   | "access";
 
 type PreviewState = "ready" | "loading" | "empty" | "error" | "restricted";
-type BookingFilter = "all" | "needs_review" | BookingStatus;
+type BookingFilter =
+  | "all"
+  | "awaiting"
+  | "pending"
+  | "confirmed"
+  | "completed"
+  | "cancelled";
 
 type ConfirmAction = {
   title: string;
@@ -84,10 +98,11 @@ type ToastState = {
 const NAV_ITEMS: { id: View; label: string; short: string }[] = [
   { id: "overview", label: "Overview", short: "OV" },
   { id: "bookings", label: "Bookings", short: "BK" },
-  { id: "schedule", label: "Schedule", short: "SC" },
+  { id: "schedule", label: "Calendar", short: "CA" },
   { id: "blocks", label: "Court blocks", short: "BL" },
   { id: "customers", label: "Customers", short: "CU" },
-  { id: "reports", label: "Reports", short: "RP" },
+  { id: "reports", label: "Analytics", short: "AN" },
+  { id: "finance", label: "Finance", short: "FN" },
   { id: "settings", label: "Venue settings", short: "ST" },
   { id: "launch", label: "Launch", short: "GO" },
   { id: "access", label: "Team & access", short: "AC" },
@@ -96,6 +111,7 @@ const NAV_ITEMS: { id: View; label: string; short: string }[] = [
 const VIEW_CAPABILITY: Partial<Record<View, ManagementCapability>> = {
   customers: "customer:view",
   reports: "report:view",
+  finance: "finance:view",
   settings: "settings:update",
   launch: "tenant:publish",
 };
@@ -109,12 +125,12 @@ const VIEW_COPY: Record<View, { eyebrow: string; title: string; description: str
   bookings: {
     eyebrow: "Booking desk",
     title: "Bookings",
-    description: "Find reservations, confirm payments and keep arrivals moving.",
+    description: "Find reservations, confirm payments and keep every court organized.",
   },
   schedule: {
     eyebrow: "Court operations",
-    title: "Schedule",
-    description: "See every court, hold and block in one conflict-aware timeline.",
+    title: "Calendar",
+    description: "See bookings, payment holds and court blocks for an exact operating day.",
   },
   blocks: {
     eyebrow: "Availability controls",
@@ -128,8 +144,13 @@ const VIEW_COPY: Record<View, { eyebrow: string; title: string; description: str
   },
   reports: {
     eyebrow: "Performance",
-    title: "Reports",
-    description: "Track revenue, occupancy and demand without losing the court-level detail.",
+    title: "Analytics",
+    description: "Track paid booking value and court performance from authoritative records.",
+  },
+  finance: {
+    eyebrow: "Platform fee ledger",
+    title: "Finance & remittance",
+    description: "Monitor accrued platform fees, due cycles and settled remittances.",
   },
   settings: {
     eyebrow: "Tenant configuration",
@@ -155,14 +176,14 @@ const LIVE_VIEW_COPY: Record<View, { eyebrow: string; title: string; description
     description: "Authenticated, server-scoped booking data and launch readiness.",
   },
   bookings: {
-    eyebrow: "Tenant booking register",
-    title: "Loaded bookings",
-    description: "Review booking rows returned for the authenticated tenant session.",
+    eyebrow: "Booking desk",
+    title: "Bookings",
+    description: "Review reservations, payments and completed sessions in one organized workspace.",
   },
   schedule: {
-    eyebrow: "Read-only operations",
-    title: "Loaded schedule",
-    description: "Review loaded bookings and court blocks without assuming future availability.",
+    eyebrow: "Court operations",
+    title: "Calendar",
+    description: "Review the exact bookings, payment holds and blocks returned for each day.",
   },
   blocks: {
     eyebrow: "Protected availability",
@@ -175,9 +196,14 @@ const LIVE_VIEW_COPY: Record<View, { eyebrow: string; title: string; description
     description: "Customer details require a tenant-scoped capability from the shared platform.",
   },
   reports: {
-    eyebrow: "Protected reporting",
-    title: "Reports",
-    description: "Reporting appears only when the authenticated session is authorized to view it.",
+    eyebrow: "Authoritative performance",
+    title: "Analytics",
+    description: "Review complete regular-booking totals and trends for a selected period.",
+  },
+  finance: {
+    eyebrow: "Platform fee ledger",
+    title: "Finance & remittance",
+    description: "Monitor exact accrued, open and settled platform booking-fee remittances.",
   },
   settings: {
     eyebrow: "Server-authorized setup",
@@ -209,9 +235,63 @@ const STATUS_LABEL: Record<BookingStatus, string> = {
   receipt_processing: "Receipt processing",
   payment_review: "Review required",
   payment_attention: "Payment needs attention",
-  checked_in: "Checked in",
+  checked_in: "Confirmed",
   completed: "Completed",
+  cancelled: "Cancelled",
+  expired: "Expired",
 };
+
+const BOOKING_FILTERS: ReadonlyArray<{ value: BookingFilter; label: string }> = [
+  { value: "all", label: "All" },
+  { value: "awaiting", label: "Awaiting" },
+  { value: "pending", label: "Pending" },
+  { value: "confirmed", label: "Confirmed" },
+  { value: "completed", label: "Completed" },
+  { value: "cancelled", label: "Cancelled" },
+];
+
+function bookingMatchesFilter(booking: Booking, filter: BookingFilter): boolean {
+  if (filter === "all") return true;
+  if (filter === "awaiting") return booking.status === "awaiting_receipt";
+  if (filter === "pending") {
+    return booking.status === "receipt_processing" ||
+      booking.status === "payment_review" ||
+      booking.status === "payment_attention";
+  }
+  if (filter === "confirmed") {
+    return booking.status === "confirmed" || booking.status === "checked_in";
+  }
+  if (filter === "completed") return booking.status === "completed";
+  return booking.status === "cancelled" || booking.status === "expired";
+}
+
+function bookingStatusDetail(booking: Booking): string {
+  switch (booking.status) {
+    case "awaiting_receipt":
+      return "Waiting for the player to upload a payment receipt.";
+    case "receipt_processing":
+      return "Receipt uploaded. Secure verification is in progress.";
+    case "payment_review":
+      return "Receipt is ready for venue review.";
+    case "payment_attention":
+      if (booking.payment === "rejected" || booking.paymentEvidence?.status === "rejected") {
+        return "Payment was rejected. Contact the player before confirming.";
+      }
+      if (booking.paymentEvidence?.status === "short_payment") {
+        return "Payment is short. Review the remaining balance with the player.";
+      }
+      return "Payment needs venue attention before this booking can be confirmed.";
+    case "confirmed":
+    case "checked_in":
+      return "The court is reserved and the payment is confirmed.";
+    case "completed":
+      return "This court session is complete.";
+    case "cancelled":
+      return "This booking was cancelled and no longer reserves the court.";
+    case "expired":
+      return "The payment window expired and the court is no longer held.";
+  }
+}
 
 const PAYMENT_LABEL: Record<BookingPaymentStatus, string> = {
   unpaid: "Unpaid",
@@ -233,6 +313,28 @@ function manilaCalendarDate(): string {
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((entry) => entry.type === type)?.value ?? "";
   return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function shiftIsoCalendarDate(value: string, days: number): string {
+  const candidate = new Date(`${value}T12:00:00Z`);
+  if (!Number.isFinite(candidate.getTime())) return value;
+  candidate.setUTCDate(candidate.getUTCDate() + days);
+  return candidate.toISOString().slice(0, 10);
+}
+
+function analyticsDateRange(period: AnalyticsPeriod) {
+  const dateTo = manilaCalendarDate();
+  const dayCount = period === "today"
+    ? 1
+    : period === "7d"
+      ? 7
+      : period === "30d"
+        ? 30
+        : 90;
+  return {
+    dateFrom: shiftIsoCalendarDate(dateTo, -(dayCount - 1)),
+    dateTo,
+  };
 }
 
 function blockCalendarParts(dateValue: string | null, fallback: string) {
@@ -273,6 +375,7 @@ const CAPABILITY_LABEL: Record<ManagementCapability, string> = {
   "schedule:block": "Block court time",
   "customer:view": "View customers",
   "report:view": "View reports",
+  "finance:view": "View finance & remittances",
   "settings:update": "Change venue settings",
   "tenant:publish": "Request live activation",
 };
@@ -488,10 +591,13 @@ function OverviewView({
   const progress = snapshot.setup.length
     ? Math.round((completed / snapshot.setup.length) * 100)
     : 0;
-  const loadedBookings = snapshot.bookings.slice(0, 3);
+  const operationalBookings = snapshot.bookings.filter(
+    (booking) => booking.status !== "cancelled" && booking.status !== "expired",
+  );
+  const loadedBookings = operationalBookings.slice(0, 3);
   const isPreview = snapshot.tenant.mode === "preview";
   const readinessItems = isPreview ? snapshot.setup.slice(4) : snapshot.setup;
-  const paidRevenue = snapshot.bookings
+  const paidRevenue = operationalBookings
     .filter((booking) => booking.payment === "paid")
     .reduce((total, booking) => total + booking.amount, 0);
   const reviewQueue = snapshot.bookings.filter((booking) =>
@@ -513,7 +619,7 @@ function OverviewView({
         booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
       ) ?? null
     : null;
-  const paidCount = snapshot.bookings.filter((booking) => booking.payment === "paid").length;
+  const paidCount = operationalBookings.filter((booking) => booking.payment === "paid").length;
 
   const closePaymentReview = () => {
     const returnTarget = reviewReturnRef.current;
@@ -545,7 +651,7 @@ function OverviewView({
         ) : (
           <MetricCard label="Needs review" value={String(reviewQueue.length)} note={reviewQueue.length ? "Submitted receipts waiting for a decision" : "Payment inbox is clear"} />
         )}
-        <MetricCard label="Bookings" value={String(snapshot.bookings.length)} note={`${paidCount} paid · ${snapshot.bookings.length - paidCount} other payment states`} />
+        <MetricCard label="Active bookings" value={String(operationalBookings.length)} note={`${paidCount} paid · ${operationalBookings.length - paidCount} other payment states`} />
         <MetricCard label="Players" value={String(snapshot.customers.length)} note={isPreview ? "Preview customer profiles" : "Derived from the loaded bookings"} />
       </section>
 
@@ -697,25 +803,6 @@ function OverviewView({
                   </span>
                 </div>
                 <StatusPill status={booking.status} />
-                {isPreview && booking.bookingType === "regular" && (
-                  <button
-                    type="button"
-                    className={styles.rowAction}
-                    disabled={!can("booking:check-in") || booking.status === "checked_in" || booking.payment !== "paid"}
-                    aria-label={`Check in ${booking.customer}`}
-                    onClick={() =>
-                      request({
-                        title: `Check in ${booking.customer}?`,
-                        detail: `${booking.court}, ${booking.time}. This will mark the arrival for today’s operations team.`,
-                        confirmLabel: "Confirm check-in",
-                        actionType: "booking:check-in",
-                        resourceId: booking.bookingId,
-                      })
-                    }
-                  >
-                    {booking.status === "checked_in" ? "Arrived" : "Check in"}
-                  </button>
-                )}
               </article>
             ))}
             {loadedBookings.length === 0 && (
@@ -1008,14 +1095,18 @@ function BookingsView({
     internalNote: "",
     notifyCustomer: true,
   });
+  const filterCounts = BOOKING_FILTERS.reduce<Record<BookingFilter, number>>(
+    (counts, filter) => ({
+      ...counts,
+      [filter.value]: bookings.filter((booking) => bookingMatchesFilter(booking, filter.value)).length,
+    }),
+    { all: 0, awaiting: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 },
+  );
   const filtered = bookings.filter((booking) => {
     const matchesQuery = `${booking.customer} ${booking.id} ${booking.court}`
       .toLowerCase()
       .includes(query.trim().toLowerCase());
-    const matchesStatus = status === "all" ||
-      (status === "needs_review"
-        ? booking.paymentEvidence?.reviewable === true
-        : booking.status === status);
+    const matchesStatus = bookingMatchesFilter(booking, status);
     return matchesQuery && matchesStatus;
   });
   const reviewing = reviewingBookingId
@@ -1048,11 +1139,14 @@ function BookingsView({
   };
 
   return (
-    <section className={styles.panel} aria-labelledby="booking-list-title">
+    <section className={cx(styles.panel, styles.bookingRegisterPanel)} aria-labelledby="booking-list-title">
       <div className={styles.panelHeading}>
         <div>
-          <p className={styles.eyebrow}>Reservation register</p>
-          <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>{isPreview ? "All preview bookings" : "Loaded bookings"}</h2>
+          <p className={styles.eyebrow}>Reservation workspace</p>
+          <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>Reservation list</h2>
+          <p className={styles.bookingListIntro}>
+            Find a player, then work from the status that needs attention.
+          </p>
         </div>
         <ActionButton
           disabled={!can("booking:create") || (!isPreview && !courts.length)}
@@ -1147,7 +1241,7 @@ function BookingsView({
           onClose={closePaymentReview}
         />
       )}
-      <div className={styles.filterBar}>
+      <div className={styles.bookingToolbar}>
         <label className={styles.searchField}>
           <span className={styles.srOnly}>Search bookings</span>
           <span aria-hidden="true">⌕</span>
@@ -1155,106 +1249,81 @@ function BookingsView({
             type="search"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search player, ID or court"
+            placeholder="Search player, reference or court"
           />
         </label>
-        <label className={styles.selectField}>
-          <span>Status</span>
-          <select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}>
-            <option value="all">All statuses</option>
-            <option value="confirmed">Confirmed</option>
-            <option value="awaiting_receipt">Awaiting receipt</option>
-            <option value="receipt_processing">Receipt processing</option>
-            <option value="needs_review">Needs payment review</option>
-            <option value="payment_attention">Payment needs attention</option>
-            <option value="checked_in">Checked in</option>
-            <option value="completed">Completed</option>
-          </select>
-        </label>
-        <span className={styles.resultCount} aria-live="polite">
-          {filtered.length} {filtered.length === 1 ? "booking" : "bookings"}
+        <span className={styles.bookingResultCount} aria-live="polite">
+          <strong>{filtered.length}</strong> shown · counts reflect {bookings.length} loaded {bookings.length === 1 ? "record" : "records"}
         </span>
       </div>
 
+      <div className={styles.bookingFilterRail}>
+        <div className={styles.bookingFilters} role="group" aria-label="Filter bookings by workflow status">
+          {BOOKING_FILTERS.map((filter) => (
+            <button
+              key={filter.value}
+              type="button"
+              className={cx(styles.bookingFilterButton, status === filter.value && styles.bookingFilterActive)}
+              aria-pressed={status === filter.value}
+              onClick={() => setStatus(filter.value)}
+            >
+              <span>{filter.label}</span>
+              <strong>{filterCounts[filter.value]}</strong>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {filtered.length ? (
-        <div className={styles.tableScroll}>
-          <table className={styles.dataTable}>
-            <thead>
-              <tr>
-                <th scope="col">Player</th>
-                <th scope="col">When</th>
-                <th scope="col">Court</th>
-                <th scope="col">Payment</th>
-                <th scope="col">Status</th>
-                <th scope="col"><span className={styles.srOnly}>Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((booking, index) => (
-                <tr key={booking.id}>
-                  <td data-label="Player">
-                    <div className={styles.personCell}>
-                      <Avatar initials={booking.initials} tone={index} />
-                      <div>
-                        <strong>{booking.customer}</strong>
-                        <span>{booking.id}</span>
-                      </div>
+        <ol className={styles.bookingRecordList} aria-label="Booking results">
+          {filtered.map((booking, index) => {
+            const terminal = booking.status === "completed" ||
+              booking.status === "cancelled" || booking.status === "expired";
+            const canCancelBooking = !terminal && booking.status !== "checked_in";
+            const canMoveBooking = !isPreview && booking.status === "confirmed" && booking.payment === "paid";
+            return (
+              <li key={booking.bookingId}>
+                <article className={styles.bookingRecord} aria-labelledby={`booking-${booking.bookingId}`}>
+                  <header className={styles.bookingRecordIdentity}>
+                    <Avatar initials={booking.initials} tone={index} />
+                    <div>
+                      <h3 id={`booking-${booking.bookingId}`}>{booking.customer}</h3>
+                      <span>{booking.reference}</span>
                     </div>
-                  </td>
-                  <td data-label="When">
-                    <strong>{booking.date}</strong>
-                    <span className={styles.cellSub}>{booking.time} · {booking.duration}</span>
-                  </td>
-                  <td data-label="Court">{booking.court}</td>
-                  <td data-label="Payment">
-                    <div className={styles.paymentCellContent}>
-                      <strong>{formatPeso(booking.amount)}</strong>
-                      <span className={cx(styles.paymentLabel, booking.payment === "paid" && styles.paid)}>
-                        {PAYMENT_LABEL[booking.payment]}
-                      </span>
-                      {booking.paymentEvidence?.reviewable && (
+                    <StatusPill status={booking.status} />
+                  </header>
+
+                  <div className={styles.bookingRecordSession}>
+                    <span className={styles.bookingRecordLabel}>Session</span>
+                    <strong>
+                      {booking.bookingDate ? <time dateTime={booking.bookingDate}>{booking.date}</time> : booking.date}
+                      <span aria-hidden="true"> · </span>{booking.time}
+                    </strong>
+                    <span>{booking.court} · {booking.duration}</span>
+                  </div>
+
+                  <div className={styles.bookingRecordPayment}>
+                    <span className={styles.bookingRecordLabel}>Payment</span>
+                    <strong>{formatPeso(booking.amount)}</strong>
+                    <span className={cx(styles.paymentLabel, booking.payment === "paid" && styles.paid)}>
+                      {PAYMENT_LABEL[booking.payment]}
+                    </span>
+                  </div>
+
+                  <footer className={styles.bookingRecordFooter}>
+                    <p>{bookingStatusDetail(booking)}</p>
+                    <div className={styles.bookingRecordActions}>
+                      {booking.paymentEvidence?.reviewable && !terminal && (
                         <button
                           type="button"
                           className={styles.reviewPaymentButton}
                           disabled={!canReviewPayments}
                           onClick={(event) => openPaymentReview(booking, event.currentTarget)}
                         >
-                          Review receipt
+                          Review payment
                         </button>
                       )}
-                      {booking.status === "awaiting_receipt" && (
-                        <small className={styles.cellSub}>Waiting for the player&apos;s receipt</small>
-                      )}
-                      {booking.status === "receipt_processing" && (
-                        <small className={styles.cellSub}>Receipt uploaded · verification in progress</small>
-                      )}
-                      {booking.status === "payment_attention" && (
-                        <small className={styles.cellSub}>Payment state needs owner attention</small>
-                      )}
-                    </div>
-                  </td>
-                  <td data-label="Status"><StatusPill status={booking.status} /></td>
-                  <td data-label="Actions">
-                    <div className={styles.tableActions}>
-                      {booking.status === "confirmed" && booking.bookingType === "regular" && (
-                        <button
-                          type="button"
-                          className={styles.miniButton}
-                          disabled={!can("booking:check-in") || booking.payment !== "paid"}
-                          onClick={() =>
-                            request({
-                              title: `Check in ${booking.customer}?`,
-                              detail: `${booking.id} will be marked as arrived. The booking itself will not be changed.`,
-                              confirmLabel: "Check in",
-                              actionType: "booking:check-in",
-                              resourceId: booking.bookingId,
-                            })
-                          }
-                        >
-                          Check in
-                        </button>
-                      )}
-                      {!isPreview && booking.status === "confirmed" && booking.payment === "paid" && (
+                      {canMoveBooking && (
                         <button
                           type="button"
                           className={styles.miniButton}
@@ -1271,37 +1340,39 @@ function BookingsView({
                           Move
                         </button>
                       )}
-                      <button
-                        type="button"
-                        className={styles.moreButton}
-                        disabled={!can("booking:cancel") || booking.status === "completed" || booking.status === "checked_in"}
-                        aria-label={`Cancel booking ${booking.id}`}
-                        onClick={() =>
-                          request({
-                            title: `Cancel ${booking.id}?`,
-                            detail: `${booking.customer} will lose ${booking.court} on ${booking.date}, ${booking.time}. Paid refunds remain owner-assisted.`,
-                            confirmLabel: "Cancel booking",
-                            actionType: "booking:cancel",
-                            resourceId: booking.bookingId,
-                            payload: { reason: "Cancelled by venue management" },
-                            tone: "danger",
-                          })
-                        }
-                      >
-                        Cancel
-                      </button>
+                      {canCancelBooking && (
+                        <button
+                          type="button"
+                          className={styles.moreButton}
+                          disabled={!can("booking:cancel")}
+                          aria-label={`Cancel booking ${booking.id}`}
+                          onClick={() =>
+                            request({
+                              title: `Cancel ${booking.id}?`,
+                              detail: `${booking.customer} will lose ${booking.court} on ${booking.date}, ${booking.time}. Paid refunds remain owner-assisted.`,
+                              confirmLabel: "Cancel booking",
+                              actionType: "booking:cancel",
+                              resourceId: booking.bookingId,
+                              payload: { reason: "Cancelled by venue management" },
+                              tone: "danger",
+                            })
+                          }
+                        >
+                          Cancel
+                        </button>
+                      )}
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                  </footer>
+                </article>
+              </li>
+            );
+          })}
+        </ol>
       ) : (
         <div className={styles.inlineEmpty}>
           <span aria-hidden="true">00</span>
           <h3>No matching bookings</h3>
-          <p>Clear the search or choose another status.</p>
+          <p>Clear the search or choose another workflow status.</p>
           <button type="button" className={styles.textButton} onClick={() => { setQuery(""); setStatus("all"); }}>
             Reset filters
           </button>
@@ -1341,7 +1412,10 @@ function ScheduleView({
   };
 
   if (snapshot.tenant.mode === "live") {
-    const loadedEntries = snapshot.bookings.length + snapshot.blocks.length;
+    const activeBookings = snapshot.bookings.filter((booking) =>
+      booking.status !== "cancelled" && booking.status !== "expired"
+    );
+    const loadedEntries = activeBookings.length + snapshot.blocks.length;
     return (
       <section className={styles.panel} aria-labelledby="live-schedule-title">
         <div className={styles.panelHeading}>
@@ -1353,7 +1427,7 @@ function ScheduleView({
         </div>
         {loadedEntries ? (
           <div className={styles.nextList}>
-            {snapshot.bookings.map((booking, index) => (
+            {activeBookings.map((booking, index) => (
               <article className={styles.nextBooking} key={booking.id}>
                 <div className={styles.nextTime}>
                   <strong>{booking.time}</strong>
@@ -1373,7 +1447,7 @@ function ScheduleView({
                   <strong>{block.time}</strong>
                   <span>{block.date}</span>
                 </div>
-                <Avatar initials="BL" tone={snapshot.bookings.length + index} />
+                <Avatar initials="BL" tone={activeBookings.length + index} />
                 <div className={styles.nextIdentity}>
                   <strong>{block.publicLabel}</strong>
                   <span>{block.court} · {block.internalReason ? `Private note: ${block.internalReason}` : "No private note returned"}</span>
@@ -1789,95 +1863,6 @@ function CustomersView({ snapshot }: { snapshot: ManagementSnapshot }) {
         ) : (
           <div className={styles.inlineEmpty}><span aria-hidden="true">00</span><h3>No players found</h3><p>Try a name or mobile number.</p></div>
         )}
-      </section>
-    </>
-  );
-}
-
-function ReportsView({ snapshot }: { snapshot: ManagementSnapshot }) {
-  if (snapshot.tenant.mode === "live") {
-    const paid = snapshot.bookings.filter((booking) => booking.payment === "paid");
-    const gross = paid.reduce((total, booking) => total + booking.amount, 0);
-    const otherPaymentStates = snapshot.bookings.filter((booking) => booking.payment !== "paid");
-    return (
-      <>
-        <section className={styles.reportHero}>
-          <div>
-            <p className={styles.eyebrow}>Loaded tenant result · PHP</p>
-            <span>Paid booking value</span>
-            <strong>{formatPeso(gross)}</strong>
-            <p><b>{paid.length} paid</b> of {snapshot.bookings.length} loaded bookings</p>
-          </div>
-        </section>
-        <section className={styles.reportGrid}>
-          <article className={styles.panel}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Current result</p><h2>Booking summary</h2></div></div>
-            <div className={styles.customerMetrics}>
-              <div><span>Paid</span><strong>{paid.length}</strong><small>{formatPeso(gross)}</small></div>
-              <div><span>Other payment states</span><strong>{otherPaymentStates.length}</strong><small>Pending, partial, refunded, rejected, unpaid, or unknown</small></div>
-              <div><span>Players</span><strong>{snapshot.customers.length}</strong><small>Derived from loaded bookings</small></div>
-            </div>
-          </article>
-          <aside className={styles.panel}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Reporting boundary</p><h2>No invented trends</h2></div></div>
-            <p>Period comparisons, occupancy and court rankings remain unavailable until the shared platform exposes an authoritative tenant reporting contract.</p>
-          </aside>
-        </section>
-      </>
-    );
-  }
-  const dailyRevenue = [
-    ["Mon", 48, "₱3.1k"],
-    ["Tue", 62, "₱4.0k"],
-    ["Wed", 55, "₱3.6k"],
-    ["Thu", 78, "₱5.1k"],
-    ["Fri", 70, "₱4.6k"],
-    ["Sat", 98, "₱6.4k"],
-    ["Sun", 84, "₱5.5k"],
-  ] as const;
-  return (
-    <>
-      <section className={styles.reportHero}>
-        <div>
-          <p className={styles.eyebrow}>August 1–8 · PHP</p>
-          <span>Gross booking revenue</span>
-          <strong>₱34,280</strong>
-          <p><b>↑ 12.4%</b> compared with the previous 8 days</p>
-        </div>
-        <label className={styles.selectField}>
-          <span>Period</span>
-          <select defaultValue="8days"><option value="8days">Last 8 days</option><option value="30days">Last 30 days</option></select>
-        </label>
-      </section>
-      <section className={styles.reportGrid}>
-        <article className={styles.panel}>
-          <div className={styles.panelHeading}>
-            <div><p className={styles.eyebrow}>Revenue rhythm</p><h2>Daily gross</h2></div>
-            <span className={styles.reportTotal}>Avg. ₱4,285/day</span>
-          </div>
-          <div className={styles.barChart} role="img" aria-label="Daily revenue from Monday through Sunday, with Saturday highest at 6,400 pesos">
-            {dailyRevenue.map(([day, height, value]) => (
-              <div className={styles.barColumn} key={day}>
-                <span className={styles.barValue}>{value}</span>
-                <div className={styles.barTrack}><span style={{ height: `${height}%` }} /></div>
-                <strong>{day}</strong>
-              </div>
-            ))}
-          </div>
-        </article>
-        <aside className={styles.panel}>
-          <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Demand</p><h2>Top time bands</h2></div></div>
-          <ol className={styles.demandList}>
-            <li><span>01</span><div><strong>6:00–9:00 PM</strong><small>88% occupied</small></div><b>Peak</b></li>
-            <li><span>02</span><div><strong>8:00–11:00 AM</strong><small>71% occupied</small></div><b>Steady</b></li>
-            <li><span>03</span><div><strong>2:00–5:00 PM</strong><small>56% occupied</small></div><b>Open</b></li>
-          </ol>
-        </aside>
-      </section>
-      <section className={styles.reportNotes}>
-        <article><span className={styles.focusIndex}>01</span><div><strong>Court 01 leads revenue</strong><p>It generated 54% of gross bookings this period.</p></div></article>
-        <article><span className={styles.focusIndex}>02</span><div><strong>Evenings are nearly full</strong><p>Consider protecting peak pricing from 6 PM onward.</p></div></article>
-        <article><span className={styles.focusIndex}>03</span><div><strong>4 payments need review</strong><p>₱1,700 is currently awaiting proof or confirmation.</p></div></article>
       </section>
     </>
   );
@@ -3048,6 +3033,9 @@ function AccessView({
   session?: ManagementSnapshot["session"];
   toolAvailability?: ManagementSnapshot["configuration"]["toolAvailability"];
 }) {
+  const visibleCapabilities: ManagementCapability[] = capabilities.filter(
+    (capability) => capability !== "booking:check-in",
+  );
   return (
     <section className={styles.accessGrid}>
       <article className={styles.panel}>
@@ -3070,18 +3058,18 @@ function AccessView({
           <span>{ROLE_LABEL[role].slice(0, 2).toUpperCase()}</span>
           <div>
             <h2>{isPreview ? ROLE_LABEL[role] : session?.isSystemOwner ? "System Owner" : `Tenant ${ROLE_LABEL[role]}`}</h2>
-            <p>{isPreview ? `${capabilities.length} preview capabilities` : session?.isSystemOwner ? "Full platform account authority · no tenant membership required" : `${capabilities.length} account permissions · ${session?.membershipRole ?? "no"} membership`}</p>
+            <p>{isPreview ? `${visibleCapabilities.length} preview capabilities` : session?.isSystemOwner ? "Full platform account authority · no tenant membership required" : `${visibleCapabilities.length} account permissions · ${session?.membershipRole ?? "no"} membership`}</p>
           </div>
         </div>
         <ul className={styles.capabilityList}>
           {(Object.keys(CAPABILITY_LABEL) as ManagementCapability[])
-            .filter((capability) => capabilities.includes(capability))
+            .filter((capability) => visibleCapabilities.includes(capability))
             .map((capability) => <li key={capability} className={styles.granted}><span aria-hidden="true">✓</span>{CAPABILITY_LABEL[capability]}</li>)}
         </ul>
         {!isPreview && toolAvailability && (
           <div className={styles.toolStatusList}>
             <strong>Connected controls</strong>
-            {capabilities.map((capability) => (
+            {visibleCapabilities.map((capability) => (
               <span key={capability}><i className={toolAvailability[capability] === false ? styles.toolUnavailable : styles.toolReady} />{CAPABILITY_LABEL[capability]} · {toolAvailability[capability] === false ? "setup unavailable" : "connected"}</span>
             ))}
           </div>
@@ -3164,6 +3152,12 @@ export default function ManagePage() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("30d");
+  const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
+  const [insights, setInsights] = useState<ManagementInsights | null>(null);
+  const [insightsPending, setInsightsPending] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+  const [insightsRevision, setInsightsRevision] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const syncInFlightRef = useRef(false);
   const syncGenerationRef = useRef(0);
@@ -3190,12 +3184,19 @@ export default function ManagePage() {
     setView(nextView);
   };
   const openNeedsReview = () => {
-    setBookingFilter("needs_review");
+    setBookingFilter("pending");
     setView("bookings");
   };
   const loadPaymentReceipt = useCallback(
     (verificationId: string) => managementAdapter.loadPaymentReceipt(context, verificationId),
     [context],
+  );
+  const loadCalendarDay = useCallback(
+    (date: string) => {
+      if (!snapshot) return Promise.reject(new Error("CALENDAR_SNAPSHOT_UNAVAILABLE"));
+      return managementAdapter.loadCalendarDay(context, snapshot, date);
+    },
+    [context, snapshot],
   );
   const uploadPaymentQr = useCallback(async (methodCode: string, file: File) => {
     const asset = await managementAdapter.uploadPaymentQr(context, methodCode, file);
@@ -3222,6 +3223,55 @@ export default function ManagePage() {
     setToast({ message: "The QR image is saved and available in customer checkout.", tone: "success" });
     return asset;
   }, [context]);
+
+  const retryInsights = useCallback(() => {
+    setInsightsRevision((revision) => revision + 1);
+  }, []);
+
+  useEffect(() => {
+    if (!snapshot || (view !== "reports" && view !== "finance")) return;
+    if (isPreview) return;
+    const capability = view === "finance" ? "finance:view" : "report:view";
+    if (!context.capabilities.includes(capability)) return;
+
+    let active = true;
+    const range = analyticsDateRange(analyticsPeriod);
+    const loadInsights = async () => {
+      await Promise.resolve();
+      if (!active) return;
+      setInsightsPending(true);
+      setInsightsError(null);
+      try {
+        const result = await managementAdapter.loadInsights(context, {
+          ...range,
+          courtId: analyticsCourtId,
+        });
+        if (active) setInsights(result);
+      } catch (error: unknown) {
+        if (!active) return;
+        setInsightsError(
+          error instanceof Error && error.message === "MANAGER_SIGN_IN_REQUIRED"
+            ? "Sign in again to load protected analytics and remittance data."
+            : "The authoritative reporting ledger could not be loaded. Try again without changing the current records.",
+        );
+      } finally {
+        if (active) setInsightsPending(false);
+      }
+    };
+    void loadInsights();
+
+    return () => {
+      active = false;
+    };
+  }, [
+    analyticsCourtId,
+    analyticsPeriod,
+    context,
+    insightsRevision,
+    isPreview,
+    snapshot,
+    view,
+  ]);
 
   const refreshWorkspace = useCallback(async (announce = false) => {
     if (isPreview || syncInFlightRef.current) return;
@@ -3428,10 +3478,37 @@ export default function ManagePage() {
     switch (view) {
       case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
       case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} />;
-      case "schedule": return <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
+      case "schedule": return snapshot.tenant.mode === "live" ? (
+        <CalendarView
+          courts={snapshot.courts}
+          initialBookings={snapshot.bookings}
+          initialBlocks={snapshot.blocks}
+          loadDay={loadCalendarDay}
+          canBlock={can("schedule:block")}
+          onOpenBlocks={() => setView("blocks")}
+          timezone={snapshot.tenant.timezone}
+          currency={snapshot.tenant.currency}
+        />
+      ) : <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
       case "blocks": return <BlocksView snapshot={snapshot} can={can} request={request} />;
       case "customers": return <CustomersView snapshot={snapshot} />;
-      case "reports": return <ReportsView snapshot={snapshot} />;
+      case "reports": return <AnalyticsView
+        report={insights?.report ?? null}
+        period={analyticsPeriod}
+        onPeriodChange={setAnalyticsPeriod}
+        courts={snapshot.courts.map((court) => ({ id: court.id, name: court.name }))}
+        courtId={analyticsCourtId}
+        onCourtChange={setAnalyticsCourtId}
+        loading={insightsPending}
+        error={insightsError}
+        onRetry={retryInsights}
+      />;
+      case "finance": return <FinanceView
+        finance={insights?.finance ?? null}
+        loading={insightsPending}
+        error={insightsError}
+        onRetry={retryInsights}
+      />;
       case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} uploadPaymentQr={uploadPaymentQr} onLiveSectionChange={setSettingsSection} />;
       case "launch": return <LaunchView snapshot={snapshot} request={request} openSettings={(section) => { setSettingsSection(section); setView("settings"); }} />;
       case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} toolAvailability={snapshot.configuration.toolAvailability} />;
@@ -3479,14 +3556,14 @@ export default function ManagePage() {
         </div>
         <nav className={styles.desktopNav} aria-label="Management navigation">
           <p>Workspace</p>
-          {visibleNavItems.slice(0, 6).map((item) => (
+          {visibleNavItems.slice(0, 7).map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
           <p>Manage</p>
-          {visibleNavItems.slice(6).map((item) => (
+          {visibleNavItems.slice(7).map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
