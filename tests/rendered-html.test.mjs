@@ -28,6 +28,10 @@ const files = {
     "../app/manage/analytics-finance.module.css",
     import.meta.url,
   ),
+  atomicBookingMigration: new URL(
+    "../operations/2026-08-11-atomic-multi-session-booking.sql",
+    import.meta.url,
+  ),
   managementAdapter: new URL(
     "../app/manage/management-adapter.ts",
     import.meta.url,
@@ -633,6 +637,39 @@ test("sends one canonical atomic-session payload without legacy scalar fields", 
   ]) {
     assert.equal(protectedField in payload, false);
   }
+});
+
+test("keeps multi-court holds atomic under one secure booking lifecycle", async () => {
+  const migration = await readFile(files.atomicBookingMigration, "utf8");
+
+  assert.match(
+    migration,
+    /unique \(tenant_id, booking_id, court_id, starts_at\)/,
+    "two courts may share a start time under one grouped reservation",
+  );
+  assert.match(
+    migration,
+    /create or replace function public\.create_public_booking_group_with_access[\s\S]*?security definer[\s\S]*?set row_security = 'off'/,
+  );
+  assert.match(
+    migration,
+    /when v_session_index = 1 then p_access_token_hash[\s\S]*?md5\(p_access_token_hash \|\| ':' \|\| v_session_index::text\)/,
+    "temporary child holds require non-colliding token digests",
+  );
+  assert.match(
+    migration,
+    /update public\.booking_slots[\s\S]*?set booking_id = v_primary_id[\s\S]*?delete from public\.bookings/,
+    "validated sessions must consolidate inside the same transaction",
+  );
+  assert.match(
+    migration,
+    /'policyAcceptance', p_sessions #> '\{0,metadata,policyAcceptance\}'/,
+    "the consolidated booking must retain the server-validated policy evidence",
+  );
+  assert.match(
+    migration,
+    /revoke all on function public\.create_public_booking_group_with_access[\s\S]*?from public, anon, authenticated;[\s\S]*?grant execute[\s\S]*?to service_role;/,
+  );
 });
 
 test("carries overnight court-hours through availability, pricing, and checkout", async () => {
