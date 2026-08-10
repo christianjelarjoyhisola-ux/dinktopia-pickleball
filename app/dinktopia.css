@@ -4386,6 +4386,361 @@
   .confirmation-actions .button { width: 100%; }
 }
 
+/* RallyOS-inspired player booking workspace */
+.booking-zone {
+  background:
+    radial-gradient(circle at 84% 18%, rgba(130, 245, 0, 0.07), transparent 25%),
+    radial-gradient(circle at 72% 42%, rgba(37, 76, 132, 0.06), transparent 31%),
+    #f8f8f4;
+}
+
+.booking-venue-hero {
+  position: relative;
+  display: flex;
+  min-height: 292px;
+  overflow: hidden;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 22px;
+  border-radius: 24px;
+  background:
+    linear-gradient(90deg, rgba(5, 24, 31, 0.96) 0%, rgba(5, 24, 31, 0.8) 36%, rgba(5, 24, 31, 0.24) 70%, rgba(5, 24, 31, 0.34) 100%),
+    url("/booking-venue-hero.png") center / cover no-repeat;
+  padding: clamp(28px, 5vw, 54px);
+  color: white;
+  box-shadow: 0 22px 52px rgba(16, 42, 67, 0.14);
+}
+
+.booking-venue-hero::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: inherit;
+  content: "";
+  pointer-events: none;
+}
+
+.booking-venue-hero-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  max-width: 720px;
+  align-items: flex-end;
+  gap: 20px;
+}
+
+.booking-venue-mark {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 14px;
+  background: var(--blue);
+  color: white;
+  font-size: var(--text-small);
+  font-weight: 800;
+}
+
+.booking-venue-hero-copy p,
+.booking-card-kicker {
+  margin: 0 0 8px;
+  color: var(--lime);
+  font-size: var(--text-caption);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.booking-venue-hero-copy h2 {
+  max-width: 590px;
+  margin: 0;
+  color: white;
+  font-size: clamp(31px, 4.1vw, 50px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.02;
+}
+
+.booking-venue-hero-copy div > span {
+  display: block;
+  max-width: 620px;
+  margin-top: 14px;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: var(--text-small);
+  line-height: 1.55;
+}
+
+.booking-venue-location {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(5, 24, 31, 0.72);
+  padding: 10px 14px;
+  font-size: var(--text-caption);
+  font-weight: 700;
+  backdrop-filter: blur(10px);
+}
+
+.booking-shell {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
+}
+
+.booking-progress {
+  display: grid;
+  max-width: 520px;
+  margin: 0 auto 24px;
+}
+
+.booking-progress li > span {
+  width: 34px;
+  height: 34px;
+  background: #f8f8f4;
+}
+
+.booking-progress .is-current > span {
+  border-color: #6855e8;
+  background: #6855e8;
+  box-shadow: 0 0 0 5px rgba(104, 85, 232, 0.1);
+}
+
+.booking-progress .is-complete > span {
+  border-color: #6855e8;
+  background: #f0edff;
+  color: #6855e8;
+}
+
+.booking-progress .is-complete:not(:last-child)::after { background: #6855e8; }
+
+.booking-step-summary { display: none; }
+
+.booking-slot-step { display: block; }
+
+.booking-main-card,
+.booking-summary {
+  border-color: rgba(16, 42, 67, 0.13);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 13px 34px rgba(16, 42, 67, 0.06);
+}
+
+.booking-selection-card { padding: clamp(20px, 3vw, 36px); }
+
+.booking-choice-heading {
+  align-items: center;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 20px;
+}
+
+.step-chip {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--ink);
+  padding: 0;
+  color: var(--lime);
+}
+
+.booking-card-kicker { margin-bottom: 3px; color: #6855e8; }
+.booking-card-heading h3 { font-size: 20px; }
+
+.date-rail {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin-inline: 0;
+  padding: 2px 0 8px;
+}
+
+.date-option {
+  min-width: 88px;
+  min-height: 76px;
+  flex: 0 0 calc((100% - 40px) / 6);
+  border-radius: 12px;
+}
+
+.date-option.is-selected {
+  border-color: #6855e8;
+  background: #eeebff;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px #6855e8;
+}
+
+.date-option.is-selected span,
+.date-option.is-selected small { color: #6855e8; }
+
+.schedule-heading-row { align-items: center; }
+.schedule-heading-row h4 { font-size: var(--text-small); }
+
+.schedule-selection-count {
+  display: flex;
+  min-width: auto;
+  align-items: center;
+  gap: 5px;
+  border-color: rgba(104, 85, 232, 0.14);
+  border-radius: 999px;
+  background: #f0edff;
+  padding: 8px 11px;
+  color: #6855e8;
+  font-weight: 700;
+}
+
+.schedule-count-number { font-size: var(--text-caption); }
+.schedule-selection-count small { display: none; }
+.schedule-selection-count button { min-height: 0; margin: 0 0 0 5px; padding: 0; color: #6855e8; }
+
+.schedule-scroll {
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: white;
+}
+
+.schedule-matrix-courts {
+  border-spacing: 4px;
+  padding: 4px;
+}
+
+.schedule-matrix-courts thead th { height: 56px; background: #f6f6f2; }
+.schedule-matrix-courts thead th:first-child {
+  width: 154px;
+  min-width: 154px;
+  background: var(--ink);
+  color: white;
+  text-align: left;
+  padding: 10px 13px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.schedule-matrix-courts thead th:first-child span { color: rgba(255, 255, 255, 0.56); }
+.schedule-matrix-courts thead th:not(:first-child) { width: 86px; min-width: 86px; }
+.schedule-matrix-courts thead th strong { font-size: var(--text-caption); }
+
+.schedule-matrix-courts tbody th {
+  display: flex;
+  width: 154px;
+  min-width: 154px;
+  min-height: 60px;
+  align-items: center;
+  gap: 9px;
+  background: #fafaf7;
+  padding: 7px 9px;
+  text-align: left;
+}
+
+.schedule-matrix-courts tbody tr.is-requested-court th { box-shadow: inset 3px 0 0 #6855e8; }
+
+.schedule-court-number {
+  display: grid !important;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--lime);
+  font-size: var(--text-caption);
+  font-weight: 800;
+}
+
+.schedule-matrix-courts tbody th > span:last-child { min-width: 0; }
+.schedule-matrix-courts tbody th strong,
+.schedule-matrix-courts tbody th small { display: block; }
+.schedule-matrix-courts tbody th strong { overflow: hidden; font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.schedule-matrix-courts tbody th small { margin-top: 2px; color: var(--muted); font-size: 12px; }
+
+.schedule-matrix-courts .schedule-cell {
+  min-width: 86px;
+  min-height: 60px;
+  border-color: rgba(16, 42, 67, 0.11);
+  border-radius: 9px;
+  box-shadow: none;
+}
+
+.schedule-matrix-courts .schedule-cell strong { font-size: var(--text-caption); }
+.schedule-matrix-courts .schedule-cell-state { position: static !important; width: auto !important; height: auto !important; clip: auto !important; clip-path: none !important; color: var(--muted); font-size: 12px; }
+.schedule-matrix-courts .schedule-cell.is-selected { border-color: #6855e8; background: #6855e8; color: white; }
+.schedule-matrix-courts .schedule-cell.is-selected .schedule-cell-state { color: rgba(255, 255, 255, 0.72); }
+.schedule-matrix-courts .schedule-cell.is-selected .schedule-cell-mark { background: white; color: #6855e8; }
+.schedule-matrix-courts .schedule-cell.is-unavailable { background: #f0f0ed; color: #969b99; }
+
+.slot-step-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+.slot-step-footer > div { display: flex; flex: 1 1 auto; flex-direction: column; gap: 2px; }
+.slot-step-footer strong { font-size: var(--text-small); }
+.slot-step-footer span { color: var(--muted); font-size: var(--text-caption); }
+.slot-clear-button { border: 0; background: transparent; padding: 10px; color: var(--muted); font-size: var(--text-caption); font-weight: 700; cursor: pointer; }
+
+.booking-summary {
+  overflow: visible;
+  background: rgba(255, 255, 255, 0.96);
+  color: var(--ink);
+  padding: 22px;
+}
+
+.booking-summary::after { display: none; }
+.booking-summary .summary-mobile-heading { border-color: var(--line); }
+.booking-summary .summary-mobile-heading small,
+.booking-summary .summary-sessions small { color: var(--muted); }
+.booking-summary .summary-mobile-heading b,
+.booking-summary .summary-sessions b { color: #6855e8; }
+.booking-summary .summary-sessions li { border-color: var(--line); background: #fafaf7; }
+.booking-summary .price-breakdown { background: #f7f7f3; }
+.booking-summary .price-breakdown > div { color: var(--muted); }
+.booking-summary .price-breakdown .summary-total { border-color: var(--line); color: var(--ink); }
+.booking-summary .summary-total strong { color: #6855e8; }
+.booking-summary .summary-empty-copy { color: var(--muted); }
+
+.booking-details-step { gap: 18px; }
+.booking-details-form .booking-card-heading { border-bottom: 1px solid var(--line); padding-bottom: 18px; }
+.booking-details-form .form-field input { min-height: 48px; border-radius: 10px; background: #fff; }
+
+@media (min-width: 980px) {
+  .booking-slot-step { grid-template-columns: 1fr; }
+  .booking-details-step { grid-template-columns: minmax(0, 1fr) 330px; }
+  .booking-main-card { padding: 30px; }
+}
+
+@media (max-width: 779.98px) {
+  .booking-zone.section-pad { padding-top: 82px; }
+  .booking-venue-hero { min-height: 250px; align-items: flex-end; margin: 0 -4px 18px; border-radius: 18px; padding: 24px 20px; }
+  .booking-venue-hero-copy { align-items: flex-start; }
+  .booking-venue-mark { display: none; }
+  .booking-venue-hero-copy h2 { font-size: clamp(28px, 9vw, 38px); }
+  .booking-venue-location { display: none; }
+  .booking-progress { display: grid; margin-bottom: 16px; }
+  .booking-selection-card { padding: 16px; }
+  .booking-choice-heading { display: flex; }
+  .booking-card-heading .step-chip { display: grid; }
+  .date-option { min-width: 74px; flex-basis: 74px; }
+  .schedule-matrix-courts thead th:first-child,
+  .schedule-matrix-courts tbody th { width: 126px; min-width: 126px; }
+  .schedule-matrix-courts thead th:not(:first-child),
+  .schedule-matrix-courts .schedule-cell { width: 78px; min-width: 78px; }
+  .slot-step-footer { position: sticky; z-index: 6; bottom: 8px; margin: 14px -8px -8px; border: 1px solid var(--line); border-radius: 14px; background: rgba(255, 255, 255, 0.96); padding: 10px; box-shadow: 0 10px 28px rgba(16, 42, 67, 0.14); backdrop-filter: blur(12px); }
+  .slot-step-footer > div { display: none; }
+  .slot-step-footer .button { flex: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .dinktopia-site *,
   .dinktopia-site *::before,

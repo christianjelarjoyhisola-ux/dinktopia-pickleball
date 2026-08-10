@@ -677,9 +677,9 @@ test("carries overnight court-hours through availability, pricing, and checkout"
 
   assert.match(booking, /\(record\.startHour \?\? 48\) < 48/);
   assert.match(booking, /item\.startHour < 48/);
-  assert.match(booking, /className="schedule-next-day-divider"/);
-  assert.match(booking, /<span>NEXT DAY<\/span>/);
-  assert.match(booking, /aria-label=\{`Next day, \$\{longDateLabel\(selectedFollowingDate\)\}`\}/);
+  assert.match(booking, /className=\{hour === 24 \? "schedule-next-day-divider" : undefined\}/);
+  assert.match(booking, /\{hour === 24 \? "NEXT DAY · " : "to "\}/);
+  assert.match(booking, /aria-label=\{hour === 24 && selectedFollowingDate \? `Next day, \$\{longDateLabel\(selectedFollowingDate\)\}` : undefined\}/);
   assert.match(
     booking,
     /aria-label=\{`\$\{court\.name\}, \$\{formatHourWithDay\(hour\)\} to \$\{formatHourWithDay\(hour \+ 1\)\}/,
@@ -966,14 +966,18 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   const matrixEnd = booking.indexOf("</table>", matrixStart);
   assert.ok(matrixStart >= 0 && matrixEnd > matrixStart, "expected one responsive court-by-time matrix");
   const matrixSource = booking.slice(matrixStart, matrixEnd + "</table>".length);
-  assert.ok(
-    (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length >= 2,
-    "expected both schedule headers and row cells to derive from displayCourts",
+  assert.equal(
+    (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length,
+    1,
+    "expected one court row per published court",
   );
-  assert.match(matrixSource, /scheduleHours\.map\(\(hour\) =>/);
+  assert.ok(
+    (matrixSource.match(/scheduleHours\.map\(\(hour\) =>/g) ?? []).length >= 2,
+    "expected the header and each court row to derive from the hourly schedule",
+  );
   assert.match(
     matrixSource,
-    /schedule\.find\(\(item\) => item\.courtId === court\.id\)\?\.slots\.find\(\(item\) => item\.hour === hour\)/,
+    /courtSchedule\?\.slots\.find\(\(item\) => item\.hour === hour\)/,
   );
   assert.match(matrixSource, /const key = selectionKey\(court\.id, hour\)/);
   assert.match(matrixSource, /const isSelected = selectedKeys\.has\(key\)/);
@@ -1245,28 +1249,24 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   );
 
   assert.equal(
-    (booking.match(/className="booking-mobile-action"/g) ?? []).length,
+    (booking.match(/className="slot-step-footer"/g) ?? []).length,
     1,
-    "expected one mobile selection dock",
+    "expected one responsive selection footer",
   );
   assert.match(
     booking,
-    /\{selectedSlots\.length > 0 && \([\s\S]*?className="booking-mobile-action"[\s\S]*?className="mobile-selection-clear"[\s\S]*?data-testid="booking-continue"/s,
+    /className="slot-step-footer"[\s\S]*?className="slot-clear-button"[\s\S]*?data-testid="booking-continue"/s,
   );
   assert.match(
     booking,
     /className=\{`booking-summary\$\{actionLabel \? " booking-summary-selection" : ""\}`\}/,
   );
-  const mobileDockRule = publicCss.match(/\.booking-mobile-action\s*\{([^}]*)\}/s);
-  assert.ok(mobileDockRule, "expected mobile dock styles");
-  assert.match(mobileDockRule[1], /position:\s*fixed/);
-  assert.match(mobileDockRule[1], /bottom:\s*max\(12px, env\(safe-area-inset-bottom\)\)/);
-  const mobileSummaryRule = publicCss.match(/\.booking-summary-selection\s*\{([^}]*)\}/s);
-  assert.ok(mobileSummaryRule, "expected mobile selection-summary styles");
-  assert.match(mobileSummaryRule[1], /display:\s*none/);
+  const responsiveBookingCss = publicCss.slice(publicCss.indexOf("/* RallyOS-inspired player booking workspace */"));
+  assert.match(responsiveBookingCss, /\.slot-step-footer\s*\{[^}]*display:\s*flex/s);
+  assert.match(responsiveBookingCss, /@media \(max-width: 779\.98px\)[\s\S]*?\.slot-step-footer\s*\{[^}]*position:\s*sticky[^}]*bottom:\s*8px/s);
   assert.match(
-    publicCss,
-    /@media \(min-width:\s*980px\)\s*\{[\s\S]*?\.booking-summary-selection\s*\{\s*display:\s*block;?\s*\}[\s\S]*?\.booking-mobile-action\s*\{\s*display:\s*none;?\s*\}/s,
+    responsiveBookingCss,
+    /@media \(min-width: 980px\)[\s\S]*?\.booking-slot-step\s*\{[^}]*grid-template-columns:\s*1fr/s,
   );
 
   for (const [selector, expectedDimensions, minimum] of [
@@ -4468,15 +4468,15 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
 
   assert.match(
     booking,
-    /const stepLabels = \["Choose date & time", "Your details", "Payment"\]/,
+    /const stepLabels = \["Courts", "Details", "Payment"\]/,
   );
   assert.match(
     booking,
     /<p className="booking-step-summary">[\s\S]*?<span>\{step\} of \{stepLabels\.length\} ·<\/span>[\s\S]*?<strong>\{stepLabels\[step - 1\]\}<\/strong>/,
   );
-  assert.match(stepOne, /STEP 01[\s\S]*?<h3>Choose date and time<\/h3>[\s\S]*?Philippine Standard Time/);
+  assert.match(stepOne, /<span className="step-chip">01<\/span>[\s\S]*?Court booking[\s\S]*?<h3>Choose your slots<\/h3>/);
   assert.doesNotMatch(stepOne, /When are you playing\?|schedule-kicker|schedule-scroll-hint/);
-  assert.match(stepTwo, /STEP 02[\s\S]*?<h3>Your details<\/h3>[\s\S]*?No account needed/);
+  assert.match(stepTwo, /<span className="step-chip">02<\/span>[\s\S]*?Player details[\s\S]*?<h3>Tell us who to expect<\/h3>[\s\S]*?No account needed/);
   assert.doesNotMatch(stepTwo, /Who&apos;s rallying\?|className="guest-note"/);
   assert.match(
     stepThree,
@@ -4498,7 +4498,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   const stepTwoForm = stepTwo.indexOf(
     '<form className="booking-main-card booking-details-form"',
   );
-  const stepTwoHeading = stepTwo.indexOf("Your details");
+  const stepTwoHeading = stepTwo.indexOf("Tell us who to expect");
   assert.ok(
     stepTwoSummary >= 0 &&
       stepTwoForm > stepTwoSummary &&

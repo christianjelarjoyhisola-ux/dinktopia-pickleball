@@ -2,7 +2,6 @@
 
 import Image from "next/image";
 import {
-  Fragment,
   FormEvent,
   useEffect,
   useId,
@@ -278,15 +277,6 @@ function longDateLabel(date: string) {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T12:00:00Z`));
-}
-
-function shortDateLabel(date: string) {
-  return new Intl.DateTimeFormat("en-PH", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${date}T12:00:00Z`));
 }
@@ -2256,7 +2246,7 @@ export function BookingExperience({
     }
   }
 
-  const stepLabels = ["Choose date & time", "Your details", "Payment"];
+  const stepLabels = ["Courts", "Details", "Payment"];
   const gallerySection = (
     <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
       <div className="site-container">
@@ -2580,6 +2570,20 @@ export function BookingExperience({
               </nav>
             </div>
 
+            {mode === "book" && (
+              <div className="booking-venue-hero" aria-label="Dinktopia Court Hub booking">
+                <div className="booking-venue-hero-copy">
+                  <span className="booking-venue-mark" aria-hidden="true">DT</span>
+                  <div>
+                    <p>Book direct</p>
+                    <h2>Book court time in seconds.</h2>
+                    <span>Tap any open slot, add the court-hours you need, then check out once.</span>
+                  </div>
+                </div>
+                <span className="booking-venue-location">Dinktopia Court Hub</span>
+              </div>
+            )}
+
             {mode === "book" && isLive && !liveBookingReady ? (
               <div className="setup-unavailable-card" role={bootstrapState === "loading" ? "status" : "alert"}>
                 <span className={bootstrapState === "loading" ? "spinner" : "setup-unavailable-symbol"} aria-hidden="true">{bootstrapState === "loading" ? "" : "!"}</span>
@@ -2614,11 +2618,11 @@ export function BookingExperience({
                 )}
 
                 {step === 1 && (
-                  <div className="booking-layout">
+                  <div className="booking-layout booking-slot-step">
                     <div className={`booking-main-card booking-selection-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
                       <div className="booking-card-heading booking-choice-heading">
-                        <span className="step-chip">STEP 01</span>
-                        <div><h3>Choose date and time</h3><p>Philippine Standard Time</p></div>
+                        <span className="step-chip">01</span>
+                        <div><p className="booking-card-kicker">Court booking</p><h3>Choose your slots</h3></div>
                       </div>
 
                       <fieldset className="booking-fieldset">
@@ -2709,39 +2713,35 @@ export function BookingExperience({
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
                           <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
-                            <table className="schedule-matrix">
+                            <table className="schedule-matrix schedule-matrix-courts">
                               <thead>
                                 <tr>
-                                  <th scope="col">Time</th>
-                                  {displayCourts.map((court) => (
-                                    <th scope="col" key={court.id} title={court.name} className={initialCourtSlug && court.id === selectedCourtId ? "is-requested-court" : undefined}>
-                                      <strong>C{Number(court.number)}</strong>
-                                      <span>{court.name}</span>
+                                  <th scope="col"><strong>All courts</strong><span>Hourly view</span></th>
+                                  {scheduleHours.map((hour) => (
+                                    <th
+                                      scope="col"
+                                      key={hour}
+                                      className={hour === 24 ? "schedule-next-day-divider" : undefined}
+                                      aria-label={hour === 24 && selectedFollowingDate ? `Next day, ${longDateLabel(selectedFollowingDate)}` : undefined}
+                                    >
+                                      <strong>{formatHourWithDay(hour).replace(":00", "")}</strong>
+                                      <span>{hour === 24 ? "NEXT DAY · " : "to "}{formatHourWithDay(hour + 1).replace(":00", "")}</span>
                                     </th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
-                                {scheduleHours.map((hour) => (
-                                  <Fragment key={hour}>
-                                  {hour === 24 && selectedFollowingDate && (
-                                    <tr className="schedule-next-day-divider">
-                                      <td colSpan={displayCourts.length + 1}>
-                                        <div
-                                          className="schedule-next-day-marker"
-                                          role="separator"
-                                          aria-label={`Next day, ${longDateLabel(selectedFollowingDate)}`}
-                                        >
-                                          <span>NEXT DAY</span>
-                                          <strong>{shortDateLabel(selectedFollowingDate)}</strong>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                  <tr>
-                                    <th scope="row"><strong>{formatHour(hour).replace(":00", "")}</strong><span>–{formatHour(hour + 1).replace(":00", "")}</span></th>
-                                    {displayCourts.map((court) => {
-                                      const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
+                                {displayCourts.map((court) => {
+                                  const courtSchedule = schedule.find((item) => item.courtId === court.id);
+                                  const courtSelectionCount = selectedSlots.filter((item) => item.courtId === court.id).length;
+                                  return (
+                                  <tr key={court.id} className={initialCourtSlug && court.id === selectedCourtId ? "is-requested-court" : undefined}>
+                                    <th scope="row">
+                                      <span className="schedule-court-number">{Number(court.number)}</span>
+                                      <span><strong>{court.name}</strong><small>{courtSelectionCount ? `${courtSelectionCount} selected` : "Court"}</small></span>
+                                    </th>
+                                    {scheduleHours.map((hour) => {
+                                      const slot = courtSchedule?.slots.find((item) => item.hour === hour);
                                       const key = selectionKey(court.id, hour);
                                       const isSelected = selectedKeys.has(key);
                                       const isClosed = !slot;
@@ -2766,15 +2766,14 @@ export function BookingExperience({
                                             onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
                                           >
                                             <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
-                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : peso(slot.price)}</strong>
-                                            <span className="schedule-cell-state">{isSelected ? "Added" : isUnavailable ? stateLabel : "Open"}</span>
+                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : isSelected ? "Selected" : "Open"}</strong>
+                                            {!isUnavailable && <span className="schedule-cell-state">{peso(slot.price)}</span>}
                                           </button>
                                         </td>
                                       );
                                     })}
                                   </tr>
-                                  </Fragment>
-                                ))}
+                                )})}
                               </tbody>
                             </table>
                           </div>
@@ -2789,24 +2788,15 @@ export function BookingExperience({
                         )}
                       </fieldset>
 
-                      {selectedSlots.length > 0 && (
-                        <div className="booking-mobile-action" role="region" aria-label="Selected court-hours">
-                          <div><small>{selectedSlots.length} hr{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</small><strong>{peso(total)}</strong></div>
-                          <button className="mobile-selection-clear" type="button" onClick={clearSelection}>Clear</button>
-                          <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!liveSelectionSupported} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
+                      <div className="slot-step-footer" role="region" aria-label="Selected court-hours">
+                        <div>
+                          <strong>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
+                          {selectedSlots.length > 0 && <span>{selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"} · {peso(total)}</span>}
                         </div>
-                      )}
+                        {selectedSlots.length > 0 && <button className="slot-clear-button" type="button" onClick={clearSelection}>Clear</button>}
+                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!selectedSlots.length || !liveSelectionSupported} onClick={() => setStep(2)}>Continue{selectedSlots.length ? ` · ${peso(total)}` : ""} <span aria-hidden="true">→</span></button>
+                      </div>
                     </div>
-                    <BookingSummary
-                      selections={selectedSlotDetails}
-                      dateLabel={selectedBookingDateLabel}
-                      subtotal={courtSubtotal}
-                      bookingFee={bookingFee ?? 0}
-                      total={total}
-                      actionLabel="Continue"
-                      actionDisabled={!selectedSlots.length || !liveSelectionSupported}
-                      onAction={() => setStep(2)}
-                    />
                   </div>
                 )}
 
@@ -2815,8 +2805,8 @@ export function BookingExperience({
                     <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                     <form className="booking-main-card booking-details-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
                       <div className="booking-card-heading">
-                        <span className="step-chip">STEP 02</span>
-                        <div><h3>Your details</h3><p>No account needed. We&apos;ll send booking updates here.</p></div>
+                        <span className="step-chip">02</span>
+                        <div><p className="booking-card-kicker">Player details</p><h3>Tell us who to expect</h3><p>No account needed. We&apos;ll send booking updates here.</p></div>
                       </div>
                       <div className="form-grid">
                         <div className="form-field form-field-wide">
