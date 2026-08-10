@@ -203,7 +203,7 @@
 
 .booking-route .booking-details-view .details-hold-gate { margin-top: 18px; }
 
-.booking-route .booking-details-view .turnstile-background {
+.booking-route .turnstile-background {
   position: fixed;
   right: 0;
   bottom: 0;
