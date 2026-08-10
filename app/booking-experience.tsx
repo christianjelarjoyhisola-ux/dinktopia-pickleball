@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import {
+  CSSProperties,
   FormEvent,
+  Fragment,
   useEffect,
   useId,
   useMemo,
@@ -1364,7 +1366,7 @@ export function BookingExperience({
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
-  const [selectedCourtId, setSelectedCourtId] = useState(() => {
+  const [, setSelectedCourtId] = useState(() => {
     if (isLive) return previewCourts[0].id;
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
   });
@@ -2306,7 +2308,12 @@ export function BookingExperience({
 
   return (
     <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}>
-      {!isLive && (
+      {isBookingPage ? (
+        <div className="preview-ribbon" role="status">
+          <strong>{isLive ? "Live booking" : "Setup preview"}</strong>
+          <span>{isLive ? "Court availability and payments are connected." : "No live reservations or payments are created."}</span>
+        </div>
+      ) : !isLive && (
         <div className="preview-ribbon" role="status">
           <strong>Setup preview</strong><span>No live reservations or payments are created.</span>
         </div>
@@ -2774,117 +2781,93 @@ export function BookingExperience({
                         )}
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
-                            <table className="schedule-matrix schedule-matrix-courts schedule-matrix-desktop">
-                              <thead>
-                                <tr>
-                                  <th scope="col"><strong>All courts</strong><span>Hourly view</span></th>
-                                  {scheduleHours.map((hour) => (
-                                    <th
-                                      scope="col"
-                                      key={hour}
-                                      className={hour === 24 ? "schedule-next-day-divider" : undefined}
-                                      aria-label={hour === 24 && selectedFollowingDate ? `Next day, ${longDateLabel(selectedFollowingDate)}` : undefined}
-                                    >
-                                      <strong>{formatHourWithDay(hour).replace(":00", "")}</strong>
-                                      <span>{hour === 24 ? "NEXT DAY · " : "to "}{formatHourWithDay(hour + 1).replace(":00", "")}</span>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
+                          <div className="rally-availability-board">
+                            <div
+                              className="availability-scroll"
+                              role="region"
+                              aria-label={`All courts hourly availability for ${selectedBaseDateLabel}. Scroll horizontally to see later times.`}
+                              tabIndex={0}
+                            >
+                              <div className="availability-grid" style={{ "--slot-count": scheduleHours.length } as CSSProperties}>
+                                <div className="availability-corner"><strong>All courts</strong><small>Hourly view</small></div>
+                                {scheduleHours.map((hour) => (
+                                  <div
+                                    className={`availability-time${hour === 24 ? " schedule-next-day-divider" : ""}`}
+                                    key={`time-${hour}`}
+                                    aria-label={hour === 24 && selectedFollowingDate ? `Next day, ${longDateLabel(selectedFollowingDate)}` : undefined}
+                                  >
+                                    <strong>{formatHour(hour).replace(":00", "")}</strong>
+                                    <small>{hour === 24 ? "NEXT DAY · " : "to "}{formatHour(hour + 1).replace(":00", "")}</small>
+                                  </div>
+                                ))}
                                 {displayCourts.map((court) => {
                                   const courtSchedule = schedule.find((item) => item.courtId === court.id);
                                   const courtSelectionCount = selectedSlots.filter((item) => item.courtId === court.id).length;
                                   return (
-                                  <tr key={court.id} className={initialCourtSlug && court.id === selectedCourtId ? "is-requested-court" : undefined}>
-                                    <th scope="row">
-                                      <span className="schedule-court-number">{Number(court.number)}</span>
-                                      <span><strong>{court.name}</strong><small>{courtSelectionCount ? `${courtSelectionCount} selected` : "Court"}</small></span>
-                                    </th>
-                                    {scheduleHours.map((hour) => {
-                                      const slot = courtSchedule?.slots.find((item) => item.hour === hour);
-                                      const key = selectionKey(court.id, hour);
-                                      const isSelected = selectedKeys.has(key);
-                                      const isClosed = !slot;
-                                      const isBooked = slot?.status === "unavailable";
-                                      const isUnavailable = isClosed || isBooked;
-                                      const isDisabled = isUnavailable;
-                                      const stateLabel = isClosed
-                                        ? "closed"
-                                        : isBooked
-                                          ? "booked"
-                                          : isSelected
-                                            ? "selected"
-                                            : "available";
-                                      return (
-                                        <td key={court.id}>
+                                    <Fragment key={court.id}>
+                                      <div className="availability-court">
+                                        <span className="court-number">{Number(court.number)}</span>
+                                        <span><strong>{court.name}</strong><small>{compactCourtSurface(court)}</small></span>
+                                        <em>{courtSelectionCount ? `${courtSelectionCount} selected` : ""}</em>
+                                      </div>
+                                      {scheduleHours.map((hour) => {
+                                        const slot = courtSchedule?.slots.find((item) => item.hour === hour);
+                                        const isSelected = selectedKeys.has(selectionKey(court.id, hour));
+                                        const busy = !slot || slot.status === "unavailable";
+                                        return (
                                           <button
                                             type="button"
-                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}`}
+                                            key={`${court.id}-${hour}`}
+                                            className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
-                                            disabled={isDisabled}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
-                                            onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
-                                          >
-                                            <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
-                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : isSelected ? "Selected" : "Open"}</strong>
-                                            {!isUnavailable && <span className="schedule-cell-state">{peso(slot.price)}</span>}
-                                          </button>
-                                        </td>
-                                      );
-                                    })}
-                                  </tr>
-                                )})}
-                              </tbody>
-                            </table>
-                            <table
-                              className="schedule-matrix schedule-matrix-mobile"
-                              style={{ minWidth: `${80 + displayCourts.length * 58}px` }}
-                            >
-                              <thead>
-                                <tr>
-                                  <th scope="col"><strong>Time</strong><span>Hourly</span></th>
-                                  {displayCourts.map((court) => (
-                                    <th scope="col" key={court.id} title={court.name}>
-                                      <strong>C{Number(court.number)}</strong>
-                                      <span>{compactCourtSurface(court)}</span>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
+                                            disabled={busy}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                            onClick={() => slot && !busy && chooseSlot(court, slot)}
+                                          ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
+                                        );
+                                      })}
+                                    </Fragment>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div className="availability-mobile" role="region" aria-label="Mobile all-court availability">
+                              <div
+                                className="mobile-availability-grid"
+                                style={{
+                                  "--court-count": displayCourts.length,
+                                  "--mobile-grid-min": `${80 + displayCourts.length * 58}px`,
+                                } as CSSProperties}
+                              >
+                                <div className="mobile-availability-corner"><strong>Time</strong><small>Hourly</small></div>
+                                {displayCourts.map((court) => (
+                                  <div className="mobile-court-head" key={`head-${court.id}`} title={court.name}>
+                                    <span>C{Number(court.number)}</span><small>{compactCourtSurface(court)}</small>
+                                  </div>
+                                ))}
                                 {scheduleHours.map((hour) => (
-                                  <tr key={hour}>
-                                    <th scope="row"><strong>{formatHour(hour).replace(":00", "")}</strong><span>to {formatHour(hour + 1).replace(":00", "")}</span></th>
+                                  <Fragment key={`mobile-${hour}`}>
+                                    <div className={`mobile-time-label${hour === 24 ? " schedule-next-day-divider" : ""}`}><strong>{formatHour(hour).replace(":00", "")}</strong><small>{hour === 24 ? "NEXT DAY · " : "to "}{formatHour(hour + 1).replace(":00", "")}</small></div>
                                     {displayCourts.map((court) => {
                                       const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
-                                      const key = selectionKey(court.id, hour);
-                                      const isSelected = selectedKeys.has(key);
-                                      const isClosed = !slot;
-                                      const isBooked = slot?.status === "unavailable";
-                                      const isUnavailable = isClosed || isBooked;
-                                      const stateLabel = isClosed ? "closed" : isBooked ? "booked" : isSelected ? "selected" : "available";
+                                      const isSelected = selectedKeys.has(selectionKey(court.id, hour));
+                                      const busy = !slot || slot.status === "unavailable";
                                       return (
-                                        <td key={court.id}>
-                                          <button
-                                            type="button"
-                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}`}
-                                            aria-pressed={isSelected}
-                                            disabled={isUnavailable}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
-                                            onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
-                                          >
-                                            <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "●" : "○"}</span>
-                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : isSelected ? "Selected" : "Open"}</strong>
-                                          </button>
-                                        </td>
+                                        <button
+                                          type="button"
+                                          key={`${court.id}-${hour}`}
+                                          className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
+                                          aria-pressed={isSelected}
+                                          disabled={busy}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                          onClick={() => slot && !busy && chooseSlot(court, slot)}
+                                        ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
                                       );
                                     })}
-                                  </tr>
+                                  </Fragment>
                                 ))}
-                              </tbody>
-                            </table>
+                              </div>
+                            </div>
                           </div>
                         )}
                         {isLive && selectedSlots.length > 0 && !liveSelectionSupported && (
