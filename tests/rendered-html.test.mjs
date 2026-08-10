@@ -1180,8 +1180,8 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     /const atomicMultiSessionBooking =\s*!isLive \|\| bootstrap\?\.capabilities\?\.atomicMultiSessionBookingV1 !== false/,
   );
 
-  const reserveStart = booking.indexOf("async function reservePaymentHold(");
-  const reserveEnd = booking.indexOf("async function submitPayment(", reserveStart);
+  const reserveStart = booking.indexOf("async function createSelectionHold(");
+  const reserveEnd = booking.indexOf("async function completeHeldBookingDetails(", reserveStart);
   assert.ok(reserveStart >= 0 && reserveEnd > reserveStart);
   const reserveSource = booking.slice(reserveStart, reserveEnd);
   assert.match(
@@ -4273,16 +4273,14 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   assert.match(adapterHoldSource, /policyAccepted: request\.policyAccepted/);
   assert.doesNotMatch(adapterHoldSource, /policyAccepted: true/);
 
-  const reserveStart = booking.indexOf("async function reservePaymentHold(");
-  const reserveEnd = booking.indexOf("async function submitPayment(", reserveStart);
+  const reserveStart = booking.indexOf("async function createSelectionHold(");
+  const reserveEnd = booking.indexOf("async function completeHeldBookingDetails(", reserveStart);
   assert.ok(reserveStart >= 0 && reserveEnd > reserveStart);
   const reserveSource = booking.slice(reserveStart, reserveEnd);
   const createHoldIndex = reserveSource.indexOf("adapter.createHold(");
-  assert.ok(createHoldIndex >= 0, "expected Step 2 to create the hold before payment");
+  assert.ok(createHoldIndex >= 0, "expected Step 1 to create the hold before details");
 
   for (const [label, guard] of [
-    ["customer details", /if \(!validateDetails\(\)\) return;/],
-    ["policy acceptance", /if \(!acceptedPolicy\)/],
     ["bootstrap failure", /if \(bootstrapState === "error"\)/],
     ["public-booking readiness", /if \(isLive && !bootstrap\?\.readiness\.publicBookingEnabled\)/],
     ["payment readiness", /if \(isLive && !paymentMethod\)/],
@@ -4301,15 +4299,24 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
 
   assert.match(
     reserveSource,
-    /const booking = await adapter\.createHold\(\{[\s\S]*?items: selectedSlots,[\s\S]*?customer,[\s\S]*?policyAccepted: acceptedPolicy,[\s\S]*?policyVersion:[\s\S]*?turnstileToken:/,
+    /const booking = await adapter\.createHold\(\{[\s\S]*?items: selectedSlots,[\s\S]*?customer,[\s\S]*?policyAccepted: true,[\s\S]*?policyVersion:[\s\S]*?turnstileToken:[\s\S]*?detailsPending: true/,
   );
   assert.ok(
     reserveSource.indexOf("setPendingBooking(booking)") > createHoldIndex &&
-      reserveSource.indexOf("setStep(3)") >
+      reserveSource.indexOf("setStep(2)") >
         reserveSource.indexOf("setPendingBooking(booking)"),
-    "expected a successful hold to become the pending booking before opening payment",
+    "expected a successful hold to become the pending booking before opening details",
   );
   assert.doesNotMatch(reserveSource, /setStep\(4\)/);
+
+  const detailsStart = booking.indexOf("async function completeHeldBookingDetails(");
+  const detailsEnd = booking.indexOf("async function submitPayment(", detailsStart);
+  const detailsSource = booking.slice(detailsStart, detailsEnd);
+  assert.match(detailsSource, /if \(!validateDetails\(\)\) return;/);
+  assert.match(detailsSource, /if \(!acceptedPolicy\)/);
+  assert.match(detailsSource, /if \(!pendingBooking\)/);
+  assert.match(detailsSource, /adapter\.completeDetails\(/);
+  assert.match(detailsSource, /setStep\(3\)/);
 
   const customerPaymentStart = booking.indexOf(
     "async function submitPayment(",
@@ -4355,7 +4362,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   );
   assert.match(
     restoreSource,
-    /setConfirmedBooking\(null\);[\s\S]*?setPendingBooking\(restored\);[\s\S]*?setStep\(3\);/,
+    /setConfirmedBooking\(null\);[\s\S]*?setPendingBooking\(restored\);[\s\S]*?setStep\(restored\.detailsComplete === false \? 2 : 3\);/,
   );
   assert.match(
     booking,
@@ -4370,7 +4377,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
 
   assert.match(
     booking,
-    /if \(!isBookingPage \|\| !isLive \|\| step !== 2 \|\| pendingBooking \|\| !securitySiteKey \|\| !turnstileContainerRef\.current\) return;/,
+    /if \(!isBookingPage \|\| !isLive \|\| step !== 1 \|\| pendingBooking \|\| !securitySiteKey \|\| !turnstileContainerRef\.current\) return;/,
   );
   assert.match(
     booking,
@@ -4511,22 +4518,24 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepTwo, /className="field-error"/);
   assert.match(stepTwo, /aria-busy=\{isSubmitting\}/);
   assert.match(stepTwo, /className="details-hold-gate"/);
+  assert.match(stepTwo, /Slots held/);
   assert.match(stepTwo, /className="policy-grid policy-grid-single"/);
   assert.match(stepTwo, /className=\{`check-row policy-check/);
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
   assert.match(
-    stepTwo,
+    stepOne,
     /\{isLive && securitySiteKey && <div ref=\{turnstileContainerRef\} className="turnstile-background" aria-hidden="true" \/>\}/,
   );
   assert.doesNotMatch(stepTwo, /details-security-boundary|Verification required|Required before we hold the court/);
   assert.match(
     stepTwo,
-    /\{paymentError && \([\s\S]*?className="payment-error" role="alert"[\s\S]*?We couldn&apos;t hold your slot/,
+    /\{paymentError && \([\s\S]*?className="payment-error" role="alert"[\s\S]*?We couldn&apos;t save your details/,
   );
   assert.match(
     stepTwo,
-    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported\}[\s\S]*?Holding your slot[\s\S]*?Review payment/,
+    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| holdExpired \|\| !acceptedPolicy \|\| !liveSelectionSupported\}[\s\S]*?Saving details[\s\S]*?Review payment/,
   );
+  assert.match(stepOne, /data-testid="booking-continue"[\s\S]*?createSelectionHold\(\)[\s\S]*?Hold &amp; continue/);
   assert.match(stepTwo, /className="stage-footer form-footer">[\s\S]*?By continuing, you agree to the venue booking policy/);
 
   const policyDisclosures =

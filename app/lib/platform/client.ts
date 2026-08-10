@@ -506,6 +506,35 @@ export async function cancelUnpaidBooking(reference: string, token: string) {
   return responseJson<Record<string, unknown>>(response);
 }
 
+export async function completeBookingDetails(options: {
+  reference: string;
+  token: string;
+  customer: { name: string; email: string; phone: string };
+}) {
+  if (platformMode() === "preview") {
+    return {
+      reference: options.reference,
+      status: "preview_only",
+      expiresAt: null,
+      detailsComplete: true,
+    };
+  }
+  return rpc<{
+    reference: string;
+    status: string;
+    expiresAt?: string | null;
+    detailsComplete: true;
+  }>("complete_public_booking_details", {
+    p_tenant_slug: activeTenant.identity.slug,
+    p_hostname: currentHostname(),
+    p_booking_reference: options.reference,
+    p_booking_token: options.token,
+    p_customer_name: options.customer.name,
+    p_customer_email: options.customer.email,
+    p_customer_phone: options.customer.phone,
+  });
+}
+
 export async function submitPaymentReceipt(options: {
   reference: string;
   token: string;

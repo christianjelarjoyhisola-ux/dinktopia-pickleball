@@ -24,6 +24,7 @@ import {
 import {
   bookingStatus,
   cancelUnpaidBooking,
+  completeBookingDetails as completePlatformBookingDetails,
   createBooking as createPlatformBooking,
   getAvailability as getPlatformAvailability,
   getTenantBootstrap,
@@ -109,6 +110,7 @@ export type BookingRecord = {
   serviceFeeAmount?: number;
   items?: BookingSelection[];
   customer: CustomerDetails;
+  detailsComplete?: boolean;
 };
 
 export type BookingHoldRequest = {
@@ -125,6 +127,12 @@ export type BookingHoldRequest = {
   turnstileToken?: string;
   clientRequestId: string;
   atomicMultiSessionBooking?: boolean;
+  detailsPending?: boolean;
+};
+
+export type BookingDetailsRequest = {
+  booking: BookingRecord;
+  customer: CustomerDetails;
 };
 
 export type BookingPaymentRequest = {
@@ -141,6 +149,7 @@ export type BookingAdapter = {
     request: AvailabilityRequest,
   ) => Promise<CourtSchedule[]>;
   createHold: (request: BookingHoldRequest) => Promise<BookingRecord>;
+  completeDetails: (request: BookingDetailsRequest) => Promise<BookingRecord>;
   submitPayment: (request: BookingPaymentRequest) => Promise<BookingRecord>;
   findBooking: (reference: string, email: string) => Promise<BookingRecord | null>;
   cancelBooking: (reference: string, reason: string) => Promise<BookingRecord>;
@@ -796,6 +805,8 @@ function isStoredBookingRecord(value: unknown): value is BookingRecord {
             Number.isFinite(item.amount) &&
             item.amount >= 0,
         ))) &&
+    (record.detailsComplete === undefined ||
+      typeof record.detailsComplete === "boolean") &&
     (!record.expiresAt ||
       (typeof record.expiresAt === "string" &&
         Number.isFinite(Date.parse(record.expiresAt)))) &&
@@ -972,11 +983,17 @@ const platformAdapter: BookingAdapter = {
 
     // The server owns idempotency. Replaying this UUID is safer than trusting a
     // cached browser response after an ambiguous network failure.
-    const bookingCustomer = {
-      name: request.customer.fullName,
-      email: request.customer.email,
-      phone: request.customer.phone,
-    };
+    const bookingCustomer = request.detailsPending
+      ? {
+          name: "Booking details pending",
+          email: `booking-${request.clientRequestId}@pending.dinktopia.invalid`,
+          phone: "0000000000",
+        }
+      : {
+          name: request.customer.fullName,
+          email: request.customer.email,
+          phone: request.customer.phone,
+        };
     const confirmation: BookingConfirmation = request.atomicMultiSessionBooking
       ? await createPlatformBooking({
           sessions: groupSessions!,
@@ -986,6 +1003,7 @@ const platformAdapter: BookingAdapter = {
           policyVersion: request.policyVersion,
           clientRequestId: request.clientRequestId,
           turnstileToken: request.turnstileToken,
+          notes: request.detailsPending ? "__details_pending_v1__" : null,
         })
       : await createPlatformBooking({
           courtId: canonical.courtId,
@@ -998,6 +1016,7 @@ const platformAdapter: BookingAdapter = {
           policyVersion: request.policyVersion,
           clientRequestId: request.clientRequestId,
           turnstileToken: request.turnstileToken,
+          notes: request.detailsPending ? "__details_pending_v1__" : null,
         });
 
     if (
@@ -1063,6 +1082,7 @@ const platformAdapter: BookingAdapter = {
         : confirmation.serviceFeeAmount,
       items: request.items,
       customer: request.customer,
+      detailsComplete: !request.detailsPending,
     };
 
     const bookingKey = `dinktopia:booking:${record.reference}`;
@@ -1095,6 +1115,44 @@ const platformAdapter: BookingAdapter = {
       throw new Error(
         "The hold could not be saved safely and payment remains disabled. Refresh before trying again.",
       );
+    }
+    return record;
+  },
+  async completeDetails(request) {
+    const parsed = readStoredBooking(request.booking.reference);
+    if (!parsed) {
+      throw new Error("This court hold is no longer available. Choose your slots again.");
+    }
+    if (parsed.record.status !== "pending_payment") {
+      throw new Error("This booking is no longer awaiting player details.");
+    }
+    const result = await completePlatformBookingDetails({
+      reference: parsed.record.reference,
+      token: parsed.token,
+      customer: {
+        name: request.customer.fullName.trim(),
+        email: request.customer.email.trim().toLowerCase(),
+        phone: request.customer.phone.trim(),
+      },
+    });
+    const status = mappedBookingStatus(result.status, parsed.record.status);
+    if (platformMode() === "live" && status !== "pending_payment") {
+      throw new Error("This court hold is no longer active.");
+    }
+    const record: BookingRecord = {
+      ...parsed.record,
+      status,
+      expiresAt: result.expiresAt ?? parsed.record.expiresAt,
+      customer: request.customer,
+      detailsComplete: true,
+    };
+    try {
+      sessionStorage.setItem(
+        `dinktopia:booking:${record.reference}`,
+        JSON.stringify({ ...parsed, record }),
+      );
+    } catch {
+      throw new Error("Your player details were saved, but booking recovery is unavailable in this browser.");
     }
     return record;
   },
@@ -1723,7 +1781,7 @@ export function BookingExperience({
             })),
       });
       setCustomer(restored.customer);
-      setAcceptedPolicy(true);
+      setAcceptedPolicy(restored.detailsComplete !== false);
       setPaymentError("");
       setMode("book");
       setHoldNow(Date.now());
@@ -1748,10 +1806,12 @@ export function BookingExperience({
 
       setConfirmedBooking(null);
       setPendingBooking(restored);
-      setStep(3);
+      setStep(restored.detailsComplete === false ? 2 : 3);
       setLiveMessage(
         restored.status === "pending_payment"
-          ? `Saved hold ${restored.reference} was verified and restored.`
+          ? restored.detailsComplete === false
+            ? `Saved hold ${restored.reference} was restored. Add player details before it expires.`
+            : `Saved hold ${restored.reference} was verified and restored.`
           : `Saved hold ${restored.reference} is no longer available.`,
       );
     };
@@ -1783,7 +1843,7 @@ export function BookingExperience({
   }, [isBookingPage, step]);
 
   useEffect(() => {
-    if (!isBookingPage || !isLive || step !== 2 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
+    if (!isBookingPage || !isLive || step !== 1 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
     let disposed = false;
     const container = turnstileContainerRef.current;
     const renderWidget = () => {
@@ -1977,17 +2037,11 @@ export function BookingExperience({
 
   async function submitDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await reservePaymentHold();
+    await completeHeldBookingDetails();
   }
 
-  async function reservePaymentHold() {
+  async function createSelectionHold() {
     setPaymentError("");
-    if (!validateDetails()) return;
-    if (!acceptedPolicy) {
-      setPaymentError("Accept the booking and cancellation rules before we hold your slot.");
-      window.requestAnimationFrame(() => document.getElementById(`${formId}-policy`)?.focus());
-      return;
-    }
     if (bootstrapState === "error") {
       setPaymentError("Booking setup could not be loaded. Refresh the page before trying again.");
       return;
@@ -2005,7 +2059,7 @@ export function BookingExperience({
       return;
     }
     if (isLive && (!securitySiteKey || !turnstileTokenValue)) {
-      setPaymentError("Complete the security check before submitting your booking.");
+      setPaymentError("The secure hold check is still loading. Try Hold & continue again in a moment.");
       return;
     }
     if (!selectedSlots.length) {
@@ -2039,19 +2093,20 @@ export function BookingExperience({
         amount: total,
         items: selectedSlots,
         customer,
-        policyAccepted: acceptedPolicy,
+        policyAccepted: true,
         policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
         turnstileToken: turnstileTokenValue || undefined,
         clientRequestId,
         atomicMultiSessionBooking,
+        detailsPending: true,
       });
       bookingOwnsSelectionRef.current = true;
       setPendingBooking(booking);
       setHoldNow(Date.now());
-      setStep(3);
+      setStep(2);
       setLiveMessage(
         isLive
-          ? `Booking ${booking.reference} is held while payment is submitted.`
+          ? `Booking ${booking.reference} is held. Add player details before the timer expires.`
           : `Preview hold ${booking.reference} was created. No real court is reserved.`,
       );
     } catch (error) {
@@ -2065,6 +2120,47 @@ export function BookingExperience({
         error instanceof Error
           ? error.message
           : "The slot could not be reserved. Refresh availability and try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function completeHeldBookingDetails() {
+    setPaymentError("");
+    if (!validateDetails()) return;
+    if (!acceptedPolicy) {
+      setPaymentError("Accept the booking and cancellation rules before continuing to payment.");
+      window.requestAnimationFrame(() => document.getElementById(`${formId}-policy`)?.focus());
+      return;
+    }
+    if (!pendingBooking) {
+      setPaymentError("This court is not held yet. Return to the schedule and choose Hold & continue.");
+      return;
+    }
+    if (holdExpired) {
+      setPaymentError("This hold has expired or been released. Choose a new time.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const booking = await adapter.completeDetails({
+        booking: pendingBooking,
+        customer,
+      });
+      setPendingBooking(booking);
+      setStep(3);
+      setLiveMessage(
+        isLive
+          ? `Player details saved for held booking ${booking.reference}.`
+          : `Preview player details saved for ${booking.reference}.`,
+      );
+    } catch (error) {
+      setPaymentError(
+        error instanceof Error
+          ? error.message
+          : "Player details could not be saved. Try again before the hold expires.",
       );
     } finally {
       setIsSubmitting(false);
@@ -2667,7 +2763,7 @@ export function BookingExperience({
               <div className="booking-shell">
                 {step === 2 && (
                   <div className="booking-compact-title">
-                    <button className="back-link" type="button" onClick={() => setStep(1)}>
+                    <button className="back-link" type="button" disabled={isSubmitting} onClick={() => void cancelCurrentHold()}>
                       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
                       Back
                     </button>
@@ -2896,6 +2992,12 @@ export function BookingExperience({
                         )}
                       </fieldset>
 
+                      {isLive && securitySiteKey && <div ref={turnstileContainerRef} className="turnstile-background" aria-hidden="true" />}
+                      {step === 1 && paymentError && (
+                        <div className="payment-error booking-selection-error" role="alert">
+                          <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slots</strong><p>{paymentError}</p></div>
+                        </div>
+                      )}
                       <div className="slot-step-footer stage-footer booking-selection-footer" role="region" aria-label="Selected court-hours">
                         <div>
                           <strong><i aria-hidden="true">✓</i>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
@@ -2909,7 +3011,7 @@ export function BookingExperience({
                           tabIndex={selectedSlots.length ? 0 : -1}
                           onClick={clearSelection}
                         >Clear</button>
-                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!selectedSlots.length || !liveSelectionSupported} onClick={() => setStep(2)}>Continue{selectedSlots.length ? ` · ${peso(total)}` : ""} <span aria-hidden="true">→</span></button>
+                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={isSubmitting || !selectedSlots.length || !liveSelectionSupported} onClick={() => void createSelectionHold()}>{isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding…</> : <>Hold &amp; continue{selectedSlots.length ? ` · ${peso(total)}` : ""} <span aria-hidden="true">→</span></>}</button>
                       </div>
                     </div>
                   </div>
@@ -2922,6 +3024,14 @@ export function BookingExperience({
                         <span className="step-chip">02</span>
                         <div><p className="player-kicker">Player details</p><h3>Tell us who to expect</h3></div>
                       </div>
+                      {pendingBooking && (
+                        <div className={`notice-banner ${holdExpired ? "" : "notice-success"}`} role={holdExpired ? "alert" : "status"}>
+                          <div>
+                            <strong>{holdExpired ? "Hold expired or released" : `Slots held · ${pendingBooking.reference}`}</strong>
+                            <span>{holdExpired ? "Return to the schedule and choose another time." : holdRemainingSeconds == null ? "The server controls this hold window." : `Complete these details within ${formatHoldCountdown(holdRemainingSeconds)}.`}</span>
+                          </div>
+                        </div>
+                      )}
                       <div className="form-grid player-form-grid">
                         <label className="player-field full">
                           <span>Full name</span>
@@ -2992,12 +3102,11 @@ export function BookingExperience({
                         )}
                         <label className={`check-row policy-check ${!acceptedPolicy ? "needs-check" : ""}`}>
                           <input id={`${formId}-policy`} type="checkbox" checked={acceptedPolicy} disabled={isLive && !policyVersion} onChange={(event) => setAcceptedPolicy(event.target.checked)} />
-                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required to hold this time.</small></span>
+                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required before payment.</small></span>
                         </label>
-                        {isLive && securitySiteKey && <div ref={turnstileContainerRef} className="turnstile-background" aria-hidden="true" />}
                         {paymentError && (
                           <div className="payment-error" role="alert">
-                            <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slot</strong><p>{paymentError}</p></div>
+                            <span aria-hidden="true">!</span><div><strong>We couldn&apos;t save your details</strong><p>{paymentError}</p></div>
                           </div>
                         )}
                       </div>
@@ -3007,9 +3116,9 @@ export function BookingExperience({
                           data-testid="hold-and-pay"
                           className="button button-blue"
                           type="submit"
-                          disabled={isSubmitting || !acceptedPolicy || !liveSelectionSupported}
+                          disabled={isSubmitting || holdExpired || !acceptedPolicy || !liveSelectionSupported}
                         >
-                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Review payment <span aria-hidden="true">→</span></>}
+                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Saving details…</> : <>Review payment <span aria-hidden="true">→</span></>}
                         </button>
                       </div>
                     </form>
