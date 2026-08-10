@@ -8,10 +8,12 @@ import {
   checkInTenantBooking,
   createManualBooking,
   currentOwnerSession,
+  deleteTenantPaymentQr,
   getActivationSettings,
   getBlockedDateAccess,
   getManagerCourts,
   getManagerSession,
+  getPaymentReceiptView,
   getRemittanceDestination,
   getTenantPolicy,
   listManagerBlocks,
@@ -20,11 +22,13 @@ import {
   manageTenantCourt,
   platformMode,
   previewBookingReschedule,
+  reviewPaymentReceipt,
   rescheduleBooking,
   saveRemittanceDestination,
   saveTenantPolicy,
   updateActivationSettings,
   updateBusinessSettings,
+  uploadTenantPaymentQr,
 } from "../lib/platform/client";
 
 export type TenantRole = "owner" | "admin" | "staff" | "host";
@@ -34,6 +38,8 @@ export type ManagementCapability =
   | "booking:update"
   | "booking:cancel"
   | "booking:check-in"
+  | "payment:review"
+  | "payment:asset"
   | "schedule:block"
   | "customer:view"
   | "report:view"
@@ -79,6 +85,38 @@ export type Booking = {
   courtId: string;
   bookingDate: string | null;
   startTime: string | null;
+  paymentEvidence?: PaymentEvidence | null;
+};
+
+export type PaymentEvidenceStatus =
+  | "pending"
+  | "manual_review"
+  | "auto_approved"
+  | "approved"
+  | "rejected";
+
+export type PaymentEvidence = {
+  verificationId: string;
+  status: PaymentEvidenceStatus;
+  submittedReference: string | null;
+  detectedReference: string | null;
+  paymentMethod: string | null;
+  paymentAttemptedAt: string | null;
+  submittedAt: string;
+  reviewedAt: string | null;
+  expectedAmount: number | null;
+  detectedAmounts: number[];
+  receiptIssuedAt: string | null;
+  confidence: number | null;
+  flags: string[];
+  reviewable: boolean;
+};
+
+export type PaymentReceiptView = {
+  signedUrl: string;
+  expiresAt: string;
+  verificationId: string;
+  status: PaymentEvidenceStatus;
 };
 
 export type TenantPolicyConfiguration = {
@@ -252,6 +290,12 @@ export type ManagementSnapshot = {
   configuration: LiveConfiguration;
 };
 
+export type ManagementActionResult = {
+  ok: true;
+  message: string;
+  tenantRevision?: string;
+};
+
 /**
  * The management route consumes this interface only. The production adapter can
  * map the shared tenant/auth/API response to this shape without changing the UI.
@@ -260,10 +304,19 @@ export type ManagementSnapshot = {
  */
 export interface ManagementAdapter {
   load(context: ManagementContext): Promise<ManagementSnapshot>;
+  loadPaymentReceipt(
+    context: ManagementContext,
+    verificationId: string,
+  ): Promise<PaymentReceiptView>;
+  uploadPaymentQr(
+    context: ManagementContext,
+    methodCode: string,
+    file: File,
+  ): Promise<{ url: string; contentType: string; tenantRevision: string }>;
   perform(
     context: ManagementContext,
     action: { type: string; resourceId?: string; payload?: unknown },
-  ): Promise<{ ok: true; message: string }>;
+  ): Promise<ManagementActionResult>;
 }
 
 export const previewRoleSessions: Record<TenantRole, ManagementCapability[]> = {
@@ -271,6 +324,8 @@ export const previewRoleSessions: Record<TenantRole, ManagementCapability[]> = {
     "booking:create",
     "booking:update",
     "booking:cancel",
+    "payment:review",
+    "payment:asset",
     "customer:view",
     "report:view",
     "settings:update",
@@ -279,12 +334,14 @@ export const previewRoleSessions: Record<TenantRole, ManagementCapability[]> = {
     "booking:create",
     "booking:update",
     "booking:cancel",
+    "payment:review",
     "customer:view",
     "report:view",
     "settings:update",
   ],
   staff: [
     "booking:create",
+    "payment:review",
     "customer:view",
   ],
   host: [],
@@ -751,6 +808,9 @@ export const managementAdapter: ManagementAdapter = {
           "booking:update": true,
           "booking:cancel": true,
           "booking:check-in": true,
+          "payment:review": true,
+          "payment:asset": serverSession.isSystemOwner ||
+            serverSession.membershipRole === "owner",
           "schedule:block": blockAccess?.canManage === true,
           "customer:view": true,
           "report:view": true,
@@ -771,6 +831,64 @@ export const managementAdapter: ManagementAdapter = {
       },
     };
   },
+  async loadPaymentReceipt(context, verificationId) {
+    if (platformMode() === "preview") {
+      throw new Error("PREVIEW_RECEIPT_UNAVAILABLE");
+    }
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(
+      await getManagerSession(session.access_token),
+    );
+    assertPaymentReviewer(authority);
+    const id = requiredUuid(verificationId, "RECEIPT_VERIFICATION_ID_INVALID");
+    const result = await getPaymentReceiptView(session.access_token, id);
+    const status = paymentEvidenceStatus(result.receipt?.status);
+    if (
+      result.receipt?.verificationId !== id || !status ||
+      !Number.isSafeInteger(result.expiresIn) || result.expiresIn < 30 ||
+      result.expiresIn > 600 || !isAllowedReceiptViewUrl(result.signedUrl)
+    ) {
+      throw new Error("RECEIPT_VIEW_RESPONSE_INVALID");
+    }
+    return {
+      signedUrl: result.signedUrl,
+      expiresAt: new Date(Date.now() + result.expiresIn * 1_000).toISOString(),
+      verificationId: id,
+      status,
+    };
+  },
+  async uploadPaymentQr(context, methodCode, file) {
+    if (platformMode() === "preview") {
+      throw new Error("PREVIEW_PAYMENT_ASSET_UNAVAILABLE");
+    }
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(
+      await getManagerSession(session.access_token),
+    );
+    assertPaymentAssetManager(authority);
+    const result = await uploadTenantPaymentQr(
+      session.access_token,
+      paymentQrMethodCode(methodCode),
+      file,
+    );
+    const asset = result.asset;
+    if (
+      !asset || !isAllowedCustomerQrUrl(asset.url) ||
+      !["image/jpeg", "image/png", "image/webp"].includes(asset.contentType) ||
+      !validIsoRevision(result.tenantRevision)
+    ) {
+      throw new Error("PAYMENT_ASSET_RESPONSE_INVALID");
+    }
+    return {
+      url: asset.url,
+      contentType: asset.contentType,
+      tenantRevision: result.tenantRevision,
+    };
+  },
   async perform(context, action) {
     if (platformMode() === "preview") {
       await delay(320);
@@ -789,6 +907,50 @@ export const managementAdapter: ManagementAdapter = {
     const authority = normalizeManagerSession(
       await getManagerSession(session.access_token),
     );
+
+    if (action.type === "payment:approve" || action.type === "payment:reject") {
+      assertPaymentReviewer(authority);
+      const verificationId = requiredUuid(
+        action.resourceId,
+        "RECEIPT_VERIFICATION_ID_INVALID",
+      );
+      const note = paymentReviewNote(action.payload, action.type === "payment:reject");
+      await reviewPaymentReceipt(session.access_token, {
+        verificationId,
+        decision: action.type === "payment:approve" ? "approve" : "reject",
+        note,
+      });
+      return {
+        ok: true,
+        message: action.type === "payment:approve"
+          ? "The receipt was approved and the booking is confirmed."
+          : "The receipt was rejected and the held court time was released.",
+      };
+    }
+
+    if (action.type === "payment:asset-remove") {
+      assertPaymentAssetManager(authority);
+      const payload = payloadObject(action.payload, "PAYMENT_QR_REMOVE_INPUT_INVALID");
+      assertAllowedKeys(
+        payload,
+        new Set(["methodCode"]),
+        "PAYMENT_QR_REMOVE_INPUT_INVALID",
+      );
+      const result = await deleteTenantPaymentQr(
+        session.access_token,
+        paymentQrMethodCode(payload.methodCode),
+      );
+      if (result.asset !== null || !validIsoRevision(result.tenantRevision)) {
+        throw new Error("PAYMENT_ASSET_RESPONSE_INVALID");
+      }
+      return {
+        ok: true,
+        message: result.cleanupPending
+          ? "The QR image was removed from customer checkout. Old-file cleanup will finish safely in the background."
+          : "The QR image was removed from customer checkout.",
+        tenantRevision: result.tenantRevision,
+      };
+    }
 
     if (
       action.type === "booking:create" || action.type === "booking:update" ||
@@ -1005,6 +1167,16 @@ const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const SHARED_SUPABASE_ORIGIN = "https://neqvrwtofiolcuxewdze.supabase.co";
 const PUBLIC_PAYMENT_ASSET_PREFIX =
   "/storage/v1/object/public/tenant-public-assets/";
+const PRIVATE_RECEIPT_VIEW_PREFIX =
+  "/storage/v1/object/sign/tenant-private/";
+const PAYMENT_QR_METHODS = new Set(["gcash", "maya", "bdo", "bpi", "gotyme", "pnb"]);
+const PAYMENT_EVIDENCE_STATUSES = new Set<PaymentEvidenceStatus>([
+  "pending",
+  "manual_review",
+  "auto_approved",
+  "approved",
+  "rejected",
+]);
 const BLOCK_LABELS = new Set([
   "Reserved",
   "Private Event",
@@ -1032,6 +1204,33 @@ export function isAllowedCustomerQrUrl(candidate: string): boolean {
   } catch {
     return false;
   }
+}
+
+function isAllowedReceiptViewUrl(candidate: string): boolean {
+  if (!candidate || candidate.length > 4_096 || candidate.includes("\\")) return false;
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" && !url.username && !url.password && !url.port &&
+      !url.hash && url.origin === SHARED_SUPABASE_ORIGIN &&
+      url.pathname.startsWith(PRIVATE_RECEIPT_VIEW_PREFIX) &&
+      url.pathname.length > PRIVATE_RECEIPT_VIEW_PREFIX.length &&
+      Boolean(url.searchParams.get("token"));
+  } catch {
+    return false;
+  }
+}
+
+function paymentEvidenceStatus(candidate: unknown): PaymentEvidenceStatus | null {
+  return typeof candidate === "string" &&
+      PAYMENT_EVIDENCE_STATUSES.has(candidate as PaymentEvidenceStatus)
+    ? candidate as PaymentEvidenceStatus
+    : null;
+}
+
+function paymentQrMethodCode(candidate: unknown): string {
+  const code = typeof candidate === "string" ? candidate.trim().toLowerCase() : "";
+  if (!PAYMENT_QR_METHODS.has(code)) throw new Error("PAYMENT_METHOD_QR_UNSUPPORTED");
+  return code;
 }
 
 function assertDinktopiaContext(context: ManagementContext): void {
@@ -1085,6 +1284,21 @@ function assertVenueManager(session: VerifiedManagerSession): void {
     session.membershipRole !== "admin"
   ) {
     throw new Error("SETTINGS_UPDATE_ACCESS_DENIED");
+  }
+}
+
+function assertPaymentReviewer(session: VerifiedManagerSession): void {
+  if (
+    !session.isSystemOwner && session.membershipRole !== "owner" &&
+    session.membershipRole !== "admin" && session.membershipRole !== "staff"
+  ) {
+    throw new Error("PAYMENT_REVIEW_ACCESS_DENIED");
+  }
+}
+
+function assertPaymentAssetManager(session: VerifiedManagerSession): void {
+  if (!session.isSystemOwner && session.membershipRole !== "owner") {
+    throw new Error("PAYMENT_ASSET_ACCESS_DENIED");
   }
 }
 
@@ -1296,6 +1510,8 @@ function authorityCapabilities(session: VerifiedManagerSession): ManagementCapab
       "booking:update",
       "booking:cancel",
       "booking:check-in",
+      "payment:review",
+      "payment:asset",
       "schedule:block",
       "customer:view",
       "report:view",
@@ -1303,12 +1519,27 @@ function authorityCapabilities(session: VerifiedManagerSession): ManagementCapab
       "tenant:publish",
     ];
   }
-  if (session.membershipRole === "owner" || session.membershipRole === "admin") {
+  if (session.membershipRole === "owner") {
     return [
       "booking:create",
       "booking:update",
       "booking:cancel",
       "booking:check-in",
+      "payment:review",
+      "payment:asset",
+      "schedule:block",
+      "customer:view",
+      "report:view",
+      "settings:update",
+    ];
+  }
+  if (session.membershipRole === "admin") {
+    return [
+      "booking:create",
+      "booking:update",
+      "booking:cancel",
+      "booking:check-in",
+      "payment:review",
       "schedule:block",
       "customer:view",
       "report:view",
@@ -1316,7 +1547,7 @@ function authorityCapabilities(session: VerifiedManagerSession): ManagementCapab
     ];
   }
   if (session.membershipRole === "staff") {
-    return ["booking:cancel", "booking:check-in", "customer:view"];
+    return ["booking:cancel", "booking:check-in", "payment:review", "customer:view"];
   }
   return [];
 }
@@ -1944,6 +2175,11 @@ const BUSINESS_ACTION_KEYS = new Set([
 const ISO_REVISION_PATTERN =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
+function validIsoRevision(candidate: unknown): candidate is string {
+  return typeof candidate === "string" && ISO_REVISION_PATTERN.test(candidate) &&
+    Number.isFinite(new Date(candidate).getTime());
+}
+
 function assertSafePaymentQrUrls(payload: JsonObject): void {
   if (!("paymentMethods" in payload)) return;
   if (!Array.isArray(payload.paymentMethods)) {
@@ -1992,6 +2228,19 @@ function businessActionPayload(candidate: unknown) {
     expectedRevision,
     patch: settingsPatch(patch, "business:update"),
   };
+}
+
+function paymentReviewNote(candidate: unknown, required: boolean): string | null {
+  const payload = payloadObject(candidate, "PAYMENT_REVIEW_INPUT_INVALID");
+  assertAllowedKeys(payload, new Set(["note"]), "PAYMENT_REVIEW_INPUT_INVALID");
+  const note = typeof payload.note === "string" ? payload.note.trim() : "";
+  if (
+    (required && note.length < 3) || note.length > 1_000 ||
+    /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(note)
+  ) {
+    throw new Error("PAYMENT_REVIEW_NOTE_INVALID");
+  }
+  return note || null;
 }
 
 function assertNoPayload(candidate: unknown): void {
@@ -2153,6 +2402,96 @@ function livePaymentStatus(candidate: string): BookingPaymentStatus {
   return "unknown";
 }
 
+function isoInstant(row: JsonObject, keys: string[]): string | null {
+  const raw = value(row, keys);
+  if (!raw) return null;
+  const instant = new Date(raw);
+  return Number.isFinite(instant.getTime()) ? instant.toISOString() : null;
+}
+
+function latestPaymentEvidence(
+  row: JsonObject,
+  bookingStatus: string,
+  paymentStatus: string,
+): PaymentEvidence | null {
+  if (!Array.isArray(row.receipt_verifications)) return null;
+  const evidence = row.receipt_verifications
+    .map((candidate) => record(candidate))
+    .filter((candidate): candidate is JsonObject => candidate !== null)
+    .map((candidate) => {
+      const verificationId = value(candidate, ["id"]);
+      const status = paymentEvidenceStatus(candidate.status);
+      const submittedAt = isoInstant(candidate, ["created_at", "createdAt"]);
+      if (!UUID_PATTERN.test(verificationId) || !status || !submittedAt) return null;
+      const reviewedAt = isoInstant(candidate, ["reviewed_at", "reviewedAt"]);
+      const expectedAmount = numberValue(candidate, ["expected_amount", "expectedAmount"]);
+      const extracted = record(candidate.extracted_data);
+      const detected = extracted ? record(extracted.detected) : null;
+      const timing = extracted ? record(extracted.timing) : null;
+      const detectedAmounts = Array.isArray(detected?.amounts)
+        ? detected.amounts
+            .filter((amount): amount is number =>
+              typeof amount === "number" && Number.isFinite(amount) && amount >= 0 && amount <= 10_000_000
+            )
+            .slice(0, 10)
+        : [];
+      const receiptIssuedAt = timing
+        ? isoInstant(timing, ["receiptDateTime", "receipt_date_time"])
+        : null;
+      const rawConfidence = numberValue(candidate, ["confidence"]);
+      const confidence = rawConfidence !== null && rawConfidence >= 0 && rawConfidence <= 1
+        ? rawConfidence
+        : null;
+      const flags = Array.isArray(candidate.flags)
+        ? candidate.flags
+            .filter((flag): flag is string => typeof flag === "string")
+            .map((flag) => flag.trim())
+            .filter((flag) => /^[a-z0-9_:-]{1,80}$/i.test(flag))
+            .slice(0, 12)
+        : [];
+      const detectedReference = value(candidate, ["payment_reference", "paymentReference"]);
+      const paymentSessionId = value(candidate, ["payment_session_id", "paymentSessionId"]);
+      const paymentSession = Array.isArray(row.payment_sessions)
+        ? row.payment_sessions
+            .map((session) => record(session))
+            .find((session) => session && value(session, ["id"]) === paymentSessionId) ?? null
+        : null;
+      const providerPayload = paymentSession ? record(paymentSession.provider_payload) : null;
+      const submittedReference = providerPayload
+        ? value(providerPayload, ["submittedReference", "submitted_reference"])
+        : "";
+      const paymentMethod = providerPayload
+        ? value(providerPayload, ["paymentMethod", "payment_method"]).toLowerCase()
+        : "";
+      return {
+        verificationId,
+        status,
+        submittedReference: submittedReference && submittedReference.length <= 64
+          ? submittedReference
+          : null,
+        detectedReference: detectedReference && detectedReference.length <= 64
+          ? detectedReference
+          : null,
+        paymentMethod: /^[a-z][a-z0-9_-]{1,39}$/.test(paymentMethod) ? paymentMethod : null,
+        paymentAttemptedAt: paymentSession
+          ? isoInstant(paymentSession, ["created_at", "createdAt"])
+          : null,
+        submittedAt,
+        reviewedAt,
+        expectedAmount: expectedAmount !== null && expectedAmount >= 0 ? expectedAmount : null,
+        detectedAmounts,
+        receiptIssuedAt,
+        confidence,
+        flags,
+        reviewable: status === "manual_review" && bookingStatus === "payment_review" &&
+          paymentStatus === "pending",
+      } satisfies PaymentEvidence;
+    })
+    .filter((candidate): candidate is PaymentEvidence => candidate !== null)
+    .sort((left, right) => right.submittedAt.localeCompare(left.submittedAt));
+  return evidence[0] ?? null;
+}
+
 function mapLiveBooking(
   row: JsonObject,
   courtNames: ReadonlyMap<string, string>,
@@ -2171,6 +2510,7 @@ function mapLiveBooking(
   const startsAt = parsedInstant(row, ["starts_at"]);
   const endsAt = parsedInstant(row, ["ends_at"]);
   const paymentStatus = value(row, ["payment_status", "paymentStatus"]).toLowerCase();
+  const bookingStatus = value(row, ["status"]).toLowerCase();
   const phone = value(row, ["customer_phone", "phone", "mobile"]);
   const email = value(row, ["customer_email", "customerEmail"]);
   return {
@@ -2197,6 +2537,7 @@ function mapLiveBooking(
       ? value(row, ["local_booking_date"])
       : null,
     startTime: startsAt ? formatManilaClock(startsAt) : null,
+    paymentEvidence: latestPaymentEvidence(row, bookingStatus, paymentStatus),
   };
 }
 

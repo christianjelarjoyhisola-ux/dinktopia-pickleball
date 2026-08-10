@@ -441,6 +441,140 @@ export async function listManagerBlocks(
   );
 }
 
+export type PaymentQrAsset = {
+  url: string;
+  contentType: "image/jpeg" | "image/png" | "image/webp";
+};
+
+export type PaymentQrMutation = {
+  asset: PaymentQrAsset | null;
+  tenantRevision: string;
+  cleanupPending: boolean;
+};
+
+const PAYMENT_QR_METHODS = new Set(["gcash", "maya", "bdo", "bpi", "gotyme", "pnb"]);
+
+export async function uploadTenantPaymentQr(
+  accessToken: string,
+  methodCode: string,
+  file: File,
+): Promise<PaymentQrMutation> {
+  managementHostname({ mutation: true });
+  const normalizedMethod = methodCode.trim().toLowerCase();
+  if (!PAYMENT_QR_METHODS.has(normalizedMethod)) {
+    throw new PlatformRequestError(
+      400,
+      "PAYMENT_METHOD_CODE_INVALID",
+      "Enter a valid payment method code before uploading its QR image.",
+    );
+  }
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    file.size < 1 || file.size > 2 * 1024 * 1024
+  ) {
+    throw new PlatformRequestError(
+      400,
+      "PAYMENT_QR_FILE_INVALID",
+      "Choose a JPG, PNG, or WebP QR image no larger than 2 MB.",
+    );
+  }
+
+  const form = new FormData();
+  form.append("qrFile", file);
+  const response = await fetch(edgeUrl("tenant-payment-asset"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Asset-Action": "upload",
+      "X-Payment-Method": normalizedMethod,
+    },
+    body: form,
+  });
+  const result = await responseJson<{
+    ok: true;
+    asset: PaymentQrAsset;
+    tenantRevision: string;
+    cleanupPending?: boolean;
+  }>(response);
+  return {
+    asset: result.asset,
+    tenantRevision: result.tenantRevision,
+    cleanupPending: result.cleanupPending === true,
+  };
+}
+
+export async function deleteTenantPaymentQr(
+  accessToken: string,
+  methodCode: string,
+): Promise<PaymentQrMutation> {
+  managementHostname({ mutation: true });
+  const normalizedMethod = methodCode.trim().toLowerCase();
+  if (!PAYMENT_QR_METHODS.has(normalizedMethod)) {
+    throw new PlatformRequestError(
+      400,
+      "PAYMENT_METHOD_CODE_INVALID",
+      "Choose a supported saved payment method before removing its QR image.",
+    );
+  }
+  const response = await fetch(edgeUrl("tenant-payment-asset"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Asset-Action": "delete",
+      "X-Payment-Method": normalizedMethod,
+    },
+  });
+  const result = await responseJson<{
+    ok: true;
+    asset: null;
+    tenantRevision: string;
+    cleanupPending?: boolean;
+  }>(response);
+  return {
+    asset: null,
+    tenantRevision: result.tenantRevision,
+    cleanupPending: result.cleanupPending === true,
+  };
+}
+
+export type ReceiptView = {
+  signedUrl: string;
+  expiresIn: number;
+  receipt: { verificationId: string; status: string };
+};
+
+export async function getPaymentReceiptView(
+  accessToken: string,
+  verificationId: string,
+): Promise<ReceiptView> {
+  managementHostname();
+  return authenticatedFunction<ReceiptView>(
+    "get-receipt-view-url",
+    accessToken,
+    { verificationId },
+  );
+}
+
+export async function reviewPaymentReceipt(
+  accessToken: string,
+  input: {
+    verificationId: string;
+    decision: "approve" | "reject";
+    note?: string | null;
+  },
+) {
+  managementHostname({ mutation: true });
+  return authenticatedFunction<Record<string, unknown>>(
+    "review-payment-receipt",
+    accessToken,
+    input,
+  );
+}
+
 export type ManualBookingInput = {
   courtId: string;
   bookingDate: string;

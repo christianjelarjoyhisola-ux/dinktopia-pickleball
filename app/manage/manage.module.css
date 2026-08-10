@@ -611,8 +611,143 @@
 .personCell div span, .cellSub { display: block; color: var(--muted); font-size: var(--text-caption); }
 .paymentLabel { display: block; margin-top: 2px; color: #956b06; font-size: var(--text-micro); font-weight: 700; text-transform: capitalize; }
 .paymentLabel.paid { color: #27744e; }
+.paymentCellContent { display: grid; justify-items: start; gap: 4px; }
+.reviewPaymentButton {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 7px;
+  border: 1px solid color-mix(in srgb, var(--citrus) 70%, var(--ink));
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--citrus) 24%, var(--white));
+  padding: 6px 9px;
+  color: var(--ink);
+  font-size: var(--text-caption);
+  font-weight: 800;
+  white-space: nowrap;
+}
+.reviewPaymentButton:not(:disabled):hover {
+  border-color: var(--ink);
+  background: color-mix(in srgb, var(--citrus) 38%, var(--white));
+}
+.reviewPaymentButton:disabled { opacity: .48; }
 .tableActions { display: flex; justify-content: flex-end; gap: 5px; }
 .moreButton { white-space: nowrap; }
+
+.paymentReviewWorkspace {
+  overflow: hidden;
+  margin-bottom: 18px;
+  border: 1px solid color-mix(in srgb, var(--blue) 55%, var(--line));
+  border-radius: 18px;
+  background: var(--white);
+  box-shadow: 0 16px 42px rgba(16,42,67,.1);
+}
+.paymentReviewHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--blue-soft) 70%, var(--white));
+  padding: 18px 20px;
+}
+.paymentReviewHeader h3 { margin: 3px 0 0; font-size: var(--text-subheading); }
+.paymentReviewHeader p:last-child { max-width: 640px; margin: 5px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.paymentReviewLayout {
+  display: grid;
+  grid-template-columns: minmax(280px, .9fr) minmax(340px, 1.1fr);
+  gap: 18px;
+  padding: 18px;
+}
+.receiptViewer {
+  position: relative;
+  min-height: 430px;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border-radius: 14px;
+  background:
+    linear-gradient(45deg, rgba(255,255,255,.035) 25%, transparent 25%) 0 0 / 24px 24px,
+    linear-gradient(45deg, transparent 75%, rgba(255,255,255,.035) 75%) 0 0 / 24px 24px,
+    var(--ink);
+  padding: 14px;
+}
+.receiptViewer img {
+  width: 100%;
+  height: 100%;
+  max-height: 540px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.receiptViewer > a {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 9px;
+  background: rgba(255,255,255,.94);
+  padding: 8px 11px;
+  color: var(--ink);
+  font-size: var(--text-caption);
+  font-weight: 800;
+  box-shadow: 0 8px 22px rgba(0,0,0,.18);
+}
+.receiptState {
+  max-width: 270px;
+  display: grid;
+  justify-items: center;
+  gap: 9px;
+  color: var(--white);
+  text-align: center;
+}
+.receiptState strong { font-size: var(--text-body); }
+.receiptState small { color: rgba(255,255,255,.68); font-size: var(--text-caption); line-height: 1.45; }
+.receiptState .button { margin-top: 5px; }
+.spinner {
+  width: 38px;
+  height: 38px;
+  border: 4px solid rgba(255,255,255,.22);
+  border-top-color: var(--citrus);
+  border-radius: 50%;
+  animation: receipt-spin 760ms linear infinite;
+}
+@keyframes receipt-spin { to { transform: rotate(1turn); } }
+.paymentReviewDetails { min-width: 0; display: grid; align-content: start; gap: 15px; }
+.reviewDecisionSummary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 2px 16px;
+  border-radius: 13px;
+  background: var(--ink);
+  padding: 15px 16px;
+  color: var(--white);
+}
+.reviewDecisionSummary span { color: rgba(255,255,255,.68); font-size: var(--text-caption); font-weight: 700; }
+.reviewDecisionSummary strong { grid-row: 1 / span 2; grid-column: 2; color: var(--citrus); font-size: clamp(1.45rem, 3vw, 2rem); letter-spacing: -.04em; }
+.reviewDecisionSummary small { color: rgba(255,255,255,.66); font-size: var(--text-caption); line-height: 1.4; }
+.paymentFacts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; margin: 0; }
+.paymentFacts > div { min-width: 0; border-bottom: 1px solid var(--line); padding: 9px 0; }
+.paymentFacts dt { color: var(--muted); font-size: var(--text-caption); font-weight: 700; }
+.paymentFacts dd { margin: 3px 0 0; overflow-wrap: anywhere; color: var(--ink); font-size: var(--text-meta); font-weight: 700; }
+.reviewFlags { border-left: 3px solid #e1a220; border-radius: 0 10px 10px 0; background: #fff8e7; padding: 10px 12px; }
+.reviewFlags > strong { font-size: var(--text-caption); }
+.reviewFlags ul { display: flex; flex-wrap: wrap; gap: 6px; margin: 7px 0 0; padding: 0; list-style: none; }
+.reviewFlags li { border-radius: 999px; background: var(--white); padding: 4px 8px; color: #715100; font-size: var(--text-caption); font-weight: 700; text-transform: capitalize; }
+.paymentReviewActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-top: 1px solid var(--line);
+  background: var(--paper-deep);
+  padding: 14px 18px;
+}
+.paymentReviewActions > span { max-width: 570px; color: var(--muted); font-size: var(--text-caption); line-height: 1.45; }
+.paymentReviewActions > div { display: flex; gap: 9px; flex: 0 0 auto; }
 
 .inlineEmpty { display: grid; justify-items: center; padding: 58px 20px; text-align: center; }
 .inlineEmpty > span { display: grid; width: 50px; height: 50px; place-items: center; margin-bottom: 13px; border: 1px dashed #aab4ae; border-radius: 50%; color: var(--muted); font-family: var(--font-display), var(--font-body), Arial, sans-serif; font-size: var(--text-meta); }
@@ -896,6 +1031,50 @@
 .paymentMethodHeading h3 { margin: 0; font-size: var(--text-small); }
 .paymentMethodFields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; min-width: 0; }
 .paymentMethodActions { display: flex; flex-direction: column; gap: 8px; align-self: end; }
+.paymentQrEditor {
+  display: grid;
+  grid-template-columns: minmax(126px, 152px) minmax(0, 1fr);
+  align-items: center;
+  gap: 15px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--paper-deep) 66%, var(--white));
+  padding: 12px;
+}
+.paymentQrPreview {
+  aspect-ratio: 1;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  border: 1px dashed #9eafbe;
+  border-radius: 11px;
+  background: var(--white);
+  padding: 8px;
+}
+.paymentQrPreview img { width: 100%; height: 100%; object-fit: contain; }
+.paymentQrPreview > span { display: grid; justify-items: center; gap: 5px; color: var(--muted); text-align: center; }
+.paymentQrPreview b { display: grid; width: 42px; height: 42px; place-items: center; border-radius: 10px; background: var(--blue-soft); color: var(--blue); font-size: var(--text-caption); }
+.paymentQrPreview small { font-size: var(--text-caption); }
+.paymentQrControls { min-width: 0; display: grid; align-content: center; gap: 7px; }
+.paymentQrControls > strong { font-size: var(--text-meta); }
+.paymentQrControls > p { margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.45; }
+.paymentQrControls > small { color: var(--muted); font-size: var(--text-caption); }
+.fileButton { cursor: pointer; }
+.fileButton:focus-within {
+  outline: 3px solid var(--citrus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--ink);
+}
+.fileButton:has(input:disabled) { cursor: not-allowed; opacity: .42; }
+.inlineSuccess {
+  border-left: 3px solid #3a9b70;
+  border-radius: 0 8px 8px 0;
+  background: #e6f6ee;
+  padding: 8px 10px;
+  color: #145536;
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
 
 .accessGrid { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(300px,.72fr); gap: 14px; align-items: start; }
 .teamList { display: grid; }
@@ -1385,6 +1564,7 @@
   .dataTable td::before { content: attr(data-label); color: var(--muted); font-size: var(--text-caption); font-weight: 700; letter-spacing: var(--tracking-label); text-align: left; text-transform: uppercase; }
   .personCell { min-width: 0; justify-self: end; text-align: left; }
   .dataTable .statusPill { justify-self: end; }
+  .paymentCellContent { display: grid; justify-items: end; gap: 5px; text-align: right; }
   .tableActions { justify-content: flex-end; }
   .scheduleToolbar { align-items: stretch; flex-direction: column; }
   .dateRail { width: calc(100vw - 36px); }
@@ -1446,6 +1626,15 @@
   .paymentMethodFields { grid-template-columns: 1fr; }
   .paymentMethodActions { flex-direction: row; }
   .paymentMethodActions > * { flex: 1; }
+  .paymentReviewWorkspace { margin-inline: -2px; }
+  .paymentReviewHeader { align-items: stretch; flex-direction: column; gap: 9px; padding: 16px; }
+  .paymentReviewHeader .textButton { align-self: flex-start; }
+  .paymentReviewLayout { grid-template-columns: minmax(0, 1fr); padding: 14px; }
+  .receiptViewer { min-height: 320px; }
+  .paymentReviewActions { align-items: stretch; flex-direction: column; }
+  .paymentReviewActions > div { width: 100%; }
+  .paymentReviewActions .button { flex: 1; }
+  .paymentQrEditor { grid-template-columns: minmax(116px, 148px) minmax(0, 1fr); }
   .settingsFooter { align-items: stretch; flex-direction: column; margin: 20px -18px -18px; border-radius: 0 0 15px 15px; padding: 14px 18px; }
   .accessGrid { grid-template-columns: 1fr; }
   .authorityNote { margin: 20px -18px -18px; border-radius: 0 0 15px 15px; padding: 14px 18px; }
@@ -1475,6 +1664,14 @@
   .launchChecklist article .textButton { grid-column: 2; justify-self: start; }
   .inlineActions { width: 100%; }
   .inlineActions > * { flex: 1; }
+  .paymentFacts { grid-template-columns: minmax(0, 1fr); }
+  .receiptViewer { min-height: 260px; margin-inline: -2px; }
+  .paymentReviewActions > div { flex-direction: column; }
+  .paymentReviewActions .button { width: 100%; }
+  .paymentQrEditor { grid-template-columns: minmax(0, 1fr); }
+  .paymentQrPreview { width: min(180px, 100%); justify-self: center; }
+  .paymentQrControls .inlineActions { align-items: stretch; flex-direction: column; }
+  .paymentQrControls .inlineActions > * { width: 100%; }
   .courtEditorCard {
     grid-template-columns: 30px minmax(0, 1fr);
     grid-template-areas:

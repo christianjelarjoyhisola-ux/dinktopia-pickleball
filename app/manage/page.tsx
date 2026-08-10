@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -20,8 +21,10 @@ import {
   type BookingStatus,
   type BusinessPaymentConfiguration,
   type ManagementCapability,
+  type ManagementActionResult,
   type ManagementContext,
   type ManagementSnapshot,
+  type PaymentReceiptView,
   type RemittanceDestination,
   type TenantRole,
 } from "./management-adapter";
@@ -59,6 +62,7 @@ type View =
   | "access";
 
 type PreviewState = "ready" | "loading" | "empty" | "error" | "restricted";
+type BookingFilter = "all" | "needs_review" | BookingStatus;
 
 type ConfirmAction = {
   title: string;
@@ -68,7 +72,7 @@ type ConfirmAction = {
   resourceId?: string;
   payload?: unknown;
   tone?: "default" | "danger";
-  onSuccess?: () => void;
+  onSuccess?: (result: ManagementActionResult) => void;
 };
 
 type ToastState = {
@@ -264,6 +268,8 @@ const CAPABILITY_LABEL: Record<ManagementCapability, string> = {
   "booking:update": "Edit bookings",
   "booking:cancel": "Cancel bookings",
   "booking:check-in": "Check in players",
+  "payment:review": "Review payments",
+  "payment:asset": "Manage payment QR images",
   "schedule:block": "Block court time",
   "customer:view": "View customers",
   "report:view": "View reports",
@@ -463,11 +469,13 @@ function OverviewView({
   snapshot,
   can,
   goTo,
+  openNeedsReview,
   request,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   goTo: (view: View) => void;
+  openNeedsReview: () => void;
   request: (action: ConfirmAction) => void;
 }) {
   const completed = snapshot.setup.filter((item) => item.complete).length;
@@ -480,7 +488,10 @@ function OverviewView({
   const paidRevenue = snapshot.bookings
     .filter((booking) => booking.payment === "paid")
     .reduce((total, booking) => total + booking.amount, 0);
-  const paymentAttention = snapshot.bookings.find((booking) =>
+  const reviewAttention = snapshot.bookings.find((booking) =>
+    booking.paymentEvidence?.reviewable === true
+  );
+  const paymentAttention = reviewAttention ?? snapshot.bookings.find((booking) =>
     paymentNeedsAttention(booking.payment)
   );
   const paidCount = snapshot.bookings.filter((booking) => booking.payment === "paid").length;
@@ -612,15 +623,15 @@ function OverviewView({
         <div>
           <span className={styles.focusIndex}>01</span>
           <p className={styles.eyebrow}>{isPreview ? "Owner focus" : "Tenant attention"}</p>
-          <h2 id="focus-title">{paymentAttention ? "A payment state needs review" : "Setup remains protected"}</h2>
-          <p>{paymentAttention ? `${paymentAttention.customer}'s loaded booking is marked ${PAYMENT_LABEL[paymentAttention.payment].toLowerCase()}.` : "Complete the remaining readiness checks before public booking is activated."}</p>
+          <h2 id="focus-title">{reviewAttention ? "A receipt is ready to review" : paymentAttention ? "A payment state needs review" : "Setup remains protected"}</h2>
+          <p>{reviewAttention ? `${reviewAttention.customer}'s private receipt is ready for comparison and a decision.` : paymentAttention ? `${paymentAttention.customer}'s loaded booking is marked ${PAYMENT_LABEL[paymentAttention.payment].toLowerCase()}.` : "Complete the remaining readiness checks before public booking is activated."}</p>
         </div>
         <ActionButton
           variant="secondary"
           disabled={isPreview && !can("booking:update")}
-          onClick={() => goTo("bookings")}
+          onClick={() => reviewAttention ? openNeedsReview() : goTo("bookings")}
         >
-          {paymentAttention ? "Review payment state" : "Review bookings"}
+          {reviewAttention ? "Review receipt" : paymentAttention ? "Review payment state" : "Review bookings"}
         </ActionButton>
       </section>
     </>
@@ -634,6 +645,8 @@ function BookingsView({
   request,
   goTo,
   isPreview,
+  initialStatus,
+  loadPaymentReceipt,
 }: {
   bookings: Booking[];
   courts: ManagementSnapshot["courts"];
@@ -641,11 +654,20 @@ function BookingsView({
   request: (action: ConfirmAction) => void;
   goTo: (view: View) => void;
   isPreview: boolean;
+  initialStatus: BookingFilter;
+  loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
 }) {
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"all" | BookingStatus>("all");
+  const [status, setStatus] = useState<BookingFilter>(initialStatus);
   const [creating, setCreating] = useState(false);
   const [rescheduling, setRescheduling] = useState<Booking | null>(null);
+  const [reviewing, setReviewing] = useState<Booking | null>(null);
+  const [receiptView, setReceiptView] = useState<PaymentReceiptView | null>(null);
+  const [receiptState, setReceiptState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [receiptReload, setReceiptReload] = useState(0);
+  const [reviewNote, setReviewNote] = useState("");
+  const reviewHeadingRef = useRef<HTMLHeadingElement>(null);
+  const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const [manual, setManual] = useState({
     courtId: courts[0]?.id ?? "",
     bookingDate: manilaCalendarDate(),
@@ -669,8 +691,41 @@ function BookingsView({
     const matchesQuery = `${booking.customer} ${booking.id} ${booking.court}`
       .toLowerCase()
       .includes(query.trim().toLowerCase());
-    return matchesQuery && (status === "all" || booking.status === status);
+    const matchesStatus = status === "all" ||
+      (status === "needs_review"
+        ? booking.paymentEvidence?.reviewable === true
+        : booking.status === status);
+    return matchesQuery && matchesStatus;
   });
+
+  useEffect(() => {
+    let active = true;
+    const evidence = reviewing?.paymentEvidence;
+    if (!reviewing || !evidence?.reviewable) return;
+    loadPaymentReceipt(evidence.verificationId).then((view) => {
+      if (!active) return;
+      setReceiptView(view);
+      setReceiptState("ready");
+    }).catch(() => {
+      if (active) setReceiptState("error");
+    });
+    return () => { active = false; };
+  }, [loadPaymentReceipt, receiptReload, reviewing]);
+
+  const closePaymentReview = () => {
+    setReviewing(null);
+    window.requestAnimationFrame(() => reviewReturnRef.current?.focus());
+  };
+
+  const openPaymentReview = (booking: Booking, trigger: HTMLButtonElement) => {
+    reviewReturnRef.current = trigger;
+    setReviewNote("");
+    setReceiptView(null);
+    setReceiptState("loading");
+    setReceiptReload((value) => value + 1);
+    setReviewing(booking);
+    window.requestAnimationFrame(() => reviewHeadingRef.current?.focus());
+  };
 
   return (
     <section className={styles.panel} aria-labelledby="booking-list-title">
@@ -762,6 +817,141 @@ function BookingsView({
           <div className={styles.compactFormActions}><span>Availability and price are previewed first. Higher-priced moves require cancelling and creating a new paid booking.</span><ActionButton type="submit">Review change</ActionButton></div>
         </form>
       )}
+      {!isPreview && reviewing?.paymentEvidence && (
+        <section className={styles.paymentReviewWorkspace} aria-labelledby="payment-review-title">
+          <header className={styles.paymentReviewHeader}>
+            <div>
+              <p className={styles.eyebrow}>Private payment evidence</p>
+              <h3 id="payment-review-title" ref={reviewHeadingRef} tabIndex={-1}>
+                Review {reviewing.reference}
+              </h3>
+              <p>Compare the submitted proof with the booking before making a final decision.</p>
+            </div>
+            <button type="button" className={styles.textButton} onClick={closePaymentReview}>
+              Close review
+            </button>
+          </header>
+
+          <div className={styles.paymentReviewLayout}>
+            <div className={styles.receiptViewer}>
+              {receiptState === "loading" && (
+                <div className={styles.receiptState} role="status">
+                  <span className={styles.spinner} aria-hidden="true" />
+                  <strong>Opening the private receipt…</strong>
+                  <small>The signed image link expires automatically.</small>
+                </div>
+              )}
+              {receiptState === "error" && (
+                <div className={styles.receiptState} role="alert">
+                  <strong>Receipt image unavailable</strong>
+                  <small>Nothing was approved or rejected. Retry the protected image request.</small>
+                  <ActionButton
+                    variant="secondary"
+                    onClick={() => {
+                      setReceiptView(null);
+                      setReceiptState("loading");
+                      setReceiptReload((value) => value + 1);
+                    }}
+                  >
+                    Retry image
+                  </ActionButton>
+                </div>
+              )}
+              {receiptState === "ready" && receiptView && (
+                <>
+                  {/* Signed receipt URLs are short-lived and must bypass the public image optimizer. */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={receiptView.signedUrl}
+                    alt={`Payment receipt submitted for booking ${reviewing.reference}`}
+                    onError={() => setReceiptState("error")}
+                  />
+                  <a href={receiptView.signedUrl} target="_blank" rel="noreferrer">Open full image</a>
+                </>
+              )}
+            </div>
+
+            <div className={styles.paymentReviewDetails}>
+              <div className={styles.reviewDecisionSummary}>
+                <span>Expected total</span>
+                <strong>{formatPeso(reviewing.paymentEvidence.expectedAmount ?? reviewing.amount)}</strong>
+                <small>Verify this against the receipt; detected values are hints, not proof of transfer.</small>
+              </div>
+              {receiptView && receiptView.status !== "manual_review" && (
+                <p className={styles.inlineError} role="status">
+                  This receipt is already {receiptView.status.replaceAll("_", " ")}. Refresh bookings before taking another action.
+                </p>
+              )}
+              <dl className={styles.paymentFacts}>
+                <div><dt>Player</dt><dd>{reviewing.customer}</dd></div>
+                <div><dt>Contact</dt><dd>{reviewing.phone}</dd></div>
+                <div><dt>Court and time</dt><dd>{reviewing.court} · {reviewing.date}, {reviewing.time}</dd></div>
+                <div><dt>Payment method</dt><dd>{reviewing.paymentEvidence.paymentMethod?.toUpperCase() ?? "Not returned"}</dd></div>
+                <div><dt>Player-entered reference</dt><dd>{reviewing.paymentEvidence.submittedReference ?? "Not provided"}</dd></div>
+                <div><dt>Receipt-detected reference</dt><dd>{reviewing.paymentEvidence.detectedReference ?? "Not detected"}</dd></div>
+                <div><dt>Receipt submitted</dt><dd>{new Date(reviewing.paymentEvidence.submittedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone })}</dd></div>
+                <div><dt>Payment attempt opened</dt><dd>{reviewing.paymentEvidence.paymentAttemptedAt ? new Date(reviewing.paymentEvidence.paymentAttemptedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone }) : "Not returned"}</dd></div>
+                <div><dt>Receipt date detected</dt><dd>{reviewing.paymentEvidence.receiptIssuedAt ? new Date(reviewing.paymentEvidence.receiptIssuedAt).toLocaleString("en-PH", { timeZone: activeTenant.identity.timezone }) : "Not detected"}</dd></div>
+                <div><dt>Amounts detected</dt><dd>{reviewing.paymentEvidence.detectedAmounts.length === 0 ? "Not detected" : reviewing.paymentEvidence.detectedAmounts.map(formatPeso).join(", ")}</dd></div>
+                <div><dt>Automated confidence</dt><dd>{reviewing.paymentEvidence.confidence === null ? "Not returned" : `${Math.round(reviewing.paymentEvidence.confidence * 100)}%`}</dd></div>
+                <div><dt>Evidence status</dt><dd>Manual review required</dd></div>
+              </dl>
+              {reviewing.paymentEvidence.flags.length > 0 && (
+                <div className={styles.reviewFlags} aria-label="Automated receipt checks">
+                  <strong>Checks to inspect</strong>
+                  <ul>{reviewing.paymentEvidence.flags.map((flag) => <li key={flag}>{flag.replaceAll("_", " ")}</li>)}</ul>
+                </div>
+              )}
+              <label className={styles.field}>
+                <span>Review note <small>required when rejecting</small></span>
+                <textarea
+                  rows={3}
+                  maxLength={1_000}
+                  value={reviewNote}
+                  onChange={(event) => setReviewNote(event.target.value)}
+                  placeholder="Add a clear reason for the decision"
+                />
+              </label>
+            </div>
+          </div>
+
+          <footer className={styles.paymentReviewActions}>
+            <span>Approval confirms the booking. Rejection cancels it and releases the held court time.</span>
+            <div>
+              <ActionButton
+                variant="danger"
+                disabled={!can("payment:review") || receiptState !== "ready" || receiptView?.status !== "manual_review" || reviewNote.trim().length < 3}
+                onClick={() => request({
+                  title: `Reject payment for ${reviewing.reference}?`,
+                  detail: `${reviewing.customer}'s receipt will be rejected, the booking will be cancelled, and its held court time will be released.`,
+                  confirmLabel: "Reject & release slot",
+                  actionType: "payment:reject",
+                  resourceId: reviewing.paymentEvidence!.verificationId,
+                  payload: { note: reviewNote },
+                  tone: "danger",
+                  onSuccess: closePaymentReview,
+                })}
+              >
+                Reject payment
+              </ActionButton>
+              <ActionButton
+                disabled={!can("payment:review") || receiptState !== "ready" || receiptView?.status !== "manual_review"}
+                onClick={() => request({
+                  title: `Approve ${formatPeso(reviewing.paymentEvidence?.expectedAmount ?? reviewing.amount)} for ${reviewing.reference}?`,
+                  detail: "Confirm only after the receipt reference, amount, player, court, and session all match. This marks the booking paid and confirmed.",
+                  confirmLabel: "Approve & confirm booking",
+                  actionType: "payment:approve",
+                  resourceId: reviewing.paymentEvidence!.verificationId,
+                  payload: { note: reviewNote },
+                  onSuccess: closePaymentReview,
+                })}
+              >
+                Approve payment
+              </ActionButton>
+            </div>
+          </footer>
+        </section>
+      )}
       <div className={styles.filterBar}>
         <label className={styles.searchField}>
           <span className={styles.srOnly}>Search bookings</span>
@@ -779,6 +969,7 @@ function BookingsView({
             <option value="all">All statuses</option>
             <option value="confirmed">Confirmed</option>
             <option value="awaiting_payment">Awaiting payment</option>
+            <option value="needs_review">Needs payment review</option>
             <option value="checked_in">Checked in</option>
             <option value="completed">Completed</option>
           </select>
@@ -819,10 +1010,25 @@ function BookingsView({
                   </td>
                   <td data-label="Court">{booking.court}</td>
                   <td data-label="Payment">
-                    <strong>{formatPeso(booking.amount)}</strong>
-                    <span className={cx(styles.paymentLabel, booking.payment === "paid" && styles.paid)}>
-                      {PAYMENT_LABEL[booking.payment]}
-                    </span>
+                    <div className={styles.paymentCellContent}>
+                      <strong>{formatPeso(booking.amount)}</strong>
+                      <span className={cx(styles.paymentLabel, booking.payment === "paid" && styles.paid)}>
+                        {PAYMENT_LABEL[booking.payment]}
+                      </span>
+                      {booking.paymentEvidence?.reviewable && (
+                        <button
+                          type="button"
+                          className={styles.reviewPaymentButton}
+                          disabled={!can("payment:review")}
+                          onClick={(event) => openPaymentReview(booking, event.currentTarget)}
+                        >
+                          Review receipt
+                        </button>
+                      )}
+                      {booking.status === "awaiting_payment" && !booking.paymentEvidence?.reviewable && (
+                        <small className={styles.cellSub}>Waiting for the player&apos;s receipt</small>
+                      )}
+                    </div>
                   </td>
                   <td data-label="Status"><StatusPill status={booking.status} /></td>
                   <td data-label="Actions">
@@ -1712,7 +1918,9 @@ function newCourtDraftError(draft: NewCourtDraft): string | null {
 type PaymentMethodDraft = Omit<
   BusinessPaymentConfiguration["paymentMethods"][number],
   "sortOrder"
-> & { sortOrder: string };
+> & { sortOrder: string; originalMethodCode: string | null };
+
+const PAYMENT_QR_METHOD_CODES = new Set(["gcash", "maya", "bdo", "bpi", "gotyme", "pnb"]);
 
 type BusinessDraft = {
   displayName: string;
@@ -1763,6 +1971,7 @@ function businessDraftFor(
     paymentMethods: configuration.paymentMethods.map((method) => ({
       ...method,
       sortOrder: String(method.sortOrder),
+      originalMethodCode: method.methodCode,
     })),
   };
 }
@@ -1830,11 +2039,15 @@ function LiveSettingsView({
   snapshot,
   can,
   request,
+  uploadPaymentQr,
+  onSectionChange,
   initialSection = "courts",
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
+  uploadPaymentQr: (methodCode: string, file: File) => Promise<{ url: string; contentType: string; tenantRevision: string }>;
+  onSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
   initialSection?: "courts" | "schedule" | "business" | "rules";
 }) {
   const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">(initialSection);
@@ -1850,7 +2063,20 @@ function LiveSettingsView({
   const [businessDraft, setBusinessDraft] = useState(() =>
     businessDraftFor(snapshot.configuration.businessPayments)
   );
+  const [businessRevision, setBusinessRevision] = useState(
+    snapshot.configuration.businessPayments?.revision ?? "",
+  );
   const [policyDraft, setPolicyDraft] = useState(() => policyDraftFor(snapshot));
+  const [qrUploadState, setQrUploadState] = useState<{
+    index: number;
+    state: "uploading" | "ready" | "error";
+    message: string;
+  } | null>(null);
+  const persistedPaymentMethodCodes = new Set(
+    snapshot.configuration.businessPayments?.paymentMethods.map((method) =>
+      method.methodCode.trim().toLowerCase()
+    ) ?? [],
+  );
 
   const setCourtField = <Key extends keyof CourtDraft>(
     courtId: string,
@@ -1925,6 +2151,50 @@ function LiveSettingsView({
     ),
   } : current);
 
+  const uploadQrForMethod = async (index: number, file: File | null) => {
+    const method = businessDraft?.paymentMethods[index];
+    if (!method || !file) return;
+    if (
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+      file.size < 1 || file.size > 2 * 1024 * 1024
+    ) {
+      setQrUploadState({
+        index,
+        state: "error",
+        message: "Choose a JPG, PNG, or WebP image no larger than 2 MB.",
+      });
+      return;
+    }
+    const methodCode = (method.originalMethodCode ?? method.methodCode).trim().toLowerCase();
+    if (!PAYMENT_QR_METHOD_CODES.has(methodCode)) {
+      setQrUploadState({
+        index,
+        state: "error",
+        message: "QR uploads support GCash, Maya, BDO, BPI, GoTyme, and PNB.",
+      });
+      return;
+    }
+    setQrUploadState({ index, state: "uploading", message: `Uploading ${file.name}…` });
+    try {
+      const asset = await uploadPaymentQr(methodCode, file);
+      setPaymentField(index, "qrUrl", asset.url);
+      setBusinessRevision(asset.tenantRevision);
+      setQrUploadState({
+        index,
+        state: "ready",
+        message: "QR image saved. It is now attached to this customer payment method.",
+      });
+    } catch (error) {
+      setQrUploadState({
+        index,
+        state: "error",
+        message: error instanceof PlatformRequestError
+          ? error.message
+          : "The QR image could not be uploaded. Refresh the authorized workspace and try again.",
+      });
+    }
+  };
+
   const schedulePayload = scheduleDraft ? buildTwoBandSchedule({
     opensAt: scheduleDraft.opensAt,
     closesAt: scheduleDraft.closesAt,
@@ -1974,7 +2244,7 @@ function LiveSettingsView({
       confirmLabel: "Save business & payments",
       actionType: "business:update",
       payload: {
-        expectedRevision: snapshot.configuration.businessPayments!.revision,
+        expectedRevision: businessRevision,
         displayName: businessDraft.displayName.trim(),
         contactPhone: businessDraft.contactPhone.trim() || null,
         facebookUrl: businessDraft.facebookUrl.trim() || null,
@@ -2002,7 +2272,7 @@ function LiveSettingsView({
     <section className={styles.settingsLayout}>
       <nav className={styles.settingsNav} aria-label="Venue settings sections">
         {(["courts", "schedule", "business", "rules"] as const).map((item, index) => (
-          <button type="button" key={item} className={section === item ? styles.settingsActive : undefined} onClick={() => setSection(item)} aria-current={section === item ? "page" : undefined}>
+          <button type="button" key={item} className={section === item ? styles.settingsActive : undefined} onClick={() => { setSection(item); onSectionChange(item); }} aria-current={section === item ? "page" : undefined}>
             <span>0{index + 1}</span>{item[0].toUpperCase() + item.slice(1)}
           </button>
         ))}
@@ -2196,17 +2466,90 @@ function LiveSettingsView({
                   <label className={styles.switchLabel}><input type="checkbox" checked={businessDraft.emailEnabled} onChange={(event) => setBusinessField("emailEnabled", event.target.checked)} /><span aria-hidden="true" />Booking emails enabled</label>
                 </div>
                 <div className={styles.businessBoundary}><h3>Public activation and remittance stay separate</h3><p>Saving here does not change public booking, global/platform billing, platform remittance, or policy text.</p></div>
-                <div className={styles.paymentMethodHeading}><h3>Customer payment methods</h3><ActionButton variant="secondary" disabled={businessDraft.paymentMethods.length >= 10} onClick={() => setBusinessDraft((current) => current ? { ...current, paymentMethods: [...current.paymentMethods, { methodCode: "", displayName: "", accountName: "", accountNumber: "", instructions: null, qrUrl: null, isActive: true, sortOrder: String(current.paymentMethods.length) }] } : current)}>Add payment method</ActionButton></div>
+                <div className={styles.paymentMethodHeading}><h3>Customer payment methods</h3><ActionButton variant="secondary" disabled={businessDraft.paymentMethods.length >= 10} onClick={() => setBusinessDraft((current) => current ? { ...current, paymentMethods: [...current.paymentMethods, { methodCode: "", originalMethodCode: null, displayName: "", accountName: "", accountNumber: "", instructions: null, qrUrl: null, isActive: true, sortOrder: String(current.paymentMethods.length) }] } : current)}>Add payment method</ActionButton></div>
                 <div className={styles.paymentMethodList}>
                   {businessDraft.paymentMethods.map((method, index) => (
                     <article className={styles.paymentMethodCard} key={`payment-method-${index}`} aria-label={`Payment method ${index + 1}`}>
                       <div className={styles.paymentMethodFields}>
-                        <label className={styles.field}><span>Method code</span><input required pattern="[a-z][a-z0-9_-]{1,39}" value={method.methodCode} onChange={(event) => setPaymentField(index, "methodCode", event.target.value)} /></label>
+                        <label className={styles.field}><span>Method code</span><input required readOnly={method.originalMethodCode !== null} pattern="[a-z][a-z0-9_-]{1,39}" value={method.methodCode} onChange={(event) => setPaymentField(index, "methodCode", event.target.value)} />{method.originalMethodCode && <small>Locked after the payment method is saved.</small>}</label>
                         <label className={styles.field}><span>Public name</span><input required minLength={2} maxLength={80} value={method.displayName} onChange={(event) => setPaymentField(index, "displayName", event.target.value)} /></label>
                         <label className={styles.field}><span>Account name</span><input required minLength={2} maxLength={120} value={method.accountName} onChange={(event) => setPaymentField(index, "accountName", event.target.value)} /></label>
                         <label className={styles.field}><span>Account number</span><input required minLength={3} maxLength={120} value={method.accountNumber} onChange={(event) => setPaymentField(index, "accountNumber", event.target.value)} /></label>
                         <label className={styles.field}><span>Instructions</span><input maxLength={1000} value={method.instructions ?? ""} onChange={(event) => setPaymentField(index, "instructions", event.target.value || null)} /></label>
-                        <label className={styles.field}><span>QR image URL</span><input type="url" maxLength={500} value={method.qrUrl ?? ""} onChange={(event) => setPaymentField(index, "qrUrl", event.target.value || null)} /></label>
+                        <div className={cx(styles.paymentQrEditor, styles.fieldWide)}>
+                          <div className={styles.paymentQrPreview}>
+                            {method.qrUrl ? (
+                              // Customer-uploaded QR assets are already validated and should render directly.
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={method.qrUrl} alt={`${method.displayName || method.methodCode || `Payment method ${index + 1}`} QR preview`} />
+                            ) : (
+                              <span><b aria-hidden="true">QR</b><small>No image uploaded</small></span>
+                            )}
+                          </div>
+                          <div className={styles.paymentQrControls}>
+                            <strong>Customer QR image</strong>
+                            <p>Upload the image here. Customers never see or enter a storage URL.</p>
+                            <div className={styles.inlineActions}>
+                              <label className={cx(styles.button, styles.secondary, styles.fileButton)}>
+                                <input
+                                  className={styles.srOnly}
+                                  type="file"
+                                  accept="image/jpeg,image/png,image/webp"
+                                  disabled={!can("payment:asset") || qrUploadState?.state === "uploading" || !PAYMENT_QR_METHOD_CODES.has((method.originalMethodCode ?? method.methodCode).trim().toLowerCase()) || !persistedPaymentMethodCodes.has((method.originalMethodCode ?? method.methodCode).trim().toLowerCase())}
+                                  onChange={(event) => {
+                                    const file = event.currentTarget.files?.[0] ?? null;
+                                    void uploadQrForMethod(index, file);
+                                    event.currentTarget.value = "";
+                                  }}
+                                />
+                                {qrUploadState?.index === index && qrUploadState.state === "uploading"
+                                  ? "Uploading…"
+                                  : method.qrUrl ? "Replace image" : "Upload image"}
+                              </label>
+                              {method.qrUrl && (
+                                <button
+                                  type="button"
+                                  className={styles.textButton}
+                                  disabled={!can("payment:asset") || qrUploadState?.state === "uploading"}
+                                  onClick={() => request({
+                                    title: `Remove the ${method.displayName || method.methodCode} QR image?`,
+                                    detail: "Customers will no longer see this QR at checkout. The account details and payment method stay active.",
+                                    confirmLabel: "Remove QR image",
+                                    actionType: "payment:asset-remove",
+                                    payload: { methodCode: method.originalMethodCode ?? method.methodCode },
+                                    tone: "danger",
+                                    onSuccess: (result) => {
+                                      setPaymentField(index, "qrUrl", null);
+                                      if (result.tenantRevision) {
+                                        setBusinessRevision(result.tenantRevision);
+                                      }
+                                      setQrUploadState({
+                                        index,
+                                        state: "ready",
+                                        message: "QR image removed from customer checkout.",
+                                      });
+                                    },
+                                  })}
+                                >
+                                  Remove from checkout
+                                </button>
+                              )}
+                            </div>
+                            <small>
+                              {persistedPaymentMethodCodes.has((method.originalMethodCode ?? method.methodCode).trim().toLowerCase())
+                                ? "JPG, PNG, or WebP · maximum 2 MB · owner access required"
+                                : "Save this payment method first, then upload its QR image."}
+                            </small>
+                            {qrUploadState?.index === index && (
+                              <span
+                                className={qrUploadState.state === "error" ? styles.inlineError : styles.inlineSuccess}
+                                role={qrUploadState.state === "error" ? "alert" : "status"}
+                              >
+                                {qrUploadState.message}
+                              </span>
+                            )}
+                          </div>
+                        </div>
                         <label className={styles.field}><span>Sort order</span><input required type="number" min="0" max="1000" step="1" value={method.sortOrder} onChange={(event) => setPaymentField(index, "sortOrder", event.target.value)} /></label>
                         <label className={styles.switchLabel}><input type="checkbox" checked={method.isActive} onChange={(event) => setPaymentField(index, "isActive", event.target.checked)} /><span aria-hidden="true" />Active for customers</label>
                       </div>
@@ -2268,11 +2611,15 @@ function SettingsView({
   can,
   request,
   initialLiveSection,
+  uploadPaymentQr,
+  onLiveSectionChange,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
   initialLiveSection?: "courts" | "schedule" | "business" | "rules";
+  uploadPaymentQr: (methodCode: string, file: File) => Promise<{ url: string; contentType: string; tenantRevision: string }>;
+  onLiveSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
 }) {
   const [section, setSection] = useState<"courts" | "rates" | "hours" | "rules">("courts");
   if (snapshot.tenant.mode === "live") {
@@ -2289,6 +2636,8 @@ function SettingsView({
         can={can}
         request={request}
         initialSection={initialLiveSection}
+        uploadPaymentQr={uploadPaymentQr}
+        onSectionChange={onLiveSectionChange}
       />
     );
   }
@@ -2610,6 +2959,7 @@ export default function ManagePage() {
   const [accountPending, setAccountPending] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
+  const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const context = useMemo<ManagementContext>(() => ({
@@ -2622,6 +2972,43 @@ export default function ManagePage() {
   const sessionRole = context.role;
 
   const can = (capability: ManagementCapability) => context.capabilities.includes(capability);
+  const navigateTo = (nextView: View) => {
+    if (nextView === "bookings") setBookingFilter("all");
+    setView(nextView);
+  };
+  const openNeedsReview = () => {
+    setBookingFilter("needs_review");
+    setView("bookings");
+  };
+  const loadPaymentReceipt = useCallback(
+    (verificationId: string) => managementAdapter.loadPaymentReceipt(context, verificationId),
+    [context],
+  );
+  const uploadPaymentQr = useCallback(async (methodCode: string, file: File) => {
+    const asset = await managementAdapter.uploadPaymentQr(context, methodCode, file);
+    const normalizedMethod = methodCode.trim().toLowerCase();
+    setSnapshot((current) => {
+      const businessPayments = current?.configuration.businessPayments;
+      if (!current || !businessPayments) return current;
+      return {
+        ...current,
+        configuration: {
+          ...current.configuration,
+          businessPayments: {
+            ...businessPayments,
+            revision: asset.tenantRevision,
+            paymentMethods: businessPayments.paymentMethods.map((method) =>
+              method.methodCode.toLowerCase() === normalizedMethod
+                ? { ...method, qrUrl: asset.url }
+                : method
+            ),
+          },
+        },
+      };
+    });
+    setToast({ message: "The QR image is saved and available in customer checkout.", tone: "success" });
+    return asset;
+  }, [context]);
 
   useEffect(() => {
     let active = true;
@@ -2676,8 +3063,37 @@ export default function ManagePage() {
         resourceId: confirmAction.resourceId,
         payload: confirmAction.payload,
       });
-      confirmAction.onSuccess?.();
-      if (!isPreview) {
+      const isPaymentAssetRemove = confirmAction.actionType === "payment:asset-remove";
+      if (isPaymentAssetRemove && result.tenantRevision) {
+        const payload = confirmAction.payload && typeof confirmAction.payload === "object" &&
+            !Array.isArray(confirmAction.payload)
+          ? confirmAction.payload as Record<string, unknown>
+          : null;
+        const methodCode = typeof payload?.methodCode === "string"
+          ? payload.methodCode.trim().toLowerCase()
+          : "";
+        setSnapshot((current) => {
+          const businessPayments = current?.configuration.businessPayments;
+          if (!current || !businessPayments || !methodCode) return current;
+          return {
+            ...current,
+            configuration: {
+              ...current.configuration,
+              businessPayments: {
+                ...businessPayments,
+                revision: result.tenantRevision!,
+                paymentMethods: businessPayments.paymentMethods.map((method) =>
+                  method.methodCode.toLowerCase() === methodCode
+                    ? { ...method, qrUrl: null }
+                    : method
+                ),
+              },
+            },
+          };
+        });
+      }
+      confirmAction.onSuccess?.(result);
+      if (!isPreview && !isPaymentAssetRemove) {
         setRefreshPending(true);
         try {
           const refreshed = await managementAdapter.load(context);
@@ -2738,13 +3154,13 @@ export default function ManagePage() {
     }
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     switch (view) {
-      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={setView} request={request} />;
-      case "bookings": return <BookingsView bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} />;
+      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} />;
+      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} />;
       case "schedule": return <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
       case "blocks": return <BlocksView snapshot={snapshot} can={can} request={request} />;
       case "customers": return <CustomersView snapshot={snapshot} />;
       case "reports": return <ReportsView snapshot={snapshot} />;
-      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} />;
+      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} uploadPaymentQr={uploadPaymentQr} onLiveSectionChange={setSettingsSection} />;
       case "launch": return <LaunchView snapshot={snapshot} request={request} openSettings={(section) => { setSettingsSection(section); setView("settings"); }} />;
       case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} toolAvailability={snapshot.configuration.toolAvailability} />;
     }
@@ -2792,14 +3208,14 @@ export default function ManagePage() {
         <nav className={styles.desktopNav} aria-label="Management navigation">
           <p>Workspace</p>
           {visibleNavItems.slice(0, 6).map((item) => (
-            <button type="button" key={item.id} onClick={() => setView(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
+            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
           <p>Manage</p>
           {visibleNavItems.slice(6).map((item) => (
-            <button type="button" key={item.id} onClick={() => setView(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
+            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
@@ -2864,7 +3280,7 @@ export default function ManagePage() {
         </header>
         <nav className={styles.mobileNav} aria-label="Mobile management navigation">
           {visibleNavItems.map((item) => (
-            <button type="button" key={item.id} onClick={() => setView(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
+            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
               <span aria-hidden="true">{item.short}</span>{item.label}
             </button>
           ))}

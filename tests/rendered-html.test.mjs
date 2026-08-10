@@ -1475,16 +1475,33 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
   const authoritySource = managementAdapter.slice(authorityStart, authorityEnd);
   assert.match(
     authoritySource,
-    /if \(session\.isSystemOwner\)\s*\{\s*return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"schedule:block"[\s\S]*?"customer:view"[\s\S]*?"report:view"[\s\S]*?"settings:update"[\s\S]*?"tenant:publish"[\s\S]*?\];\s*\}/,
+    /if \(session\.isSystemOwner\)\s*\{\s*return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"payment:review"[\s\S]*?"payment:asset"[\s\S]*?"schedule:block"[\s\S]*?"customer:view"[\s\S]*?"report:view"[\s\S]*?"settings:update"[\s\S]*?"tenant:publish"[\s\S]*?\];\s*\}/,
+  );
+  const ownerAuthority = authoritySource.slice(
+    authoritySource.indexOf('session.membershipRole === "owner"'),
+    authoritySource.indexOf('session.membershipRole === "admin"'),
+  );
+  const adminAuthority = authoritySource.slice(
+    authoritySource.indexOf('session.membershipRole === "admin"'),
+    authoritySource.indexOf('session.membershipRole === "staff"'),
+  );
+  const staffAuthority = authoritySource.slice(
+    authoritySource.indexOf('session.membershipRole === "staff"'),
   );
   assert.match(
-    authoritySource,
-    /session\.membershipRole === "owner" \|\| session\.membershipRole === "admin"[\s\S]*?return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"settings:update"[\s\S]*?\];/,
+    ownerAuthority,
+    /return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"payment:review"[\s\S]*?"payment:asset"[\s\S]*?"schedule:block"[\s\S]*?"customer:view"[\s\S]*?"report:view"[\s\S]*?"settings:update"[\s\S]*?\];/,
   );
   assert.match(
-    authoritySource,
-    /session\.membershipRole === "staff"[\s\S]*?return \["booking:cancel", "booking:check-in", "customer:view"\];[\s\S]*?return \[\];/,
+    adminAuthority,
+    /return \[[\s\S]*?"booking:create"[\s\S]*?"booking:update"[\s\S]*?"booking:cancel"[\s\S]*?"booking:check-in"[\s\S]*?"payment:review"[\s\S]*?"schedule:block"[\s\S]*?"customer:view"[\s\S]*?"report:view"[\s\S]*?"settings:update"[\s\S]*?\];/,
   );
+  assert.doesNotMatch(adminAuthority, /payment:asset/);
+  assert.match(
+    staffAuthority,
+    /return \["booking:cancel", "booking:check-in", "payment:review", "customer:view"\];[\s\S]*?return \[\];/,
+  );
+  assert.doesNotMatch(staffAuthority, /payment:asset/);
   const tenantManagerBranch = authoritySource.slice(
     authoritySource.indexOf('session.membershipRole === "owner"'),
     authoritySource.indexOf('session.membershipRole === "staff"'),
@@ -1968,7 +1985,7 @@ test("protects live business and payment settings from stale or unsafe writes", 
   );
   assert.match(
     manage,
-    /expectedRevision:\s*snapshot\.configuration\.businessPayments!\.revision/,
+    /const \[businessRevision, setBusinessRevision\] = useState\([\s\S]*?snapshot\.configuration\.businessPayments\?\.revision \?\? ""[\s\S]*?expectedRevision:\s*businessRevision/,
   );
   assert.match(
     managementAdapter,
@@ -2045,6 +2062,423 @@ test("protects live business and payment settings from stale or unsafe writes", 
   assert.match(
     manage,
     /<span>Reply-To email<\/span><input type="email" required=\{businessDraft\.emailEnabled\}/,
+  );
+});
+
+test("uses secure owner-managed QR image uploads instead of exposing asset URLs", async () => {
+  const [client, manage, managementAdapter, manageCss] = await Promise.all([
+    readFile(files.client, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  assert.match(
+    client,
+    /export type PaymentQrAsset = \{\s*url: string;\s*contentType: "image\/jpeg" \| "image\/png" \| "image\/webp";\s*\}/,
+  );
+  assert.match(
+    client,
+    /export type PaymentQrMutation = \{\s*asset: PaymentQrAsset \| null;\s*tenantRevision: string;\s*cleanupPending: boolean;\s*\}/,
+  );
+  assert.match(
+    client,
+    /const PAYMENT_QR_METHODS = new Set\(\["gcash", "maya", "bdo", "bpi", "gotyme", "pnb"\]\)/,
+  );
+  const uploadStart = client.indexOf("export async function uploadTenantPaymentQr(");
+  const uploadEnd = client.indexOf("export type ReceiptView", uploadStart);
+  assert.ok(uploadStart >= 0 && uploadEnd > uploadStart);
+  const uploadSource = client.slice(uploadStart, uploadEnd);
+  assert.match(uploadSource, /managementHostname\(\{ mutation: true \}\)/);
+  assert.match(uploadSource, /PAYMENT_QR_METHODS\.has\(normalizedMethod\)/);
+  assert.match(
+    uploadSource,
+    /!\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)[\s\S]*?file\.size < 1 \|\| file\.size > 2 \* 1024 \* 1024/,
+  );
+  assert.match(uploadSource, /form\.append\("qrFile", file\)/);
+  assert.match(
+    uploadSource,
+    /fetch\(edgeUrl\("tenant-payment-asset"\), \{[\s\S]*?method: "POST"[\s\S]*?apikey: publicSupabaseKey[\s\S]*?Authorization: `Bearer \$\{accessToken\}`[\s\S]*?"X-Tenant-Slug": activeTenant\.identity\.slug[\s\S]*?"X-Asset-Action": "upload"[\s\S]*?"X-Payment-Method": normalizedMethod[\s\S]*?body: form/,
+  );
+  assert.match(
+    uploadSource,
+    /responseJson<\{[\s\S]*?ok: true;[\s\S]*?asset: PaymentQrAsset;[\s\S]*?tenantRevision: string;[\s\S]*?cleanupPending\?: boolean;[\s\S]*?\}>\(response\)[\s\S]*?asset: result\.asset,[\s\S]*?tenantRevision: result\.tenantRevision,[\s\S]*?cleanupPending: result\.cleanupPending === true/,
+  );
+  const deleteStart = uploadSource.indexOf(
+    "export async function deleteTenantPaymentQr(",
+  );
+  assert.ok(deleteStart > 0);
+  const deleteSource = uploadSource.slice(deleteStart);
+  assert.match(deleteSource, /managementHostname\(\{ mutation: true \}\)/);
+  assert.match(
+    deleteSource,
+    /fetch\(edgeUrl\("tenant-payment-asset"\), \{[\s\S]*?"X-Asset-Action": "delete"[\s\S]*?"X-Payment-Method": normalizedMethod/,
+  );
+  assert.match(
+    deleteSource,
+    /asset: null;[\s\S]*?tenantRevision: string;[\s\S]*?asset: null,[\s\S]*?tenantRevision: result\.tenantRevision/,
+  );
+
+  const assetGuardStart = managementAdapter.indexOf(
+    "function assertPaymentAssetManager(",
+  );
+  const assetGuardEnd = managementAdapter.indexOf(
+    "function assertBookingManager(",
+    assetGuardStart,
+  );
+  assert.ok(assetGuardStart >= 0 && assetGuardEnd > assetGuardStart);
+  assert.match(
+    managementAdapter.slice(assetGuardStart, assetGuardEnd),
+    /!session\.isSystemOwner && session\.membershipRole !== "owner"[\s\S]*?PAYMENT_ASSET_ACCESS_DENIED/,
+  );
+
+  const adapterUploadStart = managementAdapter.indexOf(
+    "async uploadPaymentQr(context, methodCode, file)",
+  );
+  const adapterUploadEnd = managementAdapter.indexOf(
+    "async perform(context, action)",
+    adapterUploadStart,
+  );
+  assert.ok(adapterUploadStart >= 0 && adapterUploadEnd > adapterUploadStart);
+  const adapterUpload = managementAdapter.slice(
+    adapterUploadStart,
+    adapterUploadEnd,
+  );
+  assert.match(
+    adapterUpload,
+    /currentOwnerSession\(\)[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?assertPaymentAssetManager\(authority\)/,
+  );
+  assert.match(
+    adapterUpload,
+    /const result = await uploadTenantPaymentQr\([\s\S]*?session\.access_token,[\s\S]*?paymentQrMethodCode\(methodCode\),[\s\S]*?file[\s\S]*?const asset = result\.asset/,
+  );
+  assert.match(
+    adapterUpload,
+    /!asset \|\| !isAllowedCustomerQrUrl\(asset\.url\) \|\|[\s\S]*?!\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(asset\.contentType\) \|\|[\s\S]*?!validIsoRevision\(result\.tenantRevision\)[\s\S]*?PAYMENT_ASSET_RESPONSE_INVALID/,
+  );
+  assert.match(
+    adapterUpload,
+    /return \{\s*url: asset\.url,\s*contentType: asset\.contentType,\s*tenantRevision: result\.tenantRevision,?\s*\}/,
+  );
+
+  const authorityStart = managementAdapter.indexOf(
+    "function authorityCapabilities(",
+  );
+  const authorityEnd = managementAdapter.indexOf(
+    "function exactInteger(",
+    authorityStart,
+  );
+  const authoritySource = managementAdapter.slice(authorityStart, authorityEnd);
+  assert.equal(
+    (authoritySource.match(/"payment:asset"/g) ?? []).length,
+    2,
+    "expected only System Owner and tenant owner to receive QR asset authority",
+  );
+  assert.match(
+    managementAdapter,
+    /"payment:asset": serverSession\.isSystemOwner \|\|\s*serverSession\.membershipRole === "owner"/,
+  );
+
+  const uploadUiStart = manage.indexOf("const uploadQrForMethod = async (");
+  const uploadUiEnd = manage.indexOf("const schedulePayload", uploadUiStart);
+  assert.ok(uploadUiStart >= 0 && uploadUiEnd > uploadUiStart);
+  const uploadUi = manage.slice(uploadUiStart, uploadUiEnd);
+  assert.match(
+    uploadUi,
+    /!\["image\/jpeg", "image\/png", "image\/webp"\]\.includes\(file\.type\)[\s\S]*?file\.size < 1 \|\| file\.size > 2 \* 1024 \* 1024/,
+  );
+  assert.match(uploadUi, /PAYMENT_QR_METHOD_CODES\.has\(methodCode\)/);
+  assert.match(
+    uploadUi,
+    /await uploadPaymentQr\(methodCode, file\)[\s\S]*?setPaymentField\(index, "qrUrl", asset\.url\)[\s\S]*?setBusinessRevision\(asset\.tenantRevision\)/,
+  );
+  assert.match(uploadUi, /QR image saved\. It is now attached to this customer payment method\./);
+  assert.doesNotMatch(uploadUi, /Save Business & payments/);
+
+  const qrEditorStart = manage.indexOf(
+    "<div className={cx(styles.paymentQrEditor, styles.fieldWide)}>",
+  );
+  const qrEditorEnd = manage.indexOf(
+    '<label className={styles.field}><span>Sort order</span>',
+    qrEditorStart,
+  );
+  assert.ok(qrEditorStart >= 0 && qrEditorEnd > qrEditorStart);
+  const qrEditor = manage.slice(qrEditorStart, qrEditorEnd);
+  assert.doesNotMatch(manage, /QR image URL/i);
+  assert.doesNotMatch(
+    qrEditor,
+    /<input[^>]*(?:type="url"|value=\{method\.qrUrl\})/s,
+  );
+  assert.match(
+    qrEditor,
+    /<input[\s\S]*?type="file"[\s\S]*?accept="image\/jpeg,image\/png,image\/webp"[\s\S]*?disabled=\{!can\("payment:asset"\)[\s\S]*?onChange=/,
+  );
+  assert.match(qrEditor, /event\.currentTarget\.value = ""/);
+  assert.match(qrEditor, /method\.qrUrl \? "Replace image" : "Upload image"/);
+  assert.match(
+    qrEditor,
+    /actionType: "payment:asset-remove"[\s\S]*?payload: \{ methodCode: method\.originalMethodCode \?\? method\.methodCode \}[\s\S]*?Remove from checkout/,
+  );
+  assert.match(manage, /readOnly=\{method\.originalMethodCode !== null\}[\s\S]*?Locked after the payment method is saved/);
+  assert.match(qrEditor, /maximum 2 MB[\s\S]*?owner access required/);
+
+  assert.match(
+    cssBlock(manageCss, ".paymentQrEditor"),
+    /grid-template-columns:\s*minmax\(126px, 152px\) minmax\(0, 1fr\)/,
+  );
+  const phoneCss = cssBlock(manageCss, "@media (max-width: 430px)");
+  assert.match(
+    phoneCss,
+    /\.paymentQrEditor\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    phoneCss,
+    /\.paymentQrControls \.inlineActions\s*\{[^}]*flex-direction:\s*column/s,
+  );
+});
+
+test("keeps payment review private, minimal, role-checked, and decision-safe", async () => {
+  const [client, manage, managementAdapter, manageCss] = await Promise.all([
+    readFile(files.client, "utf8"),
+    readFile(files.manage, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  const evidenceTypeStart = managementAdapter.indexOf(
+    "export type PaymentEvidence = {",
+  );
+  const evidenceTypeEnd = managementAdapter.indexOf(
+    "export type PaymentReceiptView = {",
+    evidenceTypeStart,
+  );
+  assert.ok(evidenceTypeStart >= 0 && evidenceTypeEnd > evidenceTypeStart);
+  const evidenceType = managementAdapter.slice(evidenceTypeStart, evidenceTypeEnd);
+  assert.match(
+    evidenceType,
+    /submittedReference:\s*string \| null;[\s\S]*?detectedReference:\s*string \| null;[\s\S]*?detectedAmounts:\s*number\[\];/,
+  );
+  assert.doesNotMatch(
+    evidenceType,
+    /storage(?:_path|Path)|file_hash|sha256|raw_ocr|rawOcr|ocr_text|ocrText/i,
+  );
+
+  const mapperStart = managementAdapter.indexOf("function latestPaymentEvidence(");
+  const mapperEnd = managementAdapter.indexOf("function mapLiveBooking(", mapperStart);
+  assert.ok(mapperStart >= 0 && mapperEnd > mapperStart);
+  const evidenceMapper = managementAdapter.slice(mapperStart, mapperEnd);
+  assert.match(evidenceMapper, /Array\.isArray\(row\.receipt_verifications\)/);
+  assert.match(
+    evidenceMapper,
+    /const detectedReference = value\(candidate, \["payment_reference", "paymentReference"\]\)/,
+  );
+  assert.match(
+    evidenceMapper,
+    /const submittedReference = providerPayload[\s\S]*?value\(providerPayload, \["submittedReference", "submitted_reference"\]\)/,
+  );
+  assert.match(
+    evidenceMapper,
+    /Array\.isArray\(detected\?\.amounts\)[\s\S]*?amount >= 0 && amount <= 10_000_000[\s\S]*?\.slice\(0, 10\)/,
+  );
+  assert.match(
+    evidenceMapper,
+    /reviewable: status === "manual_review" && bookingStatus === "payment_review" &&\s*paymentStatus === "pending"/,
+  );
+  assert.doesNotMatch(
+    evidenceMapper,
+    /storage(?:_path|Path)|file_hash|sha256|raw_ocr|rawOcr|ocr_text|ocrText/i,
+  );
+
+  assert.match(
+    client,
+    /getPaymentReceiptView\([\s\S]*?"get-receipt-view-url"[\s\S]*?\{ verificationId \}/,
+  );
+  assert.match(
+    client,
+    /reviewPaymentReceipt\([\s\S]*?managementHostname\(\{ mutation: true \}\)[\s\S]*?"review-payment-receipt"[\s\S]*?input/,
+  );
+
+  const signedGuardStart = managementAdapter.indexOf(
+    "function isAllowedReceiptViewUrl(",
+  );
+  const signedGuardEnd = managementAdapter.indexOf(
+    "function paymentEvidenceStatus(",
+    signedGuardStart,
+  );
+  assert.ok(signedGuardStart >= 0 && signedGuardEnd > signedGuardStart);
+  const signedGuard = managementAdapter.slice(signedGuardStart, signedGuardEnd);
+  assert.match(
+    managementAdapter,
+    /const PRIVATE_RECEIPT_VIEW_PREFIX =\s*"\/storage\/v1\/object\/sign\/tenant-private\/"/,
+  );
+  assert.match(
+    signedGuard,
+    /url\.protocol === "https:" && !url\.username && !url\.password && !url\.port &&\s*!url\.hash && url\.origin === SHARED_SUPABASE_ORIGIN/,
+  );
+  assert.match(
+    signedGuard,
+    /url\.pathname\.startsWith\(PRIVATE_RECEIPT_VIEW_PREFIX\)[\s\S]*?Boolean\(url\.searchParams\.get\("token"\)\)/,
+  );
+
+  const receiptLoadStart = managementAdapter.indexOf(
+    "async loadPaymentReceipt(context, verificationId)",
+  );
+  const receiptLoadEnd = managementAdapter.indexOf(
+    "async uploadPaymentQr(context, methodCode, file)",
+    receiptLoadStart,
+  );
+  assert.ok(receiptLoadStart >= 0 && receiptLoadEnd > receiptLoadStart);
+  const receiptLoad = managementAdapter.slice(receiptLoadStart, receiptLoadEnd);
+  assert.match(
+    receiptLoad,
+    /currentOwnerSession\(\)[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?assertPaymentReviewer\(authority\)/,
+  );
+  assert.match(
+    receiptLoad,
+    /requiredUuid\(verificationId, "RECEIPT_VERIFICATION_ID_INVALID"\)[\s\S]*?getPaymentReceiptView\(session\.access_token, id\)/,
+  );
+  assert.match(
+    receiptLoad,
+    /result\.receipt\?\.verificationId !== id \|\| !status \|\|[\s\S]*?result\.expiresIn < 30 \|\|[\s\S]*?result\.expiresIn > 600 \|\| !isAllowedReceiptViewUrl\(result\.signedUrl\)/,
+  );
+
+  const reviewerGuardStart = managementAdapter.indexOf(
+    "function assertPaymentReviewer(",
+  );
+  const reviewerGuardEnd = managementAdapter.indexOf(
+    "function assertPaymentAssetManager(",
+    reviewerGuardStart,
+  );
+  assert.ok(reviewerGuardStart >= 0 && reviewerGuardEnd > reviewerGuardStart);
+  assert.match(
+    managementAdapter.slice(reviewerGuardStart, reviewerGuardEnd),
+    /!session\.isSystemOwner && session\.membershipRole !== "owner" &&\s*session\.membershipRole !== "admin" && session\.membershipRole !== "staff"[\s\S]*?PAYMENT_REVIEW_ACCESS_DENIED/,
+  );
+
+  const authorityStart = managementAdapter.indexOf(
+    "function authorityCapabilities(",
+  );
+  const authorityEnd = managementAdapter.indexOf(
+    "function exactInteger(",
+    authorityStart,
+  );
+  const authority = managementAdapter.slice(authorityStart, authorityEnd);
+  assert.equal(
+    (authority.match(/"payment:review"/g) ?? []).length,
+    4,
+    "expected System Owner, owner, admin, and staff payment-review authority",
+  );
+
+  const reviewActionStart = managementAdapter.indexOf(
+    'if (action.type === "payment:approve" || action.type === "payment:reject")',
+  );
+  const reviewActionEnd = managementAdapter.indexOf(
+    'if (\n      action.type === "booking:create"',
+    reviewActionStart,
+  );
+  assert.ok(reviewActionStart >= 0 && reviewActionEnd > reviewActionStart);
+  const reviewAction = managementAdapter.slice(reviewActionStart, reviewActionEnd);
+  assert.match(reviewAction, /assertPaymentReviewer\(authority\)/);
+  assert.match(
+    reviewAction,
+    /requiredUuid\([\s\S]*?action\.resourceId,[\s\S]*?"RECEIPT_VERIFICATION_ID_INVALID"/,
+  );
+  assert.match(
+    reviewAction,
+    /paymentReviewNote\(action\.payload, action\.type === "payment:reject"\)/,
+  );
+  assert.match(
+    reviewAction,
+    /reviewPaymentReceipt\(session\.access_token, \{[\s\S]*?verificationId,[\s\S]*?decision: action\.type === "payment:approve" \? "approve" : "reject",[\s\S]*?note/,
+  );
+
+  const noteGuardStart = managementAdapter.indexOf("function paymentReviewNote(");
+  const noteGuardEnd = managementAdapter.indexOf(
+    "function assertNoPayload(",
+    noteGuardStart,
+  );
+  assert.ok(noteGuardStart >= 0 && noteGuardEnd > noteGuardStart);
+  const noteGuard = managementAdapter.slice(noteGuardStart, noteGuardEnd);
+  assert.match(
+    noteGuard,
+    /assertAllowedKeys\(payload, new Set\(\["note"\]\), "PAYMENT_REVIEW_INPUT_INVALID"\)/,
+  );
+  assert.match(
+    noteGuard,
+    /\(required && note\.length < 3\) \|\| note\.length > 1_000 \|\|[\s\S]*?PAYMENT_REVIEW_NOTE_INVALID/,
+  );
+
+  const reviewUiStart = manage.indexOf("function BookingsView(");
+  const reviewUiEnd = manage.indexOf("function ScheduleView(", reviewUiStart);
+  assert.ok(reviewUiStart >= 0 && reviewUiEnd > reviewUiStart);
+  const reviewUi = manage.slice(reviewUiStart, reviewUiEnd);
+  assert.match(
+    manage,
+    /type BookingFilter = "all" \| "needs_review" \| BookingStatus;/,
+  );
+  assert.match(reviewUi, /useState<BookingFilter>\(initialStatus\)/);
+  assert.match(
+    reviewUi,
+    /status === "needs_review"[\s\S]*?booking\.paymentEvidence\?\.reviewable === true/,
+  );
+  assert.match(reviewUi, /<option value="needs_review">Needs payment review<\/option>/);
+  assert.match(
+    reviewUi,
+    /className=\{styles\.paymentReviewWorkspace\}[\s\S]*?Private payment evidence[\s\S]*?Opening the private receipt/,
+  );
+  assert.match(
+    reviewUi,
+    /loadPaymentReceipt\(evidence\.verificationId\)[\s\S]*?setReceiptView\(view\)[\s\S]*?setReceiptState\("ready"\)/,
+  );
+  assert.match(
+    reviewUi,
+    /src=\{receiptView\.signedUrl\}[\s\S]*?Payment receipt submitted for booking[\s\S]*?Open full image/,
+  );
+  assert.match(
+    reviewUi,
+    /Player-entered reference[\s\S]*?submittedReference[\s\S]*?Receipt-detected reference[\s\S]*?detectedReference[\s\S]*?Amounts detected[\s\S]*?detectedAmounts/,
+  );
+  assert.doesNotMatch(reviewUi, /received amount/i);
+  assert.match(
+    reviewUi,
+    /disabled=\{!can\("payment:review"\) \|\| receiptState !== "ready" \|\| receiptView\?\.status !== "manual_review" \|\| reviewNote\.trim\(\)\.length < 3\}[\s\S]*?actionType: "payment:reject"[\s\S]*?resourceId: reviewing\.paymentEvidence!\.verificationId/,
+  );
+  assert.match(
+    reviewUi,
+    /disabled=\{!can\("payment:review"\) \|\| receiptState !== "ready" \|\| receiptView\?\.status !== "manual_review"\}[\s\S]*?actionType: "payment:approve"[\s\S]*?resourceId: reviewing\.paymentEvidence!\.verificationId/,
+  );
+  assert.match(reviewUi, /reviewReturnRef\.current = trigger[\s\S]*?reviewHeadingRef\.current\?\.focus\(\)/);
+  assert.match(reviewUi, /setReviewing\(null\)[\s\S]*?reviewReturnRef\.current\?\.focus\(\)/);
+
+  assert.match(
+    cssBlock(manageCss, ".paymentReviewLayout"),
+    /grid-template-columns:\s*minmax\(280px, \.9fr\) minmax\(340px, 1\.1fr\)/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".spinner"),
+    /animation:\s*receipt-spin 760ms linear infinite/,
+  );
+  const compactCss = cssBlock(manageCss, "@media (max-width: 680px)");
+  assert.match(
+    compactCss,
+    /\.paymentReviewLayout\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  const phoneCss = cssBlock(manageCss, "@media (max-width: 430px)");
+  assert.match(
+    phoneCss,
+    /\.paymentFacts\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    phoneCss,
+    /\.paymentReviewActions > div\s*\{[^}]*flex-direction:\s*column/s,
+  );
+  const reducedMotionCss = cssBlock(
+    manageCss,
+    "@media (prefers-reduced-motion: reduce)",
+  );
+  assert.match(
+    reducedMotionCss,
+    /\.manageShell \*[\s\S]*?animation-duration:\s*\.01ms !important[\s\S]*?animation-iteration-count:\s*1 !important/,
   );
 });
 
