@@ -1,38 +1,49 @@
 @import "tailwindcss";
 
 :root {
+  /*
+   * Dinktopia interface system
+   * Display: Sora 600/700. UI and copy: DM Sans 400/500/600/700.
+   * The scale deliberately tops out at a restrained 3rem marketing hero;
+   * product page titles and section headings stay compact.
+   */
   --ink: #102a43;
-  --paper: #f4f7fa;
+  --paper: #f6f4ee;
   --electric: #254c84;
   --citrus: #82f500;
   --coral: #c13e2b;
-  --mist: #eaf0f6;
-  --white: #ffffff;
-  --muted: #526678;
-  --line: rgba(16, 42, 67, 0.16);
-  --shadow-soft: 0 24px 80px rgba(16, 42, 67, 0.14);
-  --text-micro: 0.75rem;
+  --mist: #efeee9;
+  --white: #fffefa;
+  --muted: #697771;
+  --line: #dedfd9;
+  --shadow-soft: 0 1px 2px rgba(16, 42, 67, 0.04), 0 8px 24px rgba(16, 42, 67, 0.04);
+  --text-micro: 0.6875rem;
   --text-caption: 0.75rem;
   --text-meta: 0.8125rem;
   --text-small: 0.875rem;
-  --text-nav: 0.9375rem;
-  --text-body: 1rem;
-  --text-lede: clamp(1.0625rem, 1rem + 0.25vw, 1.1875rem);
-  --text-panel: clamp(1.5rem, 1.25rem + 1.25vw, 2.25rem);
-  --text-card: clamp(1.75rem, 1.45rem + 1.5vw, 3rem);
-  --text-section: clamp(2.25rem, 1.6rem + 3.25vw, 4.75rem);
-  --text-hero: clamp(3rem, 1.75rem + 5vw, 6rem);
-  --text-metric: clamp(1.75rem, 3vw, 2.25rem);
-  --text-title: clamp(2rem, 4vw, 3rem);
-  --text-report: clamp(2.5rem, 6vw, 3.5rem);
-  --weight-medium: 600;
-  --weight-semibold: 700;
-  --weight-bold: 800;
-  --leading-tight: 1.05;
-  --leading-snug: 1.3;
-  --leading-copy: 1.6;
-  --tracking-label: 0.06em;
-  --tracking-heading: -0.04em;
+  --text-nav: 0.8125rem;
+  --text-body: 0.9375rem;
+  --text-lede: 1rem;
+  --text-panel: clamp(1.125rem, 1rem + 0.6vw, 1.375rem);
+  --text-card: clamp(1rem, 0.95rem + 0.35vw, 1.125rem);
+  --text-section: clamp(1.65rem, 1.45rem + 0.8vw, 2rem);
+  --text-hero: clamp(2.35rem, 2rem + 1.75vw, 3rem);
+  --text-metric: clamp(1.65rem, 1.4rem + 1vw, 2rem);
+  --text-title: clamp(1.4rem, 1.25rem + 0.6vw, 1.625rem);
+  --text-report: clamp(2rem, 1.7rem + 1.4vw, 2.75rem);
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+  --leading-tight: 1.1;
+  --leading-snug: 1.4;
+  --leading-copy: 1.55;
+  --tracking-label: 0.08em;
+  --tracking-heading: -0.035em;
+  --radius-control: 11px;
+  --radius-card: 16px;
+  --radius-panel: 18px;
+  --card-padding: clamp(18px, 1.6vw, 22px);
+  --section-space: clamp(52px, 6vw, 72px);
   --background: var(--paper);
   --foreground: var(--ink);
 }
@@ -66,6 +77,17 @@ body {
   font-family: var(--font-body), Arial, Helvetica, sans-serif;
   font-synthesis: none;
   line-height: 1.5;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display), var(--font-body), "Segoe UI", sans-serif;
+  font-weight: var(--weight-semibold);
+  letter-spacing: var(--tracking-heading);
 }
 
 button,

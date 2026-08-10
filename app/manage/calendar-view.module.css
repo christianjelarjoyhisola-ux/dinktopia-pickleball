@@ -6,7 +6,7 @@
   border-radius: var(--admin-radius, 14px);
   background: var(--surface, #fff);
   color: var(--ink, #102a43);
-  box-shadow: 0 6px 20px rgba(16, 42, 67, 0.05);
+  box-shadow: var(--shadow-soft, 0 1px 2px rgba(16, 42, 67, 0.04));
 }
 
 .calendar *,
@@ -18,7 +18,7 @@
 .calendar button,
 .calendar input,
 .calendar select {
-  min-height: 44px;
+  min-height: 40px;
   color: inherit;
   font: inherit;
 }
@@ -37,7 +37,7 @@
   padding: 14px 16px;
   background:
     radial-gradient(circle at 98% -20%, rgba(130, 245, 0, 0.18), transparent 35%),
-    linear-gradient(135deg, #f9fcff 0%, #f2f7fb 100%);
+    linear-gradient(135deg, #fffefa 0%, #f6f4ee 100%);
   border-bottom: 1px solid var(--line, #cfdae5);
 }
 

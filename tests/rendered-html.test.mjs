@@ -1753,7 +1753,7 @@ test("uses the official transparent Dinktopia logo and extracted brand palette",
     assert.match(source, /#102a43/i);
     assert.match(source, /#254c84/i);
     assert.match(source, /#82f500/i);
-    assert.match(source, /#f4f7fa/i);
+    assert.match(source, /#f6f4ee/i);
   }
   assert.match(config, /primary:\s*"#102A43"/);
   assert.match(config, /electric:\s*"#254C84"/);
@@ -3592,7 +3592,7 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   );
   assert.match(
     calendarCss,
-    /\.calendar button,\s*\.calendar input,\s*\.calendar select\s*\{[^}]*min-height:\s*44px/s,
+    /\.calendar button,\s*\.calendar input,\s*\.calendar select\s*\{[^}]*min-height:\s*40px/s,
   );
   assert.match(
     calendarCss,
@@ -4116,7 +4116,7 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(manage, /actionType:\s*"settings:schedule",[\s\S]*?payload:\s*schedulePayload/);
   assert.doesNotMatch(scheduleSource, /type="time"/);
 
-  assert.match(cssBlock(manageCss, ".button"), /min-height:\s*44px/);
+  assert.match(cssBlock(manageCss, ".button"), /min-height:\s*40px/);
   assert.match(
     cssBlock(manageCss, ".field input, .field select, .field textarea"),
     /min-height:\s*44px/,
@@ -4676,11 +4676,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     globalsCss,
     /body\s*\{[^}]*overflow-x:\s*(?:hidden|clip)/s,
   );
-  assert.match(globalsCss, /--text-micro:\s*0\.75rem/);
+  assert.match(globalsCss, /--text-micro:\s*0\.6875rem/);
   assert.match(globalsCss, /--text-caption:\s*0\.75rem/);
   assert.match(globalsCss, /--text-small:\s*0\.875rem/);
-  assert.match(globalsCss, /--text-nav:\s*0\.9375rem/);
-  assert.match(globalsCss, /--text-body:\s*1rem/);
+  assert.match(globalsCss, /--text-nav:\s*0\.8125rem/);
+  assert.match(globalsCss, /--text-body:\s*0\.9375rem/);
   assert.match(globalsCss, /--text-title:\s*clamp\(/);
   assert.match(globalsCss, /img\s*\{[^}]*max-width:\s*100%/s);
   assert.match(globalsCss, /:focus-visible\s*\{[^}]*outline:/s);
@@ -4703,11 +4703,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     publicCss.slice(0, publicCss.indexOf("@media (min-width: 1180px)")),
     /\.site-container\s*\{[^}]*1440px/s,
   );
-  assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*48px/s);
-  assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*42px/s);
+  assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*40px/s);
   assert.match(publicCss, /\.text-link\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.mode-switch a\s*\{[^}]*min-height:\s*44px/s);
-  assert.match(publicCss, /\.header-inner\s*\{[^}]*min-height:\s*60px/s);
+  assert.match(publicCss, /\.header-inner\s*\{[^}]*min-height:\s*58px/s);
   assert.match(publicCss, /\.hero-grid\s*\{[^}]*padding-top:\s*102px/s);
   assert.match(
     publicCss,
@@ -4781,7 +4781,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-body\)[^}]*font-weight:\s*var\(--weight-medium\)/s,
+    /\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-nav\)[^}]*font-weight:\s*var\(--weight-medium\)/s,
   );
   assert.match(
     publicCss,
@@ -4801,7 +4801,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*64px[^}]*\}[\s\S]*?\.header-inner\s*>\s*\.wordmark\s*\{[^}]*width:\s*164px[^}]*\}[\s\S]*?\.hero-grid\s*\{[^}]*padding-top:\s*120px[^}]*\}[\s\S]*?\.ticker-track\s*\{\s*animation-duration:\s*20s/s,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*62px[^}]*\}[\s\S]*?\.header-inner\s*>\s*\.wordmark\s*\{[^}]*width:\s*164px[^}]*\}[\s\S]*?\.hero-grid\s*\{[^}]*padding-top:\s*120px[^}]*\}[\s\S]*?\.ticker-track\s*\{\s*animation-duration:\s*20s/s,
   );
   assert.match(
     publicCss,
@@ -4817,7 +4817,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.hero-grid\s*\{[^}]*grid-template-columns:[^}]*min-height:\s*720px[^}]*padding-top:\s*84px[^}]*\}[\s\S]*?\.hero-visual\s*\{[^}]*min-height:\s*560px/s,
+    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.hero-grid\s*\{[^}]*grid-template-columns:[^}]*min-height:\s*620px[^}]*padding-top:\s*82px[^}]*\}[\s\S]*?\.hero-visual\s*\{[^}]*min-height:\s*480px/s,
   );
   assert.match(
     publicCss,

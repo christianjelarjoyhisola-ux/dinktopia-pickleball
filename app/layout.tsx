@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
-import { Manrope, Space_Grotesk } from "next/font/google";
+import { DM_Sans, Sora } from "next/font/google";
 import { headers } from "next/headers";
 import "./globals.css";
 
-const manrope = Manrope({
+const dmSans = DM_Sans({
   variable: "--font-body",
   subsets: ["latin"],
 });
 
-const spaceGrotesk = Space_Grotesk({
+const sora = Sora({
   variable: "--font-display",
   subsets: ["latin"],
 });
@@ -71,7 +71,7 @@ export default function RootLayout({
   return (
     <html lang="en-PH">
       <body
-        className={`${manrope.variable} ${spaceGrotesk.variable}`}
+        className={`${dmSans.variable} ${sora.variable}`}
       >
         <a className="skip-link" href="#main-content">
           Skip to main content

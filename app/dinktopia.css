@@ -1,20 +1,20 @@
 .dinktopia-site {
   --ink: #102a43;
-  --paper: #f4f7fa;
-  --paper-deep: #eaf0f6;
-  --surface: #ffffff;
-  --brand-surface: #f8fbff;
+  --paper: #f6f4ee;
+  --paper-deep: #efeee9;
+  --surface: #fffefa;
+  --brand-surface: #fbfaf6;
   --hero: #0b2135;
   --blue: #254c84;
   --blue-dark: #102a43;
   --lime: #82f500;
   --coral: #c13e2b;
-  --white: #ffffff;
-  --muted: #526678;
-  --line: #cfdae5;
+  --white: #fffefa;
+  --muted: #697771;
+  --line: #dedfd9;
   --on-dark: #f8fafc;
   --on-dark-muted: #c8d3df;
-  --shadow: 0 28px 80px rgba(16, 42, 67, 0.14);
+  --shadow: var(--shadow-soft);
   min-height: 100vh;
   background: var(--paper);
   color: var(--ink);
@@ -60,6 +60,16 @@
   .dinktopia-site p
 ) {
   margin: 0;
+}
+
+:where(
+  .dinktopia-site h1,
+  .dinktopia-site h2,
+  .dinktopia-site h3,
+  .dinktopia-site h4,
+  .dinktopia-site h5
+) {
+  font-family: var(--font-display), var(--font-body), "Segoe UI", sans-serif;
 }
 
 :where(.dinktopia-site ul, .dinktopia-site ol, .dinktopia-site dl) {
@@ -131,7 +141,7 @@
 
 .header-inner {
   display: flex;
-  min-height: 60px;
+  min-height: 58px;
   align-items: center;
   justify-content: space-between;
   border-bottom: 0;
@@ -204,9 +214,9 @@
 
 .primary-nav > a,
 .primary-nav > button {
-  min-height: 46px;
+  min-height: 40px;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: var(--text-body);
+  font-size: var(--text-nav);
   font-weight: var(--weight-medium);
   line-height: 1.5;
   letter-spacing: -0.005em;
@@ -235,13 +245,13 @@
 
 .button {
   display: inline-flex;
-  min-height: 48px;
+  min-height: 42px;
   align-items: center;
   justify-content: center;
   gap: 12px;
   border: 1px solid transparent;
-  border-radius: 13px;
-  padding: 12px 18px;
+  border-radius: var(--radius-control);
+  padding: 10px 16px;
   font-size: var(--text-nav);
   font-weight: var(--weight-semibold);
   line-height: 1.25;
@@ -259,23 +269,23 @@
 }
 
 .button-small {
-  min-height: 44px;
-  padding: 10px 15px;
-  border-radius: 10px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border-radius: var(--radius-control);
   font-size: var(--text-nav);
 }
 
 .button-large {
-  min-height: 54px;
-  padding: 14px 20px;
-  border-radius: 15px;
-  font-size: var(--text-body);
+  min-height: 44px;
+  padding: 11px 18px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-nav);
 }
 
 .button-lime {
   background: var(--lime);
   color: var(--ink);
-  box-shadow: 0 12px 24px rgba(130, 245, 0, 0.12);
+  box-shadow: none;
 }
 
 .button-lime:hover:not(:disabled) {
@@ -285,7 +295,7 @@
 .button-blue {
   background: var(--blue);
   color: white;
-  box-shadow: 0 12px 24px rgba(37, 76, 132, 0.17);
+  box-shadow: 0 6px 16px rgba(37, 76, 132, 0.12);
 }
 
 .button-outline {
@@ -325,21 +335,21 @@
 .hero-grid {
   position: relative;
   display: grid;
-  min-height: 700px;
+  min-height: 600px;
   align-items: center;
   gap: 36px;
   padding-top: 102px;
-  padding-bottom: 72px;
+  padding-bottom: 56px;
 }
 
 .eyebrow {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 20px;
+  margin-bottom: 14px;
   color: var(--lime);
   font-family: var(--font-display), var(--font-body), system-ui, sans-serif;
-  font-size: var(--text-meta);
+  font-size: var(--text-caption);
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -365,10 +375,10 @@
 }
 
 .hero-copy h1 {
-  max-width: 720px;
+  max-width: 610px;
   font-size: var(--text-hero);
   font-weight: var(--weight-bold);
-  letter-spacing: -0.055em;
+  letter-spacing: var(--tracking-heading);
   line-height: var(--leading-tight);
 }
 
@@ -379,7 +389,7 @@
 
 .hero-lede {
   max-width: 590px;
-  margin-top: 22px;
+  margin-top: 18px;
   color: var(--on-dark-muted);
   font-size: var(--text-lede);
   line-height: var(--leading-copy);
@@ -389,8 +399,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 18px;
-  margin-top: 26px;
+  gap: 14px;
+  margin-top: 22px;
 }
 
 .text-link {
@@ -407,7 +417,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   max-width: 590px;
-  margin-top: 34px;
+  margin-top: 26px;
   list-style: none;
   border-top: 1px solid rgba(244, 247, 250, 0.14);
   padding-top: 18px;
@@ -717,13 +727,13 @@
 }
 
 .section-pad {
-  padding-block: 76px;
+  padding-block: var(--section-space);
 }
 
 .section-heading {
   display: grid;
-  gap: 16px;
-  margin-bottom: 30px;
+  gap: 12px;
+  margin-bottom: 24px;
 }
 
 .section-heading h1,
@@ -735,18 +745,18 @@
   font-size: var(--text-section);
   font-weight: var(--weight-bold);
   letter-spacing: var(--tracking-heading);
-  line-height: 0.96;
+  line-height: 1.12;
 }
 
 .booking-zone-heading h1 {
-  font-size: clamp(32px, 3vw, 44px);
+  font-size: var(--text-section);
 }
 
 .section-heading > p {
   max-width: 470px;
   color: var(--muted);
-  font-size: 17px;
-  line-height: 1.7;
+  font-size: var(--text-small);
+  line-height: var(--leading-copy);
 }
 
 .court-card-grid {
@@ -758,9 +768,9 @@
   position: relative;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 26px;
+  border-radius: var(--radius-card);
   background: var(--white);
-  box-shadow: 0 14px 50px rgba(16, 42, 67, 0.07);
+  box-shadow: var(--shadow-soft);
 }
 
 .court-card-topline {
@@ -849,7 +859,7 @@
 }
 
 .court-card-copy {
-  padding: 24px;
+  padding: var(--card-padding);
 }
 
 .court-card-copy > p {
@@ -921,7 +931,7 @@
   max-width: 380px;
   margin-top: 22px;
   color: rgba(255, 255, 255, 0.7);
-  font-size: 17px;
+  font-size: var(--text-small);
 }
 
 .how-list {
@@ -946,7 +956,7 @@
 }
 
 .how-list h3 {
-  font-size: 21px;
+  font-size: var(--text-card);
   letter-spacing: -0.035em;
 }
 
@@ -1205,7 +1215,8 @@
 .booking-main-card,
 .booking-summary {
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-soft);
   background: var(--white);
 }
 
@@ -1234,8 +1245,8 @@
 }
 
 .booking-card-heading h3 {
-  font-size: clamp(20px, 2vw, 26px);
-  font-weight: 800;
+  font-size: var(--text-panel);
+  font-weight: var(--weight-semibold);
   letter-spacing: var(--tracking-heading);
   line-height: var(--leading-tight);
 }
@@ -3658,7 +3669,9 @@
 
 .form-field input,
 .form-field select {
-  font-size: var(--text-body);
+  min-height: 42px;
+  border-radius: var(--radius-control);
+  font-size: var(--text-small);
 }
 
 .court-card-copy h3,
@@ -3724,21 +3737,21 @@
 }
 
 @media (min-width: 780px) {
-  .header-inner { min-height: 64px; }
+  .header-inner { min-height: 62px; }
   .header-inner > .wordmark { width: 164px; }
   .hero-grid { padding-top: 120px; }
   .ticker-track { animation-duration: 20s; }
-  .section-pad { padding-block: 88px; }
-  .booking-zone.section-pad { padding-block: 76px 80px; }
+  .section-pad { padding-block: var(--section-space); }
+  .booking-zone.section-pad { padding-block: var(--section-space); }
   .court-card-grid { grid-template-columns: 1fr 1fr; }
   .mini-court { min-height: 320px; }
   .how-grid { grid-template-columns: 0.9fr 1.1fr; align-items: start; gap: 80px; }
   .booking-zone-heading { flex-direction: row; align-items: flex-end; justify-content: space-between; }
   .mode-switch { align-self: auto; }
-  .booking-shell { padding: 14px; border-radius: 28px; }
+  .booking-shell { padding: 12px; border-radius: var(--radius-panel); }
   .booking-step-summary { display: none; }
   .booking-progress { display: grid; }
-  .booking-main-card { padding: 24px; border-radius: 23px; }
+  .booking-main-card { padding: var(--card-padding); border-radius: var(--radius-card); }
   .booking-selection-card.has-mobile-selection { padding-bottom: 96px; }
   .date-rail { margin-inline: 0; padding-inline: 0; }
   .schedule-scroll { margin-inline: 0; border: 1px solid var(--line); border-radius: 16px; }
@@ -3765,8 +3778,8 @@
 }
 
 @media (min-width: 980px) {
-  .hero-grid { grid-template-columns: minmax(0, 1.08fr) minmax(410px, 0.92fr); min-height: 720px; padding-top: 84px; padding-bottom: 56px; }
-  .hero-visual { min-height: 560px; }
+  .hero-grid { grid-template-columns: minmax(0, 1.02fr) minmax(390px, 0.98fr); min-height: 620px; padding-top: 82px; padding-bottom: 48px; }
+  .hero-visual { min-height: 480px; }
   .court-art { inset: 35px 20px 35px; }
   .score-card { top: 17px; right: -10px; }
   .floating-note { right: -5px; bottom: 25px; }
