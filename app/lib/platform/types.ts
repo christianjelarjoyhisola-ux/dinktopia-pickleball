@@ -42,6 +42,11 @@ export type BookingReadiness = {
   blockingReasons: string[];
 };
 
+export type BookingCapabilities = {
+  /** Enable only when the server explicitly returns true. */
+  atomicMultiSessionBookingV1?: boolean;
+};
+
 export type TenantBootstrap = {
   tenant: {
     slug: string;
@@ -55,6 +60,7 @@ export type TenantBootstrap = {
   domain?: string;
   courts: PublicCourt[];
   paymentMethods: PaymentMethod[];
+  capabilities?: BookingCapabilities;
   settings?: Record<string, unknown>;
   readiness: BookingReadiness;
   bookingFee?: { feeMode?: string; feeAmount?: number };
@@ -75,11 +81,14 @@ export type AvailabilityResponse = {
   blockedDates?: Array<Record<string, unknown>>;
 };
 
-export type CreateBookingInput = {
+export type BookingSessionInput = {
   courtId: string;
   bookingDate: string;
   startTime: string;
   durationHours: number;
+};
+
+type CreateBookingCommonInput = {
   bookingType?: "regular" | "event";
   customer: { name: string; email: string; phone: string };
   guestCount?: number;
@@ -89,6 +98,29 @@ export type CreateBookingInput = {
   policyVersion?: string | null;
   clientRequestId?: string;
   turnstileToken?: string;
+};
+
+/**
+ * `sessions` is authoritative when present. The optional singular fields on
+ * that branch are accepted only so an existing caller can add `sessions`
+ * before removing its legacy primary-session projection.
+ */
+export type CreateBookingInput = CreateBookingCommonInput & (
+  | (BookingSessionInput & { sessions?: undefined })
+  | {
+      sessions: readonly BookingSessionInput[];
+      courtId?: string;
+      bookingDate?: string;
+      startTime?: string;
+      durationHours?: number;
+    }
+);
+
+export type BookingConfirmationSession = BookingSessionInput & {
+  courtName: string;
+  startsAt: string;
+  endsAt: string;
+  subtotalAmount: number;
 };
 
 export type BookingConfirmation = {
@@ -105,6 +137,8 @@ export type BookingConfirmation = {
   currency: string;
   fullPaymentOnly: boolean;
   bookingToken: string;
+  /** Present for atomic-group-aware responses; omitted by legacy servers. */
+  sessions?: BookingConfirmationSession[];
   preview?: boolean;
 };
 

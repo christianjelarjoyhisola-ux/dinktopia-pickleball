@@ -5,6 +5,8 @@ import { activeTenant } from "../../tenants/registry";
 import type {
   AvailabilityResponse,
   BookingConfirmation,
+  BookingConfirmationSession,
+  BookingSessionInput,
   CreateBookingInput,
   PlatformErrorBody,
   PlatformMode,
@@ -27,6 +29,156 @@ export class PlatformRequestError extends Error {
     super(message);
     this.name = "PlatformRequestError";
   }
+}
+
+const BOOKING_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const WHOLE_HOUR_PATTERN = /^(?:[01]\d|2[0-3]):00$/;
+const MAX_ATOMIC_BOOKING_HOURS = 18;
+
+function bookingWallClockMilliseconds(
+  bookingDate: string,
+  startTime: string,
+): number | null {
+  if (
+    !BOOKING_DATE_PATTERN.test(bookingDate) ||
+    !WHOLE_HOUR_PATTERN.test(startTime)
+  ) {
+    return null;
+  }
+  const milliseconds = Date.parse(`${bookingDate}T${startTime}:00.000Z`);
+  if (!Number.isFinite(milliseconds)) return null;
+  const normalized = new Date(milliseconds).toISOString();
+  return normalized.slice(0, 10) === bookingDate &&
+      normalized.slice(11, 16) === startTime
+    ? milliseconds
+    : null;
+}
+
+function bookingSessionInputError(code: string, message: string): never {
+  throw new PlatformRequestError(400, code, message);
+}
+
+/**
+ * Produces the canonical set of requested court-hours without mutating input.
+ * Exact or overlapping one-hour atoms are deduplicated, adjacent atoms on the
+ * same court are merged, and the final sessions are ordered chronologically.
+ */
+export function normalizeBookingSessions(
+  sessions: readonly BookingSessionInput[],
+): BookingSessionInput[] {
+  if (!Array.isArray(sessions) || sessions.length === 0) {
+    return bookingSessionInputError(
+      "BOOKING_SESSIONS_REQUIRED",
+      "Choose at least one court-hour before booking.",
+    );
+  }
+
+  const atoms = new Map<string, { courtId: string; startsAt: number }>();
+  for (const candidate of sessions) {
+    const courtId = typeof candidate?.courtId === "string"
+      ? candidate.courtId.trim()
+      : "";
+    const bookingDate = typeof candidate?.bookingDate === "string"
+      ? candidate.bookingDate.trim()
+      : "";
+    const startTime = typeof candidate?.startTime === "string"
+      ? candidate.startTime.trim()
+      : "";
+    const durationHours = candidate?.durationHours;
+    const startsAt = bookingWallClockMilliseconds(bookingDate, startTime);
+    if (
+      !courtId || courtId.length > 128 || /[\u0000-\u001f]/.test(courtId) ||
+      startsAt === null || !Number.isSafeInteger(durationHours) ||
+      durationHours < 1 || durationHours > MAX_ATOMIC_BOOKING_HOURS
+    ) {
+      return bookingSessionInputError(
+        "BOOKING_SESSION_INVALID",
+        "Every booking session needs a valid court, date, whole-hour start, and duration.",
+      );
+    }
+
+    for (let offset = 0; offset < durationHours; offset += 1) {
+      const atomStartsAt = startsAt + offset * 60 * 60 * 1_000;
+      const key = `${courtId}\u0000${atomStartsAt}`;
+      if (!atoms.has(key)) atoms.set(key, { courtId, startsAt: atomStartsAt });
+    }
+    if (atoms.size > MAX_ATOMIC_BOOKING_HOURS) {
+      return bookingSessionInputError(
+        "BOOKING_SESSION_HOURS_EXCEEDED",
+        `A booking can contain at most ${MAX_ATOMIC_BOOKING_HOURS} total court-hours.`,
+      );
+    }
+  }
+
+  const orderedAtoms = [...atoms.values()].sort(
+    (left, right) =>
+      left.courtId.localeCompare(right.courtId) || left.startsAt - right.startsAt,
+  );
+  const merged: Array<{ courtId: string; startsAt: number; durationHours: number }> = [];
+  for (const atom of orderedAtoms) {
+    const previous = merged.at(-1);
+    if (
+      previous?.courtId === atom.courtId &&
+      previous.startsAt + previous.durationHours * 60 * 60 * 1_000 === atom.startsAt
+    ) {
+      previous.durationHours += 1;
+    } else {
+      merged.push({ ...atom, durationHours: 1 });
+    }
+  }
+
+  return merged
+    .sort(
+      (left, right) =>
+        left.startsAt - right.startsAt || left.courtId.localeCompare(right.courtId),
+    )
+    .map((session) => {
+      const start = new Date(session.startsAt).toISOString();
+      return {
+        courtId: session.courtId,
+        bookingDate: start.slice(0, 10),
+        startTime: start.slice(11, 16),
+        durationHours: session.durationHours,
+      };
+    });
+}
+
+function previewBookingSession(
+  session: BookingSessionInput,
+): BookingConfirmationSession {
+  const startsAt = bookingWallClockMilliseconds(
+    session.bookingDate,
+    session.startTime,
+  );
+  if (startsAt === null) {
+    return bookingSessionInputError(
+      "BOOKING_SESSION_INVALID",
+      "The preview booking session could not be prepared.",
+    );
+  }
+  const offPeakEndHour = Number(activeTenant.booking.offPeakEndsAt.slice(0, 2));
+  const subtotalAmount = Array.from(
+    { length: session.durationHours },
+    (_, offset) => new Date(startsAt + offset * 60 * 60 * 1_000).getUTCHours(),
+  ).reduce(
+    (total, hour) =>
+      total + (hour < offPeakEndHour
+        ? activeTenant.booking.offPeakHourlyRate
+        : activeTenant.booking.peakHourlyRate),
+    0,
+  );
+  const end = new Date(
+    startsAt + session.durationHours * 60 * 60 * 1_000,
+  ).toISOString();
+  return {
+    ...session,
+    courtName:
+      activeTenant.previewCourts.find((court) => court.id === session.courtId)?.name ||
+      "Dinktopia court",
+    startsAt: `${session.bookingDate}T${session.startTime}:00+08:00`,
+    endsAt: `${end.slice(0, 10)}T${end.slice(11, 16)}:00+08:00`,
+    subtotalAmount,
+  };
 }
 
 function jwtRole(value: string): string | null {
@@ -249,29 +401,41 @@ export async function createBooking(
   input: CreateBookingInput,
 ): Promise<BookingConfirmation> {
   const clientRequestId = input.clientRequestId || crypto.randomUUID();
+  const sessionsSupplied = input.sessions !== undefined;
+  const normalizedSessions = normalizeBookingSessions(
+    sessionsSupplied
+      ? input.sessions
+      : [{
+          courtId: input.courtId,
+          bookingDate: input.bookingDate,
+          startTime: input.startTime,
+          durationHours: input.durationHours,
+        }],
+  );
+  const primarySession = normalizedSessions[0];
   if (platformMode() === "preview") {
     await new Promise((resolve) => setTimeout(resolve, 450));
-    const startHour = Number(input.startTime.slice(0, 2));
-    const hourlyRate = startHour < 16
-      ? activeTenant.booking.offPeakHourlyRate
-      : activeTenant.booking.peakHourlyRate;
-    const subtotal = hourlyRate * input.durationHours;
+    const sessions = normalizedSessions.map(previewBookingSession);
+    const primary = sessions[0];
+    const subtotal = sessions.reduce(
+      (total, session) => total + session.subtotalAmount,
+      0,
+    );
     return {
       reference: `DINK-${clientRequestId.slice(0, 8).toUpperCase()}`,
       status: "preview_only",
       expiresAt: null,
-      courtName:
-        activeTenant.previewCourts.find((court) => court.id === input.courtId)?.name ||
-        "Dinktopia court",
+      courtName: primary.courtName,
       bookingType: input.bookingType || "regular",
-      startsAt: `${input.bookingDate}T${input.startTime}:00+08:00`,
-      endsAt: `${input.bookingDate}T${String(startHour + input.durationHours).padStart(2, "0")}:00:00+08:00`,
+      startsAt: primary.startsAt,
+      endsAt: primary.endsAt,
       subtotalAmount: subtotal,
       serviceFeeAmount: 0,
       totalAmount: subtotal,
       currency: activeTenant.identity.currency,
       fullPaymentOnly: true,
       bookingToken: clientRequestId,
+      sessions,
       preview: true,
     };
   }
@@ -287,10 +451,14 @@ export async function createBooking(
     headers: publicHeaders(),
     body: JSON.stringify({
       tenantSlug: activeTenant.identity.slug,
-      courtId: input.courtId,
-      bookingDate: input.bookingDate,
-      startTime: input.startTime,
-      durationHours: input.durationHours,
+      ...(sessionsSupplied
+        ? { sessions: normalizedSessions }
+        : {
+            courtId: primarySession.courtId,
+            bookingDate: primarySession.bookingDate,
+            startTime: primarySession.startTime,
+            durationHours: primarySession.durationHours,
+          }),
       bookingType: input.bookingType || "regular",
       customer: input.customer,
       guestCount: input.guestCount || 1,

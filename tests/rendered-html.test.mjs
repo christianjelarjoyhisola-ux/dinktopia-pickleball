@@ -49,6 +49,76 @@ const files = {
   worker: new URL("../worker/index.ts", import.meta.url),
 };
 
+async function loadAtomicBookingClientHarness() {
+  const [clientSource, typescriptModule] = await Promise.all([
+    readFile(files.client, "utf8"),
+    import("typescript"),
+  ]);
+  const typescript = typescriptModule.default ?? typescriptModule;
+  const normalizerStart = clientSource.indexOf(
+    "export class PlatformRequestError",
+  );
+  const normalizerEnd = clientSource.indexOf(
+    "function previewBookingSession(",
+    normalizerStart,
+  );
+  const createStart = clientSource.indexOf(
+    "export async function createBooking(",
+    normalizerEnd,
+  );
+  const createEnd = clientSource.indexOf(
+    "export async function bookingStatus(",
+    createStart,
+  );
+  assert.ok(
+    normalizerStart >= 0 && normalizerEnd > normalizerStart &&
+      createStart > normalizerEnd && createEnd > createStart,
+    "expected the atomic booking client boundaries",
+  );
+
+  const harnessSource = `
+${clientSource.slice(normalizerStart, normalizerEnd)}
+const activeTenant = {
+  identity: { slug: "dinktopia", currency: "PHP" },
+};
+let capturedBookingRequest = null;
+let capturedBookingRequestCount = 0;
+function platformMode() { return "live"; }
+function previewBookingSession() {
+  throw new Error("The live transport harness must not enter preview mode.");
+}
+function edgeUrl(functionName) {
+  return \`https://platform.example.test/functions/v1/\${functionName}\`;
+}
+function publicHeaders() { return { "Content-Type": "application/json" }; }
+async function responseJson(response) { return response.json(); }
+async function fetch(url, init) {
+  capturedBookingRequestCount += 1;
+  capturedBookingRequest = { url, init };
+  return new Response(JSON.stringify({
+    ok: true,
+    booking: { reference: "PB-ATOMIC-TEST" },
+  }), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+${clientSource.slice(createStart, createEnd)}
+export function capturedRequest() {
+  return { count: capturedBookingRequestCount, request: capturedBookingRequest };
+}
+`;
+  const transpiled = typescript.transpileModule(harnessSource, {
+    compilerOptions: {
+      module: typescript.ModuleKind.ES2022,
+      target: typescript.ScriptTarget.ES2022,
+    },
+  }).outputText;
+  return import(
+    `data:text/javascript;base64,${Buffer.from(transpiled).toString("base64")}`
+  );
+}
+
 test("models overnight court hours as one clearly labelled operating day", async () => {
   const operatingHoursUrl = new URL(files.operatingHours);
   operatingHoursUrl.searchParams.set("test", `${process.pid}-${Date.now()}`);
@@ -179,6 +249,242 @@ test("models overnight court hours as one clearly labelled operating day", async
   );
   assert.equal(nextIsoDate("2026-08-31"), "2026-09-01");
   assert.equal(nextIsoDate("2026-12-31"), "2027-01-01");
+});
+
+test("normalizes atomic booking sessions without collapsing distinct court-hours", async () => {
+  const { normalizeBookingSessions, PlatformRequestError } =
+    await loadAtomicBookingClientHarness();
+
+  assert.deepEqual(
+    normalizeBookingSessions([
+      {
+        courtId: "court-b",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+    ]),
+    [
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+      {
+        courtId: "court-b",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+    ],
+    "the same hour on two courts must remain two billable sessions",
+  );
+
+  assert.deepEqual(
+    normalizeBookingSessions([
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "11:00",
+        durationHours: 1,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+    ]),
+    [
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "11:00",
+        durationHours: 1,
+      },
+    ],
+    "a gap must not be turned into a continuous reservation",
+  );
+
+  assert.deepEqual(
+    normalizeBookingSessions([
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 2,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "10:00",
+        durationHours: 2,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+    ]),
+    [{
+      courtId: "court-a",
+      bookingDate: "2026-08-10",
+      startTime: "09:00",
+      durationHours: 3,
+    }],
+    "overlapping and duplicate atoms should merge exactly once",
+  );
+
+  assert.deepEqual(
+    normalizeBookingSessions([
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-11",
+        startTime: "00:00",
+        durationHours: 1,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "23:00",
+        durationHours: 1,
+      },
+    ]),
+    [{
+      courtId: "court-a",
+      bookingDate: "2026-08-10",
+      startTime: "23:00",
+      durationHours: 2,
+    }],
+    "adjacent court-hours should merge across midnight",
+  );
+
+  assert.deepEqual(
+    normalizeBookingSessions([{
+      courtId: "court-a",
+      bookingDate: "2026-08-10",
+      startTime: "06:00",
+      durationHours: 18,
+    }]),
+    [{
+      courtId: "court-a",
+      bookingDate: "2026-08-10",
+      startTime: "06:00",
+      durationHours: 18,
+    }],
+  );
+  assert.throws(
+    () => normalizeBookingSessions([
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "06:00",
+        durationHours: 18,
+      },
+      {
+        courtId: "court-b",
+        bookingDate: "2026-08-10",
+        startTime: "06:00",
+        durationHours: 1,
+      },
+    ]),
+    (error) =>
+      error instanceof PlatformRequestError && error.status === 400 &&
+      error.code === "BOOKING_SESSION_HOURS_EXCEEDED",
+  );
+});
+
+test("sends one canonical atomic-session payload without legacy scalar fields", async () => {
+  const { createBooking, capturedRequest } = await loadAtomicBookingClientHarness();
+  const customer = {
+    name: "Atomic Player",
+    email: "atomic@example.test",
+    phone: "09170000000",
+  };
+  await createBooking({
+    sessions: [
+      {
+        courtId: "court-b",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+      {
+        courtId: "court-a",
+        bookingDate: "2026-08-10",
+        startTime: "09:00",
+        durationHours: 1,
+      },
+    ],
+    courtId: "legacy-primary-must-not-leak",
+    bookingDate: "2026-01-01",
+    startTime: "01:00",
+    durationHours: 9,
+    customer,
+    guestCount: 2,
+    clientRequestId: "11111111-1111-4111-8111-111111111111",
+    policyAccepted: true,
+    policyVersion: "policy-v1",
+    turnstileToken: "turnstile-test-token",
+  });
+
+  const captured = capturedRequest();
+  assert.equal(captured.count, 1);
+  assert.equal(
+    captured.request.url,
+    "https://platform.example.test/functions/v1/create-booking",
+  );
+  assert.equal(captured.request.init.method, "POST");
+  const payload = JSON.parse(captured.request.init.body);
+  assert.deepEqual(payload.sessions, [
+    {
+      courtId: "court-a",
+      bookingDate: "2026-08-10",
+      startTime: "09:00",
+      durationHours: 1,
+    },
+    {
+      courtId: "court-b",
+      bookingDate: "2026-08-10",
+      startTime: "09:00",
+      durationHours: 1,
+    },
+  ]);
+  assert.equal(payload.tenantSlug, "dinktopia");
+  assert.deepEqual(payload.customer, customer);
+  assert.equal(payload.clientRequestId, "11111111-1111-4111-8111-111111111111");
+  assert.equal(payload.turnstileToken, "turnstile-test-token");
+  for (const legacyField of [
+    "courtId",
+    "bookingDate",
+    "startTime",
+    "durationHours",
+  ]) {
+    assert.equal(legacyField in payload, false);
+  }
+  for (const protectedField of [
+    "subtotalAmount",
+    "serviceFeeAmount",
+    "totalAmount",
+    "currency",
+    "slots",
+  ]) {
+    assert.equal(protectedField in payload, false);
+  }
 });
 
 test("carries overnight court-hours through availability, pricing, and checkout", async () => {
@@ -498,13 +804,39 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     /<button className=\{selectedSlots\.length \? undefined : "is-placeholder"\}[\s\S]*?disabled=\{!selectedSlots\.length\}[\s\S]*?aria-hidden=\{!selectedSlots\.length\}[\s\S]*?tabIndex=\{selectedSlots\.length \? 0 : -1\}[\s\S]*?onClick=\{clearSelection\}>Clear<\/button>/s,
   );
   assert.doesNotMatch(selectionCountSource, /selectedSlots\.length > 0 &&/);
-  assert.match(
+  assert.doesNotMatch(
     booking,
-    /className="schedule-scroll-hint">Scroll sideways to see more courts/,
+    /schedule-scroll-hint|Scroll sideways to see more courts|Swipe sideways/i,
   );
-  assert.doesNotMatch(booking, /className="schedule-scroll-hint">Swipe sideways/i);
 
-  const matrixStart = booking.indexOf('<div className="schedule-scroll"');
+  const mobilePickerStart = booking.indexOf(
+    '<div className="mobile-availability-picker">',
+  );
+  const desktopPickerStart = booking.indexOf(
+    '<div className="schedule-scroll desktop-schedule-picker"',
+    mobilePickerStart,
+  );
+  assert.ok(
+    mobilePickerStart >= 0 && desktopPickerStart > mobilePickerStart,
+    "expected the focused mobile picker before the desktop matrix",
+  );
+  const mobilePickerSource = booking.slice(mobilePickerStart, desktopPickerStart);
+  assert.match(
+    mobilePickerSource,
+    /className="mobile-court-rail" role="group" aria-label="Choose a court"/,
+  );
+  assert.match(
+    mobilePickerSource,
+    /displayCourts\.map\(\(court\) => \([\s\S]*?aria-pressed=\{court\.id === pickerCourtId\}[\s\S]*?onClick=\{\(\) => chooseCourt\(court\.id\)\}/,
+  );
+  assert.match(
+    mobilePickerSource,
+    /className="mobile-time-grid" role="group" aria-label=\{`Times for \$\{pickerCourt\.name\} on \$\{selectedBaseDateLabel\}`\}/,
+  );
+  assert.match(mobilePickerSource, /aria-pressed=\{isSelected\}/);
+  assert.match(mobilePickerSource, /disabled=\{isUnavailable\}/);
+
+  const matrixStart = desktopPickerStart;
   const matrixEnd = booking.indexOf("</table>", matrixStart);
   assert.ok(matrixStart >= 0 && matrixEnd > matrixStart);
   const matrixSource = booking.slice(matrixStart, matrixEnd + "</table>".length);
@@ -560,10 +892,16 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   );
   assert.match(
     reducerSource,
-    /action\.liveMode[\s\S]*?action\.liveMaximumHours !== undefined[\s\S]*?items\.length >= action\.liveMaximumHours/,
+    /action\.maximumTotalHours !== undefined[\s\S]*?items\.length >= action\.maximumTotalHours/,
   );
-  assert.doesNotMatch(reducerSource, /action\.maximum|select up to/i);
-  assert.match(reducerSource, /if \(action\.liveMode && items\.length > 0\)/);
+  assert.match(
+    reducerSource,
+    /action\.restrictToSingleRun[\s\S]*?action\.singleRunMaximumHours !== undefined[\s\S]*?items\.length >= action\.singleRunMaximumHours/,
+  );
+  assert.match(
+    reducerSource,
+    /if \(action\.restrictToSingleRun && items\.length > 0\)/,
+  );
   assert.match(
     reducerSource,
     /const orderedHours = items[\s\S]*?\.filter\(\(item\) => item\.courtId === action\.item\.courtId\)[\s\S]*?\.map\(\(item\) => item\.startHour\)[\s\S]*?\.sort\(\(left, right\) => left - right\)/,
@@ -601,7 +939,7 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   const toggleSource = booking.slice(toggleStart, toggleEnd);
   assert.match(
     toggleSource,
-    /dispatchSelection\(\{[\s\S]*?type: "toggle"[\s\S]*?courtId: court\.id[\s\S]*?startHour: slot\.hour[\s\S]*?durationHours: 1[\s\S]*?liveMode: isLive,[\s\S]*?liveMaximumHours/s,
+    /dispatchSelection\(\{[\s\S]*?type: "toggle"[\s\S]*?courtId: court\.id[\s\S]*?startHour: slot\.hour[\s\S]*?durationHours: 1[\s\S]*?restrictToSingleRun: isLive && !atomicMultiSessionBooking,[\s\S]*?maximumTotalHours: isLive && atomicMultiSessionBooking \? 18 : undefined,[\s\S]*?singleRunMaximumHours:[\s\S]*?isLive && !atomicMultiSessionBooking/s,
   );
   assert.doesNotMatch(toggleSource, /maximumCourtHoursPerCheckout/);
   assert.doesNotMatch(toggleSource, /selectedKeys|selectedSlots|setSelectedSlots/);
@@ -657,11 +995,22 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   const summarySource = booking.slice(summaryStart, summaryEnd);
   assert.match(summarySource, /groupSelectionDetails\(selections\)/);
   assert.match(summarySource, /new Set\(selections\.map\(\(item\) => item\.court\.id\)\)\.size/);
-  assert.match(summarySource, /COURT-HOURS/);
+  assert.match(
+    summarySource,
+    /className="summary-mobile-heading"[\s\S]*?\$\{courtCount\} court[\s\S]*?\$\{selections\.length\} hr[\s\S]*?\{hasSelection \? peso\(total\) : "—"\}/,
+  );
   assert.match(summarySource, /className="summary-sessions" aria-label="Selected sessions"/);
   assert.match(summarySource, /groups\.map\(\(group\) =>/);
   assert.match(summarySource, /group\.court\.name/);
   assert.match(summarySource, /group\.courtHours/);
+  assert.match(
+    summarySource,
+    /className="summary-empty-copy">Choose an open time to see your total\./,
+  );
+  assert.doesNotMatch(
+    summarySource,
+    /COURT-HOURS|summary-score|summary-heading|summary-footnote|<dl>/,
+  );
 
   const canonicalStart = booking.indexOf("function canonicalizeSelection(");
   const canonicalEnd = booking.indexOf("function groupSelectionDetails(", canonicalStart);
@@ -681,14 +1030,18 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   const holdSource = booking.slice(holdStart, paymentStart);
   assert.match(
     holdSource,
-    /if \(platformMode\(\) === "live" && !canonicalSelection\)\s*\{\s*throw new Error\(/s,
+    /platformMode\(\) === "live" &&[\s\S]*?!canonicalSelection &&[\s\S]*?!request\.atomicMultiSessionBooking[\s\S]*?throw new Error\(/s,
   );
   assert.match(holdSource, /atomic group hold/);
   assert.match(holdSource, /no partial reservations were created/);
   assert.ok(
-    holdSource.indexOf('platformMode() === "live" && !canonicalSelection') <
+    holdSource.indexOf('platformMode() === "live"') <
       holdSource.indexOf("createPlatformBooking("),
     "expected unsupported live groups to fail before any hold request",
+  );
+  assert.match(
+    booking,
+    /const atomicMultiSessionBooking =\s*!isLive \|\| bootstrap\?\.capabilities\?\.atomicMultiSessionBookingV1 === true/,
   );
 
   const reserveStart = booking.indexOf("async function reservePaymentHold(");
@@ -697,10 +1050,10 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   const reserveSource = booking.slice(reserveStart, reserveEnd);
   assert.match(
     reserveSource,
-    /if \(isLive && !canonicalSelection\)\s*\{[\s\S]*?no partial reservation will be created\.[\s\S]*?return;/s,
+    /if \(isLive && !liveSelectionSupported\)\s*\{[\s\S]*?atomicMultiSessionBooking[\s\S]*?no partial reservation will be created\.[\s\S]*?return;/s,
   );
   assert.ok(
-    reserveSource.indexOf("isLive && !canonicalSelection") <
+    reserveSource.indexOf("isLive && !liveSelectionSupported") <
       reserveSource.indexOf("adapter.createHold("),
     "expected the UI to reject unsupported live groups before calling its adapter",
   );
@@ -730,6 +1083,23 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   assert.match(
     publicCss,
     /\.schedule-matrix tbody th\s*\{[^}]*position:\s*sticky[^}]*left:\s*0/s,
+  );
+  assert.match(
+    cssBlock(publicCss, ".mobile-time-grid"),
+    /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
+  );
+  assert.match(
+    cssBlock(publicCss, ".desktop-schedule-picker"),
+    /display:\s*none/,
+  );
+  const tabletBookingCss = cssBlock(publicCss, "@media (min-width: 780px)");
+  assert.match(
+    tabletBookingCss,
+    /\.mobile-availability-picker\s*\{\s*display:\s*none;?\s*\}/,
+  );
+  assert.match(
+    tabletBookingCss,
+    /\.desktop-schedule-picker\s*\{\s*display:\s*block;?\s*\}/,
   );
 
   const scheduleCellRules = [
@@ -786,20 +1156,29 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     /@media \(min-width:\s*980px\)\s*\{[\s\S]*?\.booking-summary-selection\s*\{\s*display:\s*block;?\s*\}[\s\S]*?\.booking-mobile-action\s*\{\s*display:\s*none;?\s*\}/s,
   );
 
-  for (const [selector, expectedDimensions] of [
-    ["date-option", ["min-width", "min-height"]],
-    ["mobile-selection-clear", ["min-width", "min-height"]],
+  for (const [selector, expectedDimensions, minimum] of [
+    ["date-option", ["min-width", "min-height"], 44],
+    ["mobile-selection-clear", ["min-width", "min-height"], 44],
+    ["mobile-time-option", ["min-height"], 44],
   ]) {
     const rule = publicCss.match(new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`, "s"));
     assert.ok(rule, `expected ${selector} styles`);
     for (const dimension of expectedDimensions) {
       const size = rule[1].match(new RegExp(`${dimension}:\\s*([0-9.]+)px`));
       assert.ok(
-        size && Number(size[1]) >= 48,
-        `expected ${selector} ${dimension} to be at least 48px`,
+        size && Number(size[1]) >= minimum,
+        `expected ${selector} ${dimension} to be at least ${minimum}px`,
       );
     }
   }
+  const mobileCourtTarget = publicCss.match(
+    /\.mobile-court-rail button\s*\{([^}]*)\}/s,
+  );
+  assert.ok(mobileCourtTarget, "expected mobile court target styles");
+  assert.match(
+    mobileCourtTarget[1],
+    /min-height:\s*(?:4[4-9]|[5-9][0-9]|[1-9][0-9]{2,})px/,
+  );
   assert.match(
     publicCss,
     /\.booking-mobile-action \.button\s*\{[^}]*min-height:\s*(?:4[89]|[5-9][0-9]|[1-9][0-9]{2,})px/s,
@@ -3822,7 +4201,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
     ["published policy", /if \(isLive && !policyVersion\)/],
     ["Turnstile security", /if \(isLive && \(!securitySiteKey \|\| !turnstileTokenValue\)\)/],
     ["non-empty selection", /if \(!selectedSlots\.length\)/],
-    ["canonical live selection", /if \(isLive && !canonicalSelection\)/],
+    ["fail-closed live selection", /if \(isLive && !liveSelectionSupported\)/],
   ]) {
     const match = reserveSource.match(guard);
     assert.ok(match?.index !== undefined, `expected ${label} revalidation`);
@@ -3983,13 +4362,18 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.ok(bookingSummaryStart > stepFourStart);
   const stepFour = booking.slice(stepFourStart, bookingSummaryStart);
 
-  assert.match(booking, /const stepLabels = \["Choose", "Details", "Payment"\]/);
   assert.match(
     booking,
-    /<span>Step \{step\} of \{stepLabels\.length\}<\/span>/,
+    /const stepLabels = \["Choose date & time", "Your details", "Payment"\]/,
   );
-  assert.match(stepOne, /STEP 01[\s\S]*?<h3>When are you playing\?<\/h3>/);
-  assert.match(stepTwo, /STEP 02[\s\S]*?<h3>Who&apos;s rallying\?<\/h3>/);
+  assert.match(
+    booking,
+    /<p className="booking-step-summary">[\s\S]*?<span>\{step\} of \{stepLabels\.length\} ·<\/span>[\s\S]*?<strong>\{stepLabels\[step - 1\]\}<\/strong>/,
+  );
+  assert.match(stepOne, /STEP 01[\s\S]*?<h3>Choose date and time<\/h3>[\s\S]*?Philippine Standard Time/);
+  assert.doesNotMatch(stepOne, /When are you playing\?|schedule-kicker|schedule-scroll-hint/);
+  assert.match(stepTwo, /STEP 02[\s\S]*?<h3>Your details<\/h3>[\s\S]*?No account needed/);
+  assert.doesNotMatch(stepTwo, /Who&apos;s rallying\?|className="guest-note"/);
   assert.match(
     stepThree,
     /STEP 03[\s\S]*?<h3 ref=\{paymentHeadingRef\} tabIndex=\{-1\}>[\s\S]*?Pay with \$\{paymentLabel\}[\s\S]*?GCash payment preview/,
@@ -4010,19 +4394,19 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   const stepTwoForm = stepTwo.indexOf(
     '<form className="booking-main-card booking-details-form"',
   );
-  const stepTwoHeading = stepTwo.indexOf("Who&apos;s rallying?");
+  const stepTwoHeading = stepTwo.indexOf("Your details");
   assert.ok(
     stepTwoSummary >= 0 &&
       stepTwoForm > stepTwoSummary &&
       stepTwoHeading > stepTwoForm,
-    "expected the Step 2 booking summary before the Who's rallying form",
+    "expected the concise Step 2 summary before the customer details form",
   );
 
   const summarySource = booking.slice(bookingSummaryStart);
   assert.match(summarySource, /aria-label="Booking summary"/);
   assert.match(
     summarySource,
-    /className="summary-mobile-heading"[\s\S]*?Booking details[\s\S]*?\{dateLabel\}[\s\S]*?\{selections\.length\} hr/,
+    /className="summary-mobile-heading"[\s\S]*?\$\{courtCount\} court[\s\S]*?\$\{selections\.length\} hr[\s\S]*?\{hasSelection \? dateLabel : "Select a court and time"\}[\s\S]*?\{hasSelection \? peso\(total\) : "—"\}/,
   );
   assert.match(summarySource, /className="summary-sessions" aria-label="Selected sessions"/);
   assert.match(summarySource, /className="price-breakdown"/);
@@ -4031,7 +4415,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepTwo, /className="field-error"/);
   assert.match(stepTwo, /aria-busy=\{isSubmitting\}/);
   assert.match(stepTwo, /className="details-hold-gate"/);
-  assert.match(stepTwo, /className="policy-grid"/);
+  assert.match(stepTwo, /className="policy-grid policy-grid-single"/);
   assert.match(stepTwo, /className=\{`check-row policy-check/);
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
   assert.match(
@@ -4046,17 +4430,25 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     stepTwo,
     /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported \|\| \(isLive && !turnstileTokenValue\)\}[\s\S]*?Holding your slot[\s\S]*?Hold slot &amp; proceed to payment/,
   );
-  assert.match(stepTwo, /No payment is taken when the hold is created\./);
+  assert.match(stepTwo, /className="hold-helper">No charge yet\.<\/p>/);
 
   const policyDisclosures =
     stepTwo.match(/<details className="policy-disclosure">[\s\S]*?<\/details>/g) ?? [];
-  assert.equal(policyDisclosures.length, 2);
-  for (const disclosure of policyDisclosures) {
-    assert.match(disclosure, /<summary>[\s\S]*?<strong>[\s\S]*?<small>View policy<\/small><\/summary>/);
-    assert.match(disclosure, /<p>\{(?:policyIntro|policyContent)\}<\/p>/);
-  }
+  assert.equal(policyDisclosures.length, 1);
+  assert.match(
+    policyDisclosures[0],
+    /<summary>[\s\S]*?<strong>\{policyTitle\}<\/strong><small>View rules<\/small><\/summary>/,
+  );
+  assert.match(
+    policyDisclosures[0],
+    /<p><strong>Booking and cancellation<\/strong><br \/>\{policyIntro\}<\/p>[\s\S]*?<p><strong>Rescheduling<\/strong><br \/>\{policyContent\}<\/p>/,
+  );
   assert.match(policyDisclosures[0], /\{policyTitle\}/);
-  assert.match(policyDisclosures[1], /<strong>Rescheduling<\/strong>/);
+  assert.match(stepTwo, /className="policy-grid policy-grid-single"/);
+  assert.match(
+    cssBlock(publicCss, ".policy-grid.policy-grid-single"),
+    /grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
 
   assert.match(
     stepFour,
@@ -4084,7 +4476,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
 
   const mobileDetailsLayout = cssBlock(publicCss, ".booking-details-step");
   assert.match(mobileDetailsLayout, /grid-template-areas:\s*"summary"\s*"form"/s);
-  assert.match(cssBlock(publicCss, ".summary-mobile-heading"), /display:\s*none/);
+  assert.match(cssBlock(publicCss, ".summary-mobile-heading"), /display:\s*flex/);
   assert.match(cssBlock(publicCss, ".checkout-snapshot"), /display:\s*none/);
 
   const desktopCss = cssBlock(publicCss, "@media (min-width: 980px)");
@@ -4098,7 +4490,19 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
 
   const mobileCss = cssBlock(publicCss, "@media (max-width: 779.98px)");
-  assert.match(mobileCss, /\.booking-shell\s*\{[^}]*padding:\s*6px/s);
+  assert.match(
+    mobileCss,
+    /\.court-card\s*\{[^}]*display:\s*grid[^}]*grid-template-columns:\s*minmax\(116px,\s*32%\)\s*minmax\(0,\s*1fr\)/s,
+  );
+  assert.match(
+    mobileCss,
+    /\.mini-court\s*\{[^}]*min-height:\s*156px/s,
+  );
+  assert.match(
+    mobileCss,
+    /\.booking-shell\s*\{[^}]*border:\s*0[^}]*border-radius:\s*0[^}]*background:\s*transparent[^}]*padding:\s*0[^}]*box-shadow:\s*none/s,
+  );
+  assert.match(mobileCss, /\.booking-choice-heading\s*\{\s*display:\s*none;?\s*\}/);
   assert.match(
     mobileCss,
     /\.booking-main-card\s*\{[^}]*border-radius:\s*16px[^}]*padding:\s*14px/s,
@@ -4115,14 +4519,9 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     mobileCss,
     /\.compact-step \.summary-mobile-heading\s*\{[^}]*display:\s*flex/s,
   );
-  assert.match(
-    mobileCss,
-    /\.compact-step \.summary-score,\s*\.compact-step \.summary-heading,\s*\.compact-step \.booking-summary > h3,\s*\.compact-step \.booking-summary > dl\s*\{\s*display:\s*none/s,
-  );
-  assert.ok(
-    mobileCss.lastIndexOf(".compact-step .booking-summary > dl") >
-      mobileCss.indexOf(".compact-step .booking-summary dl"),
-    "expected the compact summary's redundant detail list to stay hidden after its shared layout rule",
+  assert.doesNotMatch(
+    summarySource,
+    /summary-score|summary-heading|booking-summary > h3|<dl>|summary-footnote/,
   );
   assert.match(
     mobileCss,
@@ -4186,6 +4585,19 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   assert.match(
     publicCss,
     /\.site-container\s*\{[^}]*width:\s*min\(1180px,\s*calc\(100% - 32px\)\)/s,
+  );
+  assert.match(
+    booking,
+    /<div className="site-container booking-container">[\s\S]*?<div className="booking-shell">/,
+  );
+  const widePublicCss = cssBlock(publicCss, "@media (min-width: 1180px)");
+  assert.match(
+    widePublicCss,
+    /\.booking-container\s*\{[^}]*width:\s*min\(1440px,\s*calc\(100% - 48px\)\)/s,
+  );
+  assert.doesNotMatch(
+    publicCss.slice(0, publicCss.indexOf("@media (min-width: 1180px)")),
+    /\.site-container\s*\{[^}]*1440px/s,
   );
   assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*48px/s);
   assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);

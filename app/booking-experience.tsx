@@ -32,6 +32,7 @@ import {
 } from "./lib/platform/client";
 import type {
   BookingConfirmation,
+  BookingSessionInput,
   PaymentMethod,
   PublicCourt,
   TenantBootstrap,
@@ -122,6 +123,7 @@ export type BookingHoldRequest = {
   policyVersion: string | null;
   turnstileToken?: string;
   clientRequestId: string;
+  atomicMultiSessionBooking?: boolean;
 };
 
 export type BookingPaymentRequest = {
@@ -317,8 +319,9 @@ type SelectionAction =
       courtName: string;
       startsAt: string;
       endsAt: string;
-      liveMode: boolean;
-      liveMaximumHours?: number;
+      restrictToSingleRun: boolean;
+      maximumTotalHours?: number;
+      singleRunMaximumHours?: number;
     }
   | { type: "replace"; items: BookingSelection[] }
   | { type: "retain-open"; openKeys: Set<string> }
@@ -364,19 +367,31 @@ function selectionReducer(state: SelectionState, action: SelectionAction): Selec
   );
 
   if (
-    action.liveMode &&
     !isSelected &&
-    action.liveMaximumHours !== undefined &&
-    items.length >= action.liveMaximumHours
+    action.maximumTotalHours !== undefined &&
+    items.length >= action.maximumTotalHours
   ) {
     return {
       ...state,
       items,
-      announcement: `This court allows up to ${action.liveMaximumHours} consecutive hours per booking.`,
+      announcement: `A booking can include up to ${action.maximumTotalHours} total court-hours.`,
     };
   }
 
-  if (action.liveMode && items.length > 0) {
+  if (
+    action.restrictToSingleRun &&
+    !isSelected &&
+    action.singleRunMaximumHours !== undefined &&
+    items.length >= action.singleRunMaximumHours
+  ) {
+    return {
+      ...state,
+      items,
+      announcement: `This court allows up to ${action.singleRunMaximumHours} consecutive hours per booking.`,
+    };
+  }
+
+  if (action.restrictToSingleRun && items.length > 0) {
     const orderedHours = items
       .filter((item) => item.courtId === action.item.courtId)
       .map((item) => item.startHour)
@@ -427,6 +442,60 @@ function canonicalizeSelection(items: BookingSelection[]) {
     startHour: ordered[0].startHour,
     durationHours: ordered.length,
   };
+}
+
+function bookingSessionsFromSelections(
+  date: string,
+  items: BookingSelection[],
+): BookingSessionInput[] | null {
+  if (!items.length) return null;
+  const ordered = uniqueSelections(items).sort(
+    (left, right) =>
+      left.courtId.localeCompare(right.courtId) ||
+      left.startHour - right.startHour,
+  );
+  const groups = ordered.reduce<Array<{
+    courtId: string;
+    startHour: number;
+    durationHours: number;
+  }>>((sessions, item) => {
+    const previous = sessions.at(-1);
+    if (
+      previous?.courtId === item.courtId &&
+      previous.startHour + previous.durationHours === item.startHour
+    ) {
+      previous.durationHours += 1;
+      return sessions;
+    }
+    sessions.push({
+      courtId: item.courtId,
+      startHour: item.startHour,
+      durationHours: 1,
+    });
+    return sessions;
+  }, []);
+
+  const followingDate = nextIsoDate(date);
+  const sessions = groups.map((group) => {
+    const bookingDate = group.startHour >= 24 ? followingDate : date;
+    if (!bookingDate) return null;
+    const startHour = ((group.startHour % 24) + 24) % 24;
+    return {
+      courtId: group.courtId,
+      bookingDate,
+      startTime: `${String(startHour).padStart(2, "0")}:00`,
+      durationHours: group.durationHours,
+    };
+  });
+  if (sessions.some((session) => session === null)) return null;
+  return sessions
+    .filter((session): session is BookingSessionInput => session !== null)
+    .sort(
+      (left, right) =>
+        left.bookingDate.localeCompare(right.bookingDate) ||
+        left.startTime.localeCompare(right.startTime) ||
+        left.courtId.localeCompare(right.courtId),
+    );
 }
 
 function groupSelectionDetails(items: SelectionDetail[]) {
@@ -864,15 +933,23 @@ const platformAdapter: BookingAdapter = {
       throw new Error("Accept the booking and cancellation rules before we hold your slot.");
     }
     const canonicalSelection = canonicalizeSelection(request.items);
-    if (platformMode() === "live" && !canonicalSelection) {
+    const groupSessions = bookingSessionsFromSelections(request.date, request.items);
+    if (
+      platformMode() === "live" &&
+      !canonicalSelection &&
+      !request.atomicMultiSessionBooking
+    ) {
       throw new Error(
         "This selection spans separate court sessions. Live checkout will open after the venue enables one atomic group hold; no partial reservations were created.",
       );
     }
+    if (request.atomicMultiSessionBooking && !groupSessions) {
+      throw new Error("The selected court sessions could not be prepared for checkout.");
+    }
     const canonical = canonicalSelection ?? {
-      courtId: request.courtId,
-      startHour: request.startHour,
-      durationHours: request.durationHours,
+      courtId: request.items[0]?.courtId ?? request.courtId,
+      startHour: request.items[0]?.startHour ?? request.startHour,
+      durationHours: 1,
     };
     const serializedDate = canonical.startHour >= 24
       ? nextIsoDate(request.date)
@@ -894,22 +971,33 @@ const platformAdapter: BookingAdapter = {
 
     // The server owns idempotency. Replaying this UUID is safer than trusting a
     // cached browser response after an ambiguous network failure.
-    const confirmation: BookingConfirmation = await createPlatformBooking({
-      courtId: canonical.courtId,
-      bookingDate: serializedDate,
-      startTime: `${String(serializedStartHour).padStart(2, "0")}:00`,
-      durationHours: canonical.durationHours,
-      bookingType: "regular",
-      customer: {
-        name: request.customer.fullName,
-        email: request.customer.email,
-        phone: request.customer.phone,
-      },
-      policyAccepted: request.policyAccepted,
-      policyVersion: request.policyVersion,
-      clientRequestId: request.clientRequestId,
-      turnstileToken: request.turnstileToken,
-    });
+    const bookingCustomer = {
+      name: request.customer.fullName,
+      email: request.customer.email,
+      phone: request.customer.phone,
+    };
+    const confirmation: BookingConfirmation = request.atomicMultiSessionBooking
+      ? await createPlatformBooking({
+          sessions: groupSessions!,
+          bookingType: "regular",
+          customer: bookingCustomer,
+          policyAccepted: request.policyAccepted,
+          policyVersion: request.policyVersion,
+          clientRequestId: request.clientRequestId,
+          turnstileToken: request.turnstileToken,
+        })
+      : await createPlatformBooking({
+          courtId: canonical.courtId,
+          bookingDate: serializedDate,
+          startTime: `${String(serializedStartHour).padStart(2, "0")}:00`,
+          durationHours: canonical.durationHours,
+          bookingType: "regular",
+          customer: bookingCustomer,
+          policyAccepted: request.policyAccepted,
+          policyVersion: request.policyVersion,
+          clientRequestId: request.clientRequestId,
+          turnstileToken: request.turnstileToken,
+        });
 
     if (
       !confirmation.reference ||
@@ -1381,23 +1469,54 @@ export function BookingExperience({
   const courtSubtotal = selectedSlots.reduce((sum, item) => sum + item.amount, 0);
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
+  const atomicMultiSessionBooking =
+    !isLive || bootstrap?.capabilities?.atomicMultiSessionBookingV1 === true;
   const canonicalCourt = bootstrap?.courts.find(
     (court) => court.id === canonicalSelection?.courtId,
   );
   const canonicalPricing = canonicalCourt?.pricingConfig as
     | { regular?: { minimumHours?: number; maximumHours?: number } }
     | undefined;
-  const liveSelectionSupported = !isLive || Boolean(
-    canonicalSelection &&
-      canonicalSelection.durationHours >= (canonicalPricing?.regular?.minimumHours ?? 1) &&
-      canonicalSelection.durationHours <= (canonicalPricing?.regular?.maximumHours ?? 18),
-  );
+  const atomicSelectionWithinLimits =
+    selectedSlots.length > 0 &&
+    selectedSlots.length <= 18 &&
+    groupedSelections.every((group) => {
+      const publicCourt = bootstrap?.courts.find(
+        (court) => court.id === group.court.id,
+      );
+      const pricing = publicCourt?.pricingConfig as
+        | { regular?: { minimumHours?: number; maximumHours?: number } }
+        | undefined;
+      return (
+        group.courtHours >= (pricing?.regular?.minimumHours ?? 1) &&
+        group.courtHours <= (pricing?.regular?.maximumHours ?? 18)
+      );
+    });
+  const liveSelectionSupported =
+    !isLive ||
+    (atomicMultiSessionBooking
+      ? atomicSelectionWithinLimits
+      : Boolean(
+          canonicalSelection &&
+            canonicalSelection.durationHours >=
+              (canonicalPricing?.regular?.minimumHours ?? 1) &&
+            canonicalSelection.durationHours <=
+              (canonicalPricing?.regular?.maximumHours ?? 18),
+        ));
   const selectedKeys = new Set(
     selectedSlots.map((item) => selectionKey(item.courtId, item.startHour)),
   );
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
+  const pickerCourtId = displayCourts.some((court) => court.id === selectedCourtId)
+    ? selectedCourtId
+    : displayCourts[0]?.id ?? "";
+  const pickerCourt = displayCourts.find((court) => court.id === pickerCourtId) ?? null;
+  const pickerCourtSchedule = schedule.find((court) => court.courtId === pickerCourtId);
+  const pickerCourtOpenCount = pickerCourtSchedule?.slots.filter(
+    (slot) => slot.status !== "unavailable",
+  ).length ?? 0;
   const securitySiteKey = turnstileSiteKey();
   const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods[0] ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
@@ -1805,7 +1924,7 @@ export function BookingExperience({
       | { regular?: { maximumHours?: number } }
       | undefined;
     const configuredMaximum = pricingConfig?.regular?.maximumHours;
-    const liveMaximumHours =
+    const singleRunMaximumHours =
       isLive && typeof configuredMaximum === "number" && Number.isFinite(configuredMaximum)
         ? Math.min(18, Math.max(1, Math.floor(configuredMaximum)))
         : isLive
@@ -1822,8 +1941,10 @@ export function BookingExperience({
       courtName: court.name,
       startsAt: slot.startsAt,
       endsAt: slot.endsAt,
-      liveMode: isLive,
-      liveMaximumHours,
+      restrictToSingleRun: isLive && !atomicMultiSessionBooking,
+      maximumTotalHours: isLive && atomicMultiSessionBooking ? 18 : undefined,
+      singleRunMaximumHours:
+        isLive && !atomicMultiSessionBooking ? singleRunMaximumHours : undefined,
     });
   }
 
@@ -1903,9 +2024,11 @@ export function BookingExperience({
       setStep(1);
       return;
     }
-    if (isLive && !canonicalSelection) {
+    if (isLive && !liveSelectionSupported) {
       setPaymentError(
-        "Live group checkout is not active yet. Choose adjacent hours on one court, or keep this multi-court plan in preview; no partial reservation will be created.",
+        atomicMultiSessionBooking
+          ? "Check the minimum and maximum hours for each selected court session."
+          : "Live group checkout is not active yet. Choose adjacent hours on one court; no partial reservation will be created.",
       );
       return;
     }
@@ -1932,6 +2055,7 @@ export function BookingExperience({
         policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
         turnstileToken: turnstileTokenValue || undefined,
         clientRequestId,
+        atomicMultiSessionBooking,
       });
       bookingOwnsSelectionRef.current = true;
       setPendingBooking(booking);
@@ -2154,7 +2278,7 @@ export function BookingExperience({
     }
   }
 
-  const stepLabels = ["Choose", "Details", "Payment"];
+  const stepLabels = ["Choose date & time", "Your details", "Payment"];
   const gallerySection = (
     <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
       <div className="site-container">
@@ -2414,8 +2538,12 @@ export function BookingExperience({
                         <span>{court.mood}</span>
                         <span>From ₱300 / hour</span>
                       </div>
-                      <Link className="button court-button" href={`/book?court=${encodeURIComponent(court.slug)}`}>
-                        See times for Court {court.number} <span aria-hidden="true">→</span>
+                      <Link
+                        className="button court-button"
+                        href={`/book?court=${encodeURIComponent(court.slug)}`}
+                        aria-label={`See times for Court ${court.number}`}
+                      >
+                        See times <span aria-hidden="true">→</span>
                       </Link>
                     </div>
                   </article>
@@ -2450,9 +2578,9 @@ export function BookingExperience({
         </section>}
 
         {isBookingPage && <section className="booking-zone section-pad" id="book" ref={bookingSectionRef}>
-          <div className="site-container">
+          <div className="site-container booking-container">
             <div className="booking-zone-heading">
-              <div>
+              <div className="booking-zone-title">
                 <p className="eyebrow eyebrow-dark">Make your move</p>
                 <h1>{mode === "book" ? "Book a court" : "Manage your booking"}</h1>
               </div>
@@ -2489,7 +2617,7 @@ export function BookingExperience({
                 {step < 4 && (
                   <>
                     <p className="booking-step-summary">
-                      <span>Step {step} of {stepLabels.length}</span>
+                      <span>{step} of {stepLabels.length} ·</span>
                       <strong>{stepLabels[step - 1]}</strong>
                     </p>
                     <ol className="booking-progress" aria-label="Booking progress">
@@ -2510,9 +2638,9 @@ export function BookingExperience({
                 {step === 1 && (
                   <div className="booking-layout">
                     <div className={`booking-main-card booking-selection-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
-                      <div className="booking-card-heading">
+                      <div className="booking-card-heading booking-choice-heading">
                         <span className="step-chip">STEP 01</span>
-                        <div><h3>When are you playing?</h3><p>Times shown in Philippine Standard Time.</p></div>
+                        <div><h3>Choose date and time</h3><p>Philippine Standard Time</p></div>
                       </div>
 
                       <fieldset className="booking-fieldset">
@@ -2540,12 +2668,11 @@ export function BookingExperience({
                         <legend className="sr-only">Choose court-hours</legend>
                         <div className="schedule-heading-row">
                           <div className="schedule-title-group">
-                            <span className="schedule-kicker"><i aria-hidden="true" />{visibleAvailabilityState === "loading" ? "Refreshing schedule" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : `${availableCount} court-hours open`}</span>
-                            <h4>Pick your court and time</h4>
+                            <h4>{visibleAvailabilityState === "loading" ? "Refreshing times" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : `${availableCount} court-hours open`}</h4>
                             <p className="schedule-help">
-                              {isLive
-                                ? "Choose consecutive hours on one court. Tap again to remove."
-                                : "Tap an open time to add it. Tap again to remove."}
+                              {isLive && !atomicMultiSessionBooking
+                                ? "Select consecutive hours on one court."
+                                : "Select any open times across one or more courts."}
                             </p>
                           </div>
                           <div className="schedule-selection-count" aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}>
@@ -2561,7 +2688,6 @@ export function BookingExperience({
                             <span><i className="legend-selected" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
                           </div>
-                          <span className="schedule-scroll-hint">Scroll sideways to see more courts <span aria-hidden="true">→</span></span>
                         </div>
 
                         {visibleAvailabilityState === "loading" && (
@@ -2604,7 +2730,69 @@ export function BookingExperience({
                         )}
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
+                          <>
+                          {pickerCourt && (
+                            <div className="mobile-availability-picker">
+                              <div className="mobile-court-rail" role="group" aria-label="Choose a court">
+                                {displayCourts.map((court) => (
+                                  <button
+                                    type="button"
+                                    key={court.id}
+                                    className={court.id === pickerCourtId ? "is-selected" : undefined}
+                                    aria-pressed={court.id === pickerCourtId}
+                                    onClick={() => chooseCourt(court.id)}
+                                  >
+                                    <strong>C{Number(court.number)}</strong>
+                                    <span>{court.name}</span>
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="mobile-picker-heading">
+                                <strong>{pickerCourt.name}</strong>
+                                <span>{pickerCourtOpenCount} open {pickerCourtOpenCount === 1 ? "time" : "times"}</span>
+                              </div>
+                              <div className="mobile-time-grid" role="group" aria-label={`Times for ${pickerCourt.name} on ${selectedBaseDateLabel}`}>
+                                {scheduleHours.map((hour) => {
+                                  const slot = pickerCourtSchedule?.slots.find((item) => item.hour === hour);
+                                  const key = selectionKey(pickerCourt.id, hour);
+                                  const isSelected = selectedKeys.has(key);
+                                  const isClosed = !slot;
+                                  const isBooked = slot?.status === "unavailable";
+                                  const isUnavailable = isClosed || isBooked;
+                                  const stateLabel = isClosed
+                                    ? "closed"
+                                    : isBooked
+                                      ? "booked"
+                                      : isSelected
+                                        ? "selected"
+                                        : "available";
+                                  return (
+                                    <Fragment key={hour}>
+                                      {hour === 24 && selectedFollowingDate && (
+                                        <div className="mobile-time-divider" role="separator" aria-label={`Next day, ${longDateLabel(selectedFollowingDate)}`}>
+                                          <span>Next day</span><strong>{shortDateLabel(selectedFollowingDate)}</strong>
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        className={`mobile-time-option${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}`}
+                                        aria-pressed={isSelected}
+                                        disabled={isUnavailable}
+                                        aria-label={`${pickerCourt.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot!.price)}, ${stateLabel}`}`}
+                                        onClick={() => slot && !isUnavailable && chooseSlot(pickerCourt, slot)}
+                                      >
+                                        <span className="mobile-time-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
+                                        <span className="mobile-time-range">{formatHour(hour).replace(":00", "")}–{formatHour(hour + 1).replace(":00", "")}</span>
+                                        <strong>{isClosed ? "Closed" : isBooked ? "Booked" : peso(slot!.price)}</strong>
+                                        <small>{isSelected ? "Selected" : isUnavailable ? stateLabel : "Open"}</small>
+                                      </button>
+                                    </Fragment>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                          <div className="schedule-scroll desktop-schedule-picker" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
                             <table className="schedule-matrix">
                               <thead>
                                 <tr>
@@ -2674,11 +2862,14 @@ export function BookingExperience({
                               </tbody>
                             </table>
                           </div>
+                          </>
                         )}
                         {isLive && selectedSlots.length > 0 && !liveSelectionSupported && (
                           <div className="schedule-live-guard" role="status">
-                            <strong>Group checkout is being prepared</strong>
-                            <p>You can plan multiple courts here, but live checkout currently accepts only adjacent hours on one court. We will never split this into partial reservations.</p>
+                            <strong>{atomicMultiSessionBooking ? "Check each session" : "Group checkout is being prepared"}</strong>
+                            <p>{atomicMultiSessionBooking
+                              ? "One or more sessions is outside that court's minimum or maximum duration."
+                              : "Live checkout currently accepts adjacent hours on one court. We will never split this into partial reservations."}</p>
                           </div>
                         )}
                       </fieldset>
@@ -2710,9 +2901,8 @@ export function BookingExperience({
                     <form className="booking-main-card booking-details-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
                       <div className="booking-card-heading">
                         <span className="step-chip">STEP 02</span>
-                        <div><h3>Who&apos;s rallying?</h3><p>For booking updates.</p></div>
+                        <div><h3>Your details</h3><p>No account needed. We&apos;ll send booking updates here.</p></div>
                       </div>
-                      <div className="guest-note"><span aria-hidden="true">◎</span><div><strong>Guest checkout</strong><p>No account needed.</p></div></div>
                       <div className="form-grid">
                         <div className="form-field form-field-wide">
                           <label htmlFor={`${formId}-name`}>Full name</label>
@@ -2761,14 +2951,11 @@ export function BookingExperience({
                         <span><strong>Booking updates</strong><small>Receipts, court changes, and reminders.</small></span>
                       </label>
                       <div className="details-hold-gate">
-                        <div className="policy-grid">
+                        <div className="policy-grid policy-grid-single">
                           <details className="policy-disclosure">
-                            <summary><span aria-hidden="true">↺</span><strong>{policyTitle}</strong><small>View policy</small></summary>
-                            <p>{policyIntro}</p>
-                          </details>
-                          <details className="policy-disclosure">
-                            <summary><span aria-hidden="true">◷</span><strong>Rescheduling</strong><small>View policy</small></summary>
-                            <p>{policyContent}</p>
+                            <summary><span aria-hidden="true">↺</span><strong>{policyTitle}</strong><small>View rules</small></summary>
+                            <p><strong>Booking and cancellation</strong><br />{policyIntro}</p>
+                            <p><strong>Rescheduling</strong><br />{policyContent}</p>
                           </details>
                         </div>
                         {isLive && !policyVersion && (
@@ -2778,11 +2965,11 @@ export function BookingExperience({
                         )}
                         <label className={`check-row policy-check ${!acceptedPolicy ? "needs-check" : ""}`}>
                           <input id={`${formId}-policy`} type="checkbox" checked={acceptedPolicy} disabled={isLive && !policyVersion} onChange={(event) => setAcceptedPolicy(event.target.checked)} />
-                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required before we hold your slot.</small></span>
+                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required to hold this time.</small></span>
                         </label>
                         {isLive && (
                           <div className="security-boundary details-security-boundary">
-                            <div><strong>Security check</strong><p>Verify once before we hold the court.</p></div>
+                            <div><strong>Verification</strong><p>Required before we hold the court.</p></div>
                             {securitySiteKey ? (
                               <><div ref={turnstileContainerRef} className="turnstile-container" /><span className={turnstileTokenValue ? "security-ready" : "security-waiting"}>{turnstileTokenValue ? "Verified" : "Verification required"}</span></>
                             ) : (
@@ -2807,7 +2994,7 @@ export function BookingExperience({
                           {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Hold slot &amp; proceed to payment <span aria-hidden="true">→</span></>}
                         </button>
                       </div>
-                      <p className="hold-helper">No payment is taken when the hold is created.</p>
+                      <p className="hold-helper">No charge yet.</p>
                     </form>
                   </div>
                 )}
@@ -3037,16 +3224,12 @@ function BookingSummary({
   return (
     <aside className={`booking-summary${actionLabel ? " booking-summary-selection" : ""}`} aria-label="Booking summary">
       <div className="summary-mobile-heading">
-        <span><strong>Booking details</strong><small>{dateLabel}</small></span>
-        <b>{selections.length} hr{selections.length === 1 ? "" : "s"}</b>
+        <span>
+          <strong>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} · ${selections.length} hr${selections.length === 1 ? "" : "s"}` : "Booking summary"}</strong>
+          <small>{hasSelection ? dateLabel : "Select a court and time"}</small>
+        </span>
+        <b>{hasSelection ? peso(total) : "—"}</b>
       </div>
-      <div className="summary-score"><span>COURT-HOURS</span><strong>{selections.length}</strong></div>
-      <div className="summary-heading"><span className="slot-dot" aria-hidden="true" /><p>{hasSelection ? "Your rally plan" : "Build your booking"}</p></div>
-      <h3>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} selected` : "Choose from the schedule"}</h3>
-      <dl>
-        <div><dt>Date</dt><dd>{dateLabel}</dd></div>
-        <div><dt>Play</dt><dd>{hasSelection ? `${selections.length} court-hour${selections.length === 1 ? "" : "s"}` : "Tap any open cell"}</dd></div>
-      </dl>
       {groups.length > 0 && (
         <ul className="summary-sessions" aria-label="Selected sessions">
           {groups.map((group) => (
@@ -3057,15 +3240,18 @@ function BookingSummary({
           ))}
         </ul>
       )}
-      <div className="price-breakdown">
-        <div><span>Court booking</span><span>{hasSelection ? peso(subtotal) : "—"}</span></div>
-        <div><span>Booking fee</span><span>{hasSelection ? peso(bookingFee) : "—"}</span></div>
-        <div className="summary-total"><span>Total</span><strong>{hasSelection ? peso(total) : "—"}</strong></div>
-      </div>
+      {hasSelection ? (
+        <div className="price-breakdown">
+          <div><span>Court booking</span><span>{peso(subtotal)}</span></div>
+          <div><span>Booking fee</span><span>{peso(bookingFee)}</span></div>
+          <div className="summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
+        </div>
+      ) : (
+        <p className="summary-empty-copy">Choose an open time to see your total.</p>
+      )}
       {actionLabel && onAction && (
         <button className="button button-lime summary-button" type="button" disabled={actionDisabled} onClick={onAction}>{actionLabel} <span aria-hidden="true">→</span></button>
       )}
-      <p className="summary-footnote"><span aria-hidden="true">◇</span> No surprise fees. Prices are shown in PHP.</p>
     </aside>
   );
 }
