@@ -5042,6 +5042,22 @@
 
 /* Dedicated RallyOS-style booking application shell. */
 .booking-route {
+  --ink: #12211d;
+  --ink-2: #20302b;
+  --ink-3: #43534d;
+  --muted: #71807a;
+  --line: #dedfd9;
+  --line-strong: #c9cbc3;
+  --porcelain: #f6f4ee;
+  --paper: #fffefa;
+  --paper-2: #f0eee7;
+  --violet: #6558e8;
+  --violet-dark: #5145cf;
+  --violet-soft: #ebe9ff;
+  --coral: #ff6b55;
+  --mint: #7dd7b8;
+  --mint-soft: #e4f7f0;
+  --success: #16845b;
   min-height: 100vh;
   background:
     radial-gradient(circle at 92% 8%, rgba(125, 215, 184, 0.11), transparent 26rem),
@@ -5049,7 +5065,7 @@
 }
 
 .booking-route .preview-ribbon {
-  min-height: 29px;
+  min-height: 30px;
   gap: 8px;
   background: #10251f;
   padding: 5px 16px;
@@ -5059,7 +5075,8 @@
 .booking-route .preview-ribbon span { color: rgba(255, 255, 255, 0.62); }
 
 .booking-app-header {
-  position: relative;
+  position: sticky;
+  top: 0;
   z-index: 50;
   border-bottom: 1px solid #dedfd9;
   background: rgba(255, 254, 250, 0.98);
@@ -5103,7 +5120,22 @@
   min-height: 307px;
   margin-bottom: 27px;
   border-radius: 28px;
+  background-image:
+    linear-gradient(90deg, rgba(10, 27, 22, 0.94) 0%, rgba(10, 27, 22, 0.66) 46%, rgba(10, 27, 22, 0.2) 100%),
+    url("/rally-court-hero.png");
+  background-position: center;
+  background-size: cover;
 }
+.booking-route .booking-venue-mark { background: var(--violet); }
+.booking-route .booking-venue-location { display: inline-flex; align-items: center; gap: 7px; }
+.booking-route .booking-venue-location svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.booking-route .booking-venue-hero-copy p,
+.booking-route .booking-card-kicker { color: var(--mint); }
+.booking-route .booking-main-card,
+.booking-route .booking-summary { border-color: var(--line); background: var(--paper); box-shadow: 0 1px 2px rgba(18, 33, 29, 0.04), 0 8px 24px rgba(18, 33, 29, 0.04); }
+.booking-route .button-blue { background: var(--violet); box-shadow: 0 8px 20px rgba(101, 88, 232, 0.22); }
+.booking-route .button-blue:hover:not(:disabled) { background: var(--violet-dark); }
+.booking-route .schedule-selection-count { border-color: rgba(101, 88, 232, 0.18); background: var(--violet-soft); color: var(--violet-dark); }
 .booking-route .booking-progress { width: min(590px, calc(100% - 30px)); margin: 27px auto 25px; }
 .booking-route .booking-selection-card { padding: 39px; }
 .booking-route .booking-choice-heading { gap: 13px; }
@@ -5121,7 +5153,7 @@
   .booking-app-desktop-bar { display: none; }
   .booking-app-mobile-bar {
     display: grid;
-    min-height: 94px;
+    min-height: 75px;
     grid-template-columns: 44px minmax(0, 1fr) 64px;
     align-items: center;
     gap: 10px;
@@ -5134,14 +5166,18 @@
   .booking-player-chip > span { width: 32px; height: 32px; }
   .booking-app-navigation { right: 13px; left: 13px; }
 
-  .booking-route .booking-zone.section-pad { padding-block: 0 56px; }
+  .booking-route .booking-zone.section-pad { padding-block: 19px 56px; }
   .booking-route .booking-container { width: min(100% - 26px, 1320px); }
   .booking-route .booking-venue-hero {
-    height: 227px;
-    min-height: 227px;
+    height: auto;
+    min-height: 205px;
     margin: 0 0 18px;
     border-radius: 21px;
     padding: 72px 20px 22px;
+    background-image:
+      linear-gradient(0deg, rgba(10, 27, 22, 0.94) 0%, rgba(10, 27, 22, 0.55) 52%, rgba(10, 27, 22, 0.15) 100%),
+      url("/rally-court-hero.png");
+    background-position: 61% 58%;
   }
   .booking-route .booking-venue-hero-copy h2 { font-size: clamp(1.65rem, 8vw, 2.2rem); }
   .booking-route .booking-venue-hero-copy div > span { margin-top: 8px; line-height: 1.45; }
@@ -5157,7 +5193,10 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .booking-route .booking-progress { margin-block: 18px 14px; }
+  .booking-route .booking-progress { width: 94%; margin-block: 18px 14px; }
+  .booking-route .booking-progress li { gap: 7px; }
+  .booking-route .booking-progress li > span { width: 33px; height: 33px; }
+  .booking-route .booking-progress small { font-size: 0.67rem; line-height: 1.2; }
   .booking-route .booking-selection-card { padding: 20px 16px; }
   .booking-route .date-option { min-width: 70px; flex-basis: 70px; }
   .booking-route .date-rail { scrollbar-width: none; }

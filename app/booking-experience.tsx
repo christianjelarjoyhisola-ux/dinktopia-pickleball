@@ -2305,7 +2305,7 @@ export function BookingExperience({
   );
 
   return (
-    <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route" : ""}`}>
+    <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}>
       {!isLive && (
         <div className="preview-ribbon" role="status">
           <strong>Setup preview</strong><span>No live reservations or payments are created.</span>
@@ -2326,7 +2326,7 @@ export function BookingExperience({
             </button>
             <strong>Book a court</strong>
             <Link className="booking-player-chip" href="/book?mode=manage" aria-label="Manage your booking">
-              <span>D</span><i aria-hidden="true">⌄</i>
+              <span>P</span><i aria-hidden="true">⌄</i>
             </Link>
           </div>
           <div className="booking-app-desktop-bar">
@@ -2337,12 +2337,12 @@ export function BookingExperience({
             <div className="booking-app-actions">
               <label className="booking-app-search">
                 <span aria-hidden="true">⌕</span>
-                <input type="search" placeholder="Search anything" aria-label="Search Dinktopia" />
+                <input type="search" placeholder="Search bookings and players" aria-label="Search bookings and players" />
                 <kbd>⌘ K</kbd>
               </label>
               <Link className="booking-app-notification" href="/book?mode=manage" aria-label="Manage booking notifications">♧<b>2</b></Link>
               <Link className="booking-app-player" href="/book?mode=manage">
-                <span>D</span><small>Viewing as<strong>Player</strong></small><i aria-hidden="true">⌄</i>
+                <span>P</span><small>Viewing as<strong>Player</strong></small><i aria-hidden="true">⌄</i>
               </Link>
             </div>
           </div>
@@ -2417,7 +2417,7 @@ export function BookingExperience({
         </div>
       </header>}
 
-      <main id="main-content" className={isHome ? undefined : "route-main"}>
+      <main id="main-content" className={isHome ? undefined : isBookingPage && mode === "book" ? "route-main rallyos-main-content" : "route-main"}>
         {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
@@ -2626,16 +2626,19 @@ export function BookingExperience({
             </div>
 
             {mode === "book" && (
-              <div className="booking-venue-hero" aria-label="Dinktopia Court Hub booking">
+              <div className="booking-venue-hero player-hero player-hero-image" aria-label="Dinktopia Court Hub booking">
                 <div className="booking-venue-hero-copy">
                   <span className="booking-venue-mark" aria-hidden="true">DT</span>
                   <div>
                     <p>Book direct</p>
                     <h2>Book court time in seconds.</h2>
-                    <span>Tap any open slot, add the court-hours you need, then check out once.</span>
+                    <span>Tap any open slot. Choose as many courts and times as you need, then check out once.</span>
                   </div>
                 </div>
-                <span className="booking-venue-location">Dinktopia Court Hub</span>
+                <span className="booking-venue-location">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+                  Dinktopia Court Hub
+                </span>
               </div>
             )}
 
@@ -2662,7 +2665,7 @@ export function BookingExperience({
                         const number = index + 1;
                         const state = number === step ? "current" : number < step ? "complete" : "upcoming";
                         return (
-                          <li key={label} className={`is-${state}`} aria-current={number === step ? "step" : undefined}>
+                          <li key={label} className={`is-${state}${state === "current" ? " active" : state === "complete" ? " complete" : ""}`} aria-current={number === step ? "step" : undefined}>
                             <span>{number < step ? "✓" : number}</span>
                             <small>{label}</small>
                           </li>
@@ -2674,22 +2677,23 @@ export function BookingExperience({
 
                 {step === 1 && (
                   <div className="booking-layout booking-slot-step">
-                    <div className={`booking-main-card booking-selection-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
-                      <div className="booking-card-heading booking-choice-heading">
+                    <div className={`booking-main-card booking-selection-card booking-stage surface-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
+                      <div className="booking-card-heading booking-choice-heading stage-heading">
                         <span className="step-chip">01</span>
                         <div><p className="booking-card-kicker">Court booking</p><h3>Choose your slots</h3></div>
                       </div>
 
-                      <fieldset className="booking-fieldset">
+                      <fieldset className="booking-fieldset field-group">
                         <legend className="sr-only">Select a date</legend>
-                        <div className="booking-field-label"><strong>Select a date</strong><span>Next 6 days</span></div>
-                        <div className="date-rail">
-                          {dates.slice(1).map((date, index) => (
+                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Next 6 days</span></div>
+                        <div className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
+                          {dates.slice(1, 7).map((date, index) => (
                             <button
                               type="button"
                               key={date.iso}
-                              className={`date-option ${selectedDate === date.iso ? "is-selected" : ""}`}
-                              aria-pressed={selectedDate === date.iso}
+                              className={`date-option ${selectedDate === date.iso ? "is-selected selected" : ""}`}
+                              role="radio"
+                              aria-checked={selectedDate === date.iso}
                               aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
                             >
@@ -2702,15 +2706,13 @@ export function BookingExperience({
                         {selectedSlots.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours.</p>}
                       </fieldset>
 
-                      <fieldset className="booking-fieldset availability-fieldset">
+                      <fieldset className={`booking-fieldset availability-fieldset field-group availability-section${selectedSlots.length ? "" : " waiting"}`}>
                         <legend className="sr-only">Choose court-hours</legend>
-                        <div className="schedule-heading-row">
+                        <div className="schedule-heading-row field-group-label availability-heading">
                           <div className="schedule-title-group">
                             <h4>{visibleAvailabilityState === "loading" ? "Refreshing times" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : "Court schedule"}</h4>
                             <p className="schedule-help">
-                              {isLive && !atomicMultiSessionBooking
-                                ? "Select consecutive hours on one court."
-                                : "Select any open times across one or more courts."}
+                              Tap an open slot to select it. Tap again to remove.
                             </p>
                           </div>
                           <div
@@ -2725,7 +2727,7 @@ export function BookingExperience({
                           </div>
                         </div>
                         <div className="availability-legend-row">
-                          <div className="slot-legend" aria-label="Availability key">
+                          <div className="slot-legend availability-legend" aria-label="Availability legend">
                             <span><i className="legend-open" />Open</span>
                             <span><i className="legend-booked" />Booked</span>
                             <span><i className="legend-selected" />Your selection</span>
@@ -2895,7 +2897,7 @@ export function BookingExperience({
                         )}
                       </fieldset>
 
-                      <div className="slot-step-footer" role="region" aria-label="Selected court-hours">
+                      <div className="slot-step-footer stage-footer booking-selection-footer" role="region" aria-label="Selected court-hours">
                         <div>
                           <strong><i aria-hidden="true">✓</i>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
                           {selectedSlots.length > 0 && <span>{selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"} · {peso(total)}</span>}

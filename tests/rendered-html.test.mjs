@@ -928,7 +928,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   assert.match(
     booking,
-    /className=\{`date-option \$\{selectedDate === date\.iso \? "is-selected" : ""\}`\}[\s\S]*?aria-pressed=\{selectedDate === date\.iso\}[\s\S]*?aria-label=\{date\.long\}/s,
+    /className=\{`date-option \$\{selectedDate === date\.iso \? "is-selected selected" : ""\}`\}[\s\S]*?role="radio"[\s\S]*?aria-checked=\{selectedDate === date\.iso\}[\s\S]*?aria-label=\{date\.long\}/s,
   );
   assert.match(
     booking,
@@ -1259,13 +1259,13 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
 
   assert.equal(
-    (booking.match(/className="slot-step-footer"/g) ?? []).length,
+    (booking.match(/className="slot-step-footer stage-footer booking-selection-footer"/g) ?? []).length,
     1,
     "expected one responsive selection footer",
   );
   assert.match(
     booking,
-    /className="slot-step-footer"[\s\S]*?className=\{`slot-clear-button\$\{selectedSlots\.length \? "" : " is-placeholder"\}`\}[\s\S]*?data-testid="booking-continue"/s,
+    /className="slot-step-footer stage-footer booking-selection-footer"[\s\S]*?className=\{`slot-clear-button\$\{selectedSlots\.length \? "" : " is-placeholder"\}`\}[\s\S]*?data-testid="booking-continue"/s,
   );
   assert.match(
     booking,
@@ -4423,12 +4423,12 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(customerHtml, /aria-label="Booking actions"/i);
   assert.match(customerHtml, /aria-label="Booking progress"/i);
   assert.match(customerHtml, /aria-current="step"/i);
-  assert.match(customerHtml, /aria-label="Availability key"/i);
+  assert.match(customerHtml, /aria-label="Availability legend"/i);
   assert.match(customerHtml, /role="status"[^>]*aria-live="polite"/i);
   assert.match(customerHtml, /<fieldset\b/i);
   assert.match(customerHtml, /<legend class="sr-only">Select a date<\/legend>/i);
-  assert.match(customerHtml, /<div class="booking-field-label"><strong>Select a date<\/strong><span>Next 6 days<\/span><\/div>/i);
-  assert.match(customerHtml, /aria-pressed="true"/i);
+  assert.match(customerHtml, /<div class="booking-field-label field-group-label"><strong>Select a date<\/strong><span>Next 6 days<\/span><\/div>/i);
+  assert.match(customerHtml, /role="radio"[^>]*aria-checked="true"/i);
 
   assert.match(managerHtml, /aria-label="Management navigation"/i);
   assert.match(managerHtml, /aria-label="Mobile management navigation"/i);
