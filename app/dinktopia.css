@@ -204,15 +204,13 @@
 .booking-route .booking-details-view .details-hold-gate { margin-top: 18px; }
 
 .booking-route .turnstile-background {
-  position: fixed;
-  right: 0;
-  bottom: 0;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
+  display: flex;
+  justify-content: flex-end;
+  max-width: 100%;
+  margin-top: 12px;
 }
+
+.booking-route .turnstile-background:empty { display: none; }
 
 .booking-route .booking-details-view .form-footer {
   display: flex;

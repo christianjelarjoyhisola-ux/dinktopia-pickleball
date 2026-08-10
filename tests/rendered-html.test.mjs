@@ -4210,8 +4210,9 @@ test("fails closed when live platform setup or authorization is incomplete", asy
   assert.match(booking, /if \(isLive && !policyVersion\)/);
   assert.match(
     booking,
-    /if \(isLive && \(!securitySiteKey \|\| !turnstileTokenValue\)\)/,
+    /if \(isLive && !securitySiteKey\)/,
   );
+  assert.match(booking, /turnstileTokenValue \|\| await waitForTurnstileToken\(\)/);
   assert.match(managementAdapter, /if \(!session\) throw new Error\("MANAGER_SIGN_IN_REQUIRED"\)/);
   assert.match(managementAdapter, /assertDinktopiaContext\(context\)/);
   assert.match(
@@ -4285,7 +4286,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
     ["public-booking readiness", /if \(isLive && !bootstrap\?\.readiness\.publicBookingEnabled\)/],
     ["payment readiness", /if \(isLive && !paymentMethod\)/],
     ["published policy", /if \(isLive && !policyVersion\)/],
-    ["Turnstile security", /if \(isLive && \(!securitySiteKey \|\| !turnstileTokenValue\)\)/],
+    ["Turnstile security", /if \(isLive && !securitySiteKey\)/],
     ["non-empty selection", /if \(!selectedSlots\.length\)/],
     ["fail-closed live selection", /if \(isLive && !liveSelectionSupported\)/],
   ]) {
@@ -4381,8 +4382,10 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   );
   assert.match(
     booking,
-    /window\.turnstile\.render\(container,[\s\S]*?action: "booking_create"[\s\S]*?appearance: "interaction-only"[\s\S]*?callback: \(token\) => setTurnstileTokenValue\(token\)[\s\S]*?"expired-callback": \(\) => setTurnstileTokenValue\(""\)/,
+    /window\.turnstile\.render\(container,[\s\S]*?action: "booking_create"[\s\S]*?appearance: "interaction-only"[\s\S]*?callback: acceptTurnstileToken[\s\S]*?"expired-callback": clearTurnstileToken/,
   );
+  assert.match(booking, /await waitForTurnstileToken\(\)/);
+  assert.match(booking, /15_000/);
 });
 
 test("renders accessible labels, control states, and announcements", async () => {
@@ -4524,7 +4527,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
   assert.match(
     stepOne,
-    /\{isLive && securitySiteKey && <div ref=\{turnstileContainerRef\} className="turnstile-background" aria-hidden="true" \/>\}/,
+    /\{isLive && securitySiteKey && <div ref=\{turnstileContainerRef\} className="turnstile-background" aria-label="Security check" \/>\}/,
   );
   assert.doesNotMatch(stepTwo, /details-security-boundary|Verification required|Required before we hold the court/);
   assert.match(
