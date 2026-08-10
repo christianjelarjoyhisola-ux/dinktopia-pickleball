@@ -4374,7 +4374,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   );
   assert.match(
     booking,
-    /window\.turnstile\.render\(container,[\s\S]*?action: "booking_create"[\s\S]*?callback: \(token\) => setTurnstileTokenValue\(token\)[\s\S]*?"expired-callback": \(\) => setTurnstileTokenValue\(""\)/,
+    /window\.turnstile\.render\(container,[\s\S]*?action: "booking_create"[\s\S]*?appearance: "interaction-only"[\s\S]*?callback: \(token\) => setTurnstileTokenValue\(token\)[\s\S]*?"expired-callback": \(\) => setTurnstileTokenValue\(""\)/,
   );
 });
 
@@ -4516,15 +4516,16 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
   assert.match(
     stepTwo,
-    /\{isLive && \([\s\S]*?className="security-boundary details-security-boundary"[\s\S]*?ref=\{turnstileContainerRef\}/,
+    /\{isLive && securitySiteKey && <div ref=\{turnstileContainerRef\} className="turnstile-background" aria-hidden="true" \/>\}/,
   );
+  assert.doesNotMatch(stepTwo, /details-security-boundary|Verification required|Required before we hold the court/);
   assert.match(
     stepTwo,
     /\{paymentError && \([\s\S]*?className="payment-error" role="alert"[\s\S]*?We couldn&apos;t hold your slot/,
   );
   assert.match(
     stepTwo,
-    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported \|\| \(isLive && !turnstileTokenValue\)\}[\s\S]*?Holding your slot[\s\S]*?Review payment/,
+    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported\}[\s\S]*?Holding your slot[\s\S]*?Review payment/,
   );
   assert.match(stepTwo, /className="stage-footer form-footer">[\s\S]*?By continuing, you agree to the venue booking policy/);
 

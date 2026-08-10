@@ -1328,6 +1328,7 @@ type TurnstileApi = {
       sitekey: string;
       action: "booking_create";
       theme: "light";
+      appearance?: "always" | "execute" | "interaction-only";
       callback: (token: string) => void;
       "expired-callback": () => void;
       "error-callback": () => void;
@@ -1791,6 +1792,7 @@ export function BookingExperience({
         sitekey: securitySiteKey,
         action: "booking_create",
         theme: "light",
+        appearance: "interaction-only",
         callback: (token) => setTurnstileTokenValue(token),
         "expired-callback": () => setTurnstileTokenValue(""),
         "error-callback": () => setTurnstileTokenValue(""),
@@ -2992,16 +2994,7 @@ export function BookingExperience({
                           <input id={`${formId}-policy`} type="checkbox" checked={acceptedPolicy} disabled={isLive && !policyVersion} onChange={(event) => setAcceptedPolicy(event.target.checked)} />
                           <span><strong>I agree to the booking and cancellation rules</strong><small>Required to hold this time.</small></span>
                         </label>
-                        {isLive && (
-                          <div className="security-boundary details-security-boundary">
-                            <div><strong>Verification</strong><p>Required before we hold the court.</p></div>
-                            {securitySiteKey ? (
-                              <><div ref={turnstileContainerRef} className="turnstile-container" /><span className={turnstileTokenValue ? "security-ready" : "security-waiting"}>{turnstileTokenValue ? "Verified" : "Verification required"}</span></>
-                            ) : (
-                              <div className="payment-error" role="alert"><span aria-hidden="true">!</span><div><strong>Live booking is paused</strong><p>The venue security check has not been configured.</p></div></div>
-                            )}
-                          </div>
-                        )}
+                        {isLive && securitySiteKey && <div ref={turnstileContainerRef} className="turnstile-background" aria-hidden="true" />}
                         {paymentError && (
                           <div className="payment-error" role="alert">
                             <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slot</strong><p>{paymentError}</p></div>
@@ -3014,7 +3007,7 @@ export function BookingExperience({
                           data-testid="hold-and-pay"
                           className="button button-blue"
                           type="submit"
-                          disabled={isSubmitting || !acceptedPolicy || !liveSelectionSupported || (isLive && !turnstileTokenValue)}
+                          disabled={isSubmitting || !acceptedPolicy || !liveSelectionSupported}
                         >
                           {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Review payment <span aria-hidden="true">→</span></>}
                         </button>
