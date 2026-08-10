@@ -477,11 +477,9 @@ export function CalendarView({
       <header className={styles.calendarHeader}>
         <div className={styles.titleRow}>
           <div className={styles.titleBlock}>
-            <span className={styles.eyebrow}><CalendarDays aria-hidden="true" size={16} /> Live day calendar</span>
             <h2 id="calendar-view-title">
               <time dateTime={selectedDate}>{dateHeading}</time>
             </h2>
-            <p>Bookings, payment holds, and court blocks returned for this exact day.</p>
           </div>
           <button
             type="button"
@@ -557,38 +555,28 @@ export function CalendarView({
         </div>
       </header>
 
-      <dl className={styles.summary}>
-        <div>
-          <dt>Bookings</dt>
-          <dd>{bookingCount}</dd>
-          <span>Confirmed or completed</span>
-        </div>
-        <div>
-          <dt>Payment holds</dt>
-          <dd>{holdCount}</dd>
-          <span>Awaiting payment action</span>
-        </div>
-        <div>
-          <dt>Court blocks</dt>
-          <dd>{blockCount}</dd>
-          <span>Specific or venue-wide</span>
-        </div>
-      </dl>
+      <div className={styles.summaryStrip}>
+        <dl className={styles.summary}>
+          <div><dt>Bookings</dt><dd>{bookingCount}</dd></div>
+          <div><dt>Payment holds</dt><dd>{holdCount}</dd></div>
+          <div><dt>Court blocks</dt><dd>{blockCount}</dd></div>
+        </dl>
 
-      <div className={styles.resultBar}>
-        <div>
-          <Clock3 aria-hidden="true" size={17} />
-          <span>{timezone}</span>
-          <span aria-hidden="true">·</span>
-          <strong>{selectedCourt?.name ?? "All courts"}</strong>
+        <div className={styles.resultBar}>
+          <div>
+            <Clock3 aria-hidden="true" size={17} />
+            <span>{timezone}</span>
+            <span aria-hidden="true">·</span>
+            <strong>{selectedCourt?.name ?? "All courts"}</strong>
+          </div>
+          <p role="status" aria-live="polite">
+            {phase === "loading"
+              ? `Loading ${compactDate}…`
+              : phase === "error"
+                ? "Schedule unavailable"
+                : `${resultCount} ${resultCount === 1 ? "entry" : "entries"}`}
+          </p>
         </div>
-        <p role="status" aria-live="polite">
-          {phase === "loading"
-            ? `Loading ${compactDate}…`
-            : phase === "error"
-              ? "Schedule unavailable"
-              : `${resultCount} ${resultCount === 1 ? "entry" : "entries"} returned`}
-        </p>
       </div>
 
       <p className={styles.srOnly} aria-live="polite">

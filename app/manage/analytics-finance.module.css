@@ -1,7 +1,7 @@
 .workspace {
   display: grid;
   min-width: 0;
-  gap: 20px;
+  gap: 12px;
   color: var(--ink, #102a43);
 }
 
@@ -16,27 +16,29 @@
 .sectionHeader {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 18px;
+  gap: 12px;
 }
 
 .sectionHeader > div {
+  display: flex;
   min-width: 0;
+  align-items: baseline;
+  gap: 9px;
 }
 
 .sectionHeader h2 {
-  margin-top: 4px;
-  font-size: clamp(1.8rem, 3vw, 2.75rem);
-  line-height: 1.02;
-  letter-spacing: -0.045em;
+  font-size: 1rem;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
 }
 
 .sectionHeader p {
   max-width: 760px;
-  margin-top: 8px;
+  margin-top: 0;
   color: var(--muted, #526678);
-  font-size: 0.925rem;
+  font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
 
@@ -152,19 +154,19 @@
   display: grid;
   min-width: 0;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  gap: 9px;
 }
 
 .kpiCard,
 .kpiPrimary {
   display: grid;
   min-width: 0;
-  min-height: 150px;
+  min-height: 108px;
   align-content: space-between;
   gap: 8px;
   border: 1px solid var(--line, #cfdae5);
-  border-radius: 18px;
-  padding: 18px;
+  border-radius: var(--admin-radius, 14px);
+  padding: 13px 15px;
   background: var(--surface, #fff);
   box-shadow: 0 10px 32px rgba(16, 42, 67, 0.04);
 }
@@ -194,7 +196,7 @@
 .kpiCard strong,
 .kpiPrimary strong {
   min-width: 0;
-  font-size: clamp(1.6rem, 2.5vw, 2.25rem);
+  font-size: clamp(1.45rem, 2vw, 1.9rem);
   line-height: 1;
   letter-spacing: -0.04em;
   overflow-wrap: anywhere;
@@ -219,18 +221,28 @@
   display: grid;
   min-width: 0;
   grid-template-columns: minmax(0, 1.65fr) minmax(260px, 0.75fr);
-  gap: 12px;
+  gap: 9px;
 }
 
 .financeGrid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.ledgerGrid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  align-items: start;
+}
+
+.ledgerGrid .remittanceGrid { grid-template-columns: minmax(0, 1fr); }
+
 .panel {
   min-width: 0;
   border: 1px solid var(--line, #cfdae5);
-  border-radius: 20px;
-  padding: 20px;
+  border-radius: var(--admin-radius, 14px);
+  padding: 15px 16px;
   background: var(--surface, #fff);
   box-shadow: 0 12px 38px rgba(16, 42, 67, 0.045);
 }
@@ -260,14 +272,14 @@
 
 .chartWrap {
   min-width: 0;
-  margin-top: 18px;
+  margin-top: 12px;
   overflow: hidden;
 }
 
 .chart {
   display: block;
   width: 100%;
-  height: 230px;
+  height: 190px;
   overflow: visible;
 }
 
@@ -322,12 +334,12 @@
 
 .statusList {
   display: grid;
-  margin-top: 18px !important;
+  margin-top: 12px !important;
 }
 
 .statusList > div {
   display: flex;
-  min-height: 46px;
+  min-height: 38px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -408,14 +420,17 @@
 .warning,
 .monitorNote {
   border: 1px solid #cbd9e6;
-  border-radius: 16px;
-  padding: 15px 17px;
+  border-radius: 12px;
+  padding: 11px 14px;
   background: #eef4f9;
   color: #405b73;
 }
 
-.boundaryNote strong {
+.boundaryNote summary {
   color: var(--ink, #102a43);
+  cursor: pointer;
+  font-size: .8125rem;
+  font-weight: 800;
 }
 
 .boundaryNote p {
@@ -678,6 +693,7 @@
   }
 
   .financeGrid,
+  .ledgerGrid,
   .remittanceGrid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -689,7 +705,7 @@
   }
 
   .chart {
-    height: 210px;
+    height: 180px;
   }
 }
 
@@ -700,7 +716,7 @@
 
   .kpiCard,
   .kpiPrimary {
-    min-height: 118px;
+    min-height: 104px;
     padding: 15px;
   }
 

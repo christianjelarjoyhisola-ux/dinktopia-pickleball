@@ -216,9 +216,8 @@ export function AnalyticsView({
     <section className={styles.workspace} aria-labelledby="analytics-title" aria-busy={loading}>
       <header className={styles.sectionHeader}>
         <div>
-          <span className={styles.eyebrow}>Authoritative regular bookings</span>
-          <h2 id="analytics-title">Selected-period performance</h2>
-          <p>{periodLabel} · Current booking and payment state as of {localInstant(report.asOf, report.timezone)}</p>
+          <h2 id="analytics-title">{periodLabel}</h2>
+          <p>Updated {localInstant(report.asOf, report.timezone)}</p>
         </div>
         {loading && <span className={styles.refreshing} aria-live="polite">Refreshing…</span>}
       </header>
@@ -338,10 +337,10 @@ export function AnalyticsView({
         )}
       </article>
 
-      <aside className={styles.boundaryNote}>
-        <strong>What these totals mean</strong>
+      <details className={styles.boundaryNote}>
+        <summary>About these totals</summary>
         <p>Values use each regular booking’s current payment status and stored amount snapshots. Recorded refunds reflect bookings currently marked refunded. This is not a payment-event or full refund ledger, so net revenue and occupancy are intentionally not estimated. Remittance due comes from the separate platform-fee ledger.</p>
-      </aside>
+      </details>
     </section>
   );
 }
@@ -418,9 +417,8 @@ export function FinanceView({
     <section className={styles.workspace} aria-labelledby="finance-title" aria-busy={loading}>
       <header className={styles.sectionHeader}>
         <div>
-          <span className={styles.eyebrow}>Platform booking-fee ledger</span>
-          <h2 id="finance-title">Ledger summary</h2>
-          <p>Authoritative balances as of {localInstant(dashboard.serverNow, dashboard.timezone)} · {dashboard.timezone}</p>
+          <h2 id="finance-title">As of {localInstant(dashboard.serverNow, dashboard.timezone)}</h2>
+          <p>{dashboard.timezone}</p>
         </div>
         <span className={dashboard.role === "system_owner" ? styles.monitorBadge : styles.ownerBadge}>
           {dashboard.role === "system_owner" ? "Monitor access" : "Venue remittance"}
@@ -497,49 +495,51 @@ export function FinanceView({
         </article>
       </div>
 
-      <article className={styles.panel}>
-        <div className={styles.panelHeading}>
-          <div>
-            <span className={styles.eyebrow}>Open ledger</span>
-            <h3>Remittances in progress</h3>
+      <div className={styles.ledgerGrid}>
+        <article className={styles.panel}>
+          <div className={styles.panelHeading}>
+            <div>
+              <span className={styles.eyebrow}>Open ledger</span>
+              <h3>Remittances in progress</h3>
+            </div>
+            <span className={styles.summaryPill}>{dashboard.openRemittances.length} open</span>
           </div>
-          <span className={styles.summaryPill}>{dashboard.openRemittances.length} open</span>
-        </div>
-        {dashboard.openRemittances.length ? (
-          <div className={styles.remittanceGrid}>
-            {dashboard.openRemittances.map((item) => <RemittanceCard item={item} key={item.id} />)}
-          </div>
-        ) : (
-          <p className={styles.emptyCopy}>There are no prepared, submitted, or unresolved remittances.</p>
-        )}
-      </article>
+          {dashboard.openRemittances.length ? (
+            <div className={styles.remittanceGrid}>
+              {dashboard.openRemittances.map((item) => <RemittanceCard item={item} key={item.id} />)}
+            </div>
+          ) : (
+            <p className={styles.emptyCopy}>There are no prepared, submitted, or unresolved remittances.</p>
+          )}
+        </article>
 
-      <article className={styles.panel}>
-        <div className={styles.panelHeading}>
-          <div>
-            <span className={styles.eyebrow}>Closed ledger</span>
-            <h3>Settlement history</h3>
+        <article className={styles.panel}>
+          <div className={styles.panelHeading}>
+            <div>
+              <span className={styles.eyebrow}>Closed ledger</span>
+              <h3>Settlement history</h3>
+            </div>
+            <span className={styles.summaryPill}>{history.length} records</span>
           </div>
-          <span className={styles.summaryPill}>{history.length} records</span>
-        </div>
-        {history.length ? (
-          <ol className={styles.historyList}>
-            {history.map((item) => (
-              <li key={item.id}>
-                <div><strong>{item.reference}</strong><span>{item.settledAt ? `Settled ${new Date(item.settledAt).toLocaleDateString("en-PH")}` : item.cancelledAt ? `Closed ${new Date(item.cancelledAt).toLocaleDateString("en-PH")}` : "Closed record"}</span></div>
-                <div><strong>{money(item.amountSettled, item.currency)}</strong><span className={`${styles.statusBadge} ${styles[`remittance_${item.status}`]}`}>{remittanceStatusLabel(item.status)}</span></div>
-              </li>
-            ))}
-          </ol>
-        ) : (
-          <p className={styles.emptyCopy}>No settled or void remittance history is recorded yet.</p>
-        )}
-      </article>
+          {history.length ? (
+            <ol className={styles.historyList}>
+              {history.map((item) => (
+                <li key={item.id}>
+                  <div><strong>{item.reference}</strong><span>{item.settledAt ? `Settled ${new Date(item.settledAt).toLocaleDateString("en-PH")}` : item.cancelledAt ? `Closed ${new Date(item.cancelledAt).toLocaleDateString("en-PH")}` : "Closed record"}</span></div>
+                  <div><strong>{money(item.amountSettled, item.currency)}</strong><span className={`${styles.statusBadge} ${styles[`remittance_${item.status}`]}`}>{remittanceStatusLabel(item.status)}</span></div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className={styles.emptyCopy}>No settled or void remittance history is recorded yet.</p>
+          )}
+        </article>
+      </div>
 
-      <aside className={styles.boundaryNote}>
-        <strong>Ledger boundary</strong>
+      <details className={styles.boundaryNote}>
+        <summary>About the ledger</summary>
         <p>Accrued fees are eligible paid booking fees not yet attached to a remittance. Open and settled values come from remittance records and accepted payments—not from the analytics chart or a browser-side fee estimate.</p>
-      </aside>
+      </details>
     </section>
   );
 }

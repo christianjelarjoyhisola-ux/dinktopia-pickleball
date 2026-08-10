@@ -1075,14 +1075,12 @@ test("server-renders the responsive tenant management workspace", async () => {
   assert.equal(countTags(html, "main"), 1);
   assert.equal(countTags(html, "aside"), 1);
   assert.equal(countTags(html, "nav"), 2);
-  assert.equal(countTags(html, "footer"), 1);
+  assert.equal(countTags(html, "footer"), 0);
   assert.match(html, /<main\b[^>]*id="main-content"[^>]*tabindex="-1"/i);
   assert.match(text, /DINKTOPIA Court operations/i);
   assert.match(text, /Good afternoon, Alex\./i);
   assert.match(text, /Your courts are moving well/i);
   assert.match(text, /Loading Dinktopia management data/i);
-  assert.match(text, /Asia\/Manila/);
-  assert.match(text, /Server policy remains authoritative/i);
   assert.doesNotMatch(html, starterMarkers);
 });
 
@@ -1111,7 +1109,7 @@ test("marks local customer and manager rendering as non-live preview", async () 
   assert.match(managerText, /Bookings are not public/i);
   assert.match(managerText, /UI preview only/i);
   assert.match(managerHtml, /aria-label="Non-authoritative preview controls"/i);
-  assert.match(managerText, /Dinktopia tenant preview/i);
+  assert.doesNotMatch(managerHtml, /class="[^"]*pageFooter/i);
 });
 
 test("applies centralized security headers to HTTP and HTTPS responses", async () => {
@@ -1539,15 +1537,16 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
   );
 
   assert.match(manage, /Full platform account authority/);
-  assert.match(manage, /<strong>Connected controls<\/strong>/);
-  assert.match(manage, /Account authority and tool readiness are separate\./);
+  assert.match(manage, /styles\.capabilityReady[\s\S]*?"Connected"/);
+  assert.match(manage, /styles\.capabilityUnavailable[\s\S]*?"Unavailable"/);
+  assert.match(manage, /A temporary read or setup gap does not remove System Owner authority\./);
   assert.match(
     manage,
     /const visibleCapabilities: ManagementCapability\[\] = capabilities\.filter\([\s\S]*?capability !== "booking:check-in"[\s\S]*?\.filter\(\(capability\) => visibleCapabilities\.includes\(capability\)\)[\s\S]*?className=\{styles\.granted\}/,
   );
   assert.match(
     manage,
-    /visibleCapabilities\.map\(\(capability\) => \([\s\S]*?toolAvailability\[capability\] === false \? styles\.toolUnavailable : styles\.toolReady[\s\S]*?toolAvailability\[capability\] === false \? "setup unavailable" : "connected"/,
+    /visibleCapabilities\.includes\(capability\)[\s\S]*?\.map\(\(capability\) =>[\s\S]*?toolAvailability\[capability\] === false \? styles\.capabilityUnavailable : styles\.capabilityReady[\s\S]*?toolAvailability\[capability\] === false \? "Unavailable" : "Connected"/,
   );
   assert.doesNotMatch(
     manage,
@@ -1709,7 +1708,7 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   );
   assert.match(
     accessUi,
-    /visibleCapabilities\.includes\(capability\)[\s\S]*?visibleCapabilities\.map\(\(capability\)/,
+    /Object\.keys\(CAPABILITY_LABEL\)[\s\S]*?\.filter\(\(capability\) => visibleCapabilities\.includes\(capability\)\)[\s\S]*?\.map\(\(capability\)/,
   );
 
   assert.match(
@@ -2715,9 +2714,9 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     overview,
     /<h2 id="payment-inbox-title" ref=\{paymentInboxHeadingRef\} tabIndex=\{-1\}>/,
   );
-  assert.match(
+  assert.doesNotMatch(
     overview,
-    /Private receipt images open only when you choose Review payment\.[\s\S]*?Overview and Bookings refresh automatically while visible\./,
+    /Private receipt images open only when you choose Review payment|Overview and Bookings refresh automatically while visible/,
   );
   assert.doesNotMatch(overview, /src=\{[^}]*signedUrl/);
 
@@ -2739,7 +2738,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   );
   assert.match(
     bookingsUi,
-    /<strong>\{filtered\.length\}<\/strong> shown[\s\S]*?counts reflect \{bookings\.length\} loaded/,
+    /<strong>\{filtered\.length\}<\/strong> of \{bookings\.length\} \{bookings\.length === 1 \? "booking" : "bookings"\}/,
   );
   assert.match(
     bookingsUi,
@@ -2857,7 +2856,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   assert.doesNotMatch(autoRefresh, /settings/);
   assert.match(
     manage,
-    /className=\{styles\.liveSyncControls\}[\s\S]*?className=\{styles\.syncButton\}[\s\S]*?disabled=\{syncPending\}[\s\S]*?onClick=\{\(\) => void refreshWorkspace\(true\)\}[\s\S]*?Refreshing[\s\S]*?Refresh data/,
+    /className=\{styles\.liveSyncControls\}[\s\S]*?className=\{styles\.syncButton\}[\s\S]*?aria-label="Refresh live tenant data"[\s\S]*?disabled=\{syncPending\}[\s\S]*?onClick=\{\(\) => void refreshWorkspace\(true\)\}[\s\S]*?Refreshing[\s\S]*?: "Refresh"/,
   );
   assert.match(
     manage,
@@ -2900,7 +2899,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   assert.ok(paymentInboxCssStart >= 0);
   assert.match(
     cssBlock(manageCss.slice(paymentInboxCssStart), ".paymentInbox"),
-    /overflow:\s*hidden[\s\S]*?border-radius:\s*20px[\s\S]*?background:[\s\S]*?var\(--ink\)/,
+    /overflow:\s*hidden[\s\S]*?border-radius:\s*var\(--admin-radius\)[\s\S]*?background:[\s\S]*?var\(--ink\)/,
   );
   assert.match(
     cssBlock(manageCss, ".paymentInboxItem"),
@@ -2931,9 +2930,9 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     compactCss,
     /\.paymentInboxFacts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/s,
   );
-  assert.match(
+  assert.doesNotMatch(
     compactCss,
-    /\.paymentInboxFooter\s*\{[^}]*flex-direction:\s*column/s,
+    /\.paymentInboxFooter\b/,
   );
   const phoneCss = cssBlock(manageCss, "@media (max-width: 430px)");
   assert.match(
@@ -2952,7 +2951,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   );
   assert.match(
     manageCss,
-    /\.bookingRecord\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(205px, 1fr\)/,
+    /\.bookingRecord\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(180px, 1fr\)/,
   );
   assert.match(
     cssBlock(manageCss, ".bookingFilterRail"),
@@ -2960,7 +2959,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   );
   const tabletShellCss = cssBlock(manageCss, "@media (max-width: 900px)");
   assert.match(tabletShellCss, /\.manageShell\s*\{[^}]*display:\s*block/s);
-  assert.match(tabletShellCss, /\.main\s*\{[^}]*padding:\s*26px 18px 22px/s);
+  assert.match(tabletShellCss, /\.main\s*\{[^}]*padding:\s*16px 18px 20px/s);
   const bookingCompactCss = cssBlock(manageCss, "@media (max-width: 680px)");
   assert.match(
     bookingCompactCss,
@@ -3074,7 +3073,7 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   );
   assert.match(
     calendar,
-    /<dt>Bookings<\/dt>[\s\S]*?Confirmed or completed[\s\S]*?<dt>Payment holds<\/dt>[\s\S]*?Awaiting payment action[\s\S]*?<dt>Court blocks<\/dt>/,
+    /<dl className=\{styles\.summary\}>[\s\S]*?<dt>Bookings<\/dt><dd>\{bookingCount\}<\/dd>[\s\S]*?<dt>Payment holds<\/dt><dd>\{holdCount\}<\/dd>[\s\S]*?<dt>Court blocks<\/dt><dd>\{blockCount\}<\/dd>/,
   );
   assert.match(
     calendar,
@@ -3118,7 +3117,7 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   );
   assert.match(
     cssBlock(calendarCss, ".courtBoard"),
-    /grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(100%, 430px\), 1fr\)\)/,
+    /grid-template-columns:\s*repeat\(auto-fit, minmax\(min\(100%, 360px\), 1fr\)\)/,
   );
   assert.match(
     cssBlock(calendarCss, ".agendaItem"),
@@ -3127,7 +3126,7 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
 
   const tabletCss = cssBlock(calendarCss, "@media (max-width: 768px)");
   assert.match(tabletCss, /\.toolbar\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\)/s);
-  assert.match(tabletCss, /\.summary\s*\{[^}]*grid-template-columns:\s*1fr/s);
+  assert.match(tabletCss, /\.summary\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)\)/s);
   assert.match(tabletCss, /\.courtBoard\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s);
   assert.doesNotMatch(tabletCss, /overflow-x:\s*auto/);
 

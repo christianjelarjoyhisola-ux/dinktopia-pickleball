@@ -116,109 +116,89 @@ const VIEW_CAPABILITY: Partial<Record<View, ManagementCapability>> = {
   launch: "tenant:publish",
 };
 
-const VIEW_COPY: Record<View, { eyebrow: string; title: string; description: string }> = {
+const VIEW_COPY: Record<View, { title: string; description: string }> = {
   overview: {
-    eyebrow: "Saturday · 8 August",
     title: "Good afternoon, Alex.",
     description: "Your courts are moving well. Here’s what needs your attention next.",
   },
   bookings: {
-    eyebrow: "Booking desk",
     title: "Bookings",
-    description: "Find reservations, confirm payments and keep every court organized.",
+    description: "Find reservations and manage payments.",
   },
   schedule: {
-    eyebrow: "Court operations",
     title: "Calendar",
-    description: "See bookings, payment holds and court blocks for an exact operating day.",
+    description: "Bookings, payment holds and court blocks by day.",
   },
   blocks: {
-    eyebrow: "Availability controls",
     title: "Court blocks",
-    description: "Take courts offline for maintenance, events or private use.",
+    description: "Plan maintenance, events and private closures.",
   },
   customers: {
-    eyebrow: "Player directory",
     title: "Customers",
-    description: "Recognize regulars and understand how your player community is growing.",
+    description: "Player activity and booking history.",
   },
   reports: {
-    eyebrow: "Performance",
     title: "Analytics",
-    description: "Track paid booking value and court performance from authoritative records.",
+    description: "Booking value and court performance.",
   },
   finance: {
-    eyebrow: "Platform fee ledger",
     title: "Finance & remittance",
-    description: "Monitor accrued platform fees, due cycles and settled remittances.",
+    description: "Platform fees and remittance cycles.",
   },
   settings: {
-    eyebrow: "Tenant configuration",
     title: "Venue settings",
-    description: "Manage Dinktopia’s courts, rates, hours and booking rules.",
+    description: "Courts, rates, hours and booking rules.",
   },
   launch: {
-    eyebrow: "Platform launch",
     title: "Go live",
-    description: "Finish the authoritative launch checks and open public booking.",
+    description: "Complete the checks required for public booking.",
   },
   access: {
-    eyebrow: "Tenant access",
     title: "Team & roles",
-    description: "Review the people and session capabilities assigned to this tenant.",
+    description: "Team roles and session capabilities.",
   },
 };
 
-const LIVE_VIEW_COPY: Record<View, { eyebrow: string; title: string; description: string }> = {
+const LIVE_VIEW_COPY: Record<View, { title: string; description: string }> = {
   overview: {
-    eyebrow: "Tenant operations",
     title: "Dinktopia workspace.",
     description: "Authenticated, server-scoped booking data and launch readiness.",
   },
   bookings: {
-    eyebrow: "Booking desk",
     title: "Bookings",
-    description: "Review reservations, payments and completed sessions in one organized workspace.",
+    description: "Review reservations and payments.",
   },
   schedule: {
-    eyebrow: "Court operations",
     title: "Calendar",
-    description: "Review the exact bookings, payment holds and blocks returned for each day.",
+    description: "Bookings, payment holds and court blocks by day.",
   },
   blocks: {
-    eyebrow: "Protected availability",
     title: "Court blocks",
-    description: "Review loaded block records; create and remove controls remain server-authorized.",
+    description: "Create and remove court downtime.",
   },
   customers: {
-    eyebrow: "Protected player data",
     title: "Customers",
-    description: "Customer details require a tenant-scoped capability from the shared platform.",
+    description: "Player history from tenant bookings.",
   },
   reports: {
-    eyebrow: "Authoritative performance",
     title: "Analytics",
-    description: "Review complete regular-booking totals and trends for a selected period.",
+    description: "Paid booking value and court performance.",
   },
   finance: {
-    eyebrow: "Platform fee ledger",
     title: "Finance & remittance",
-    description: "Monitor exact accrued, open and settled platform booking-fee remittances.",
+    description: "Platform fees and remittance cycles.",
   },
   settings: {
-    eyebrow: "Server-authorized setup",
     title: "Venue settings",
-    description: "Configure live court inventory, shared hours and rates within the authenticated session's server permissions.",
+    description: "Courts, hours, rates and booking rules.",
   },
   launch: {
-    eyebrow: "System Owner controls",
     title: "Launch Dinktopia",
-    description: "Configure platform billing and remittance, then complete the server-authorized launch.",
+    description: "Complete the checks required for public booking.",
   },
   access: {
-    eyebrow: "Authenticated session",
     title: "Team & access",
-    description: "Review only the membership and capability facts returned by the shared platform.",
+    description: "Membership and session capabilities.",
   },
 };
 
@@ -265,7 +245,7 @@ function bookingMatchesFilter(booking: Booking, filter: BookingFilter): boolean 
   return booking.status === "cancelled" || booking.status === "expired";
 }
 
-function bookingStatusDetail(booking: Booking): string {
+function bookingStatusDetail(booking: Booking): string | null {
   switch (booking.status) {
     case "awaiting_receipt":
       return "Waiting for the player to upload a payment receipt.";
@@ -283,11 +263,11 @@ function bookingStatusDetail(booking: Booking): string {
       return "Payment needs venue attention before this booking can be confirmed.";
     case "confirmed":
     case "checked_in":
-      return "The court is reserved and the payment is confirmed.";
+      return null;
     case "completed":
-      return "This court session is complete.";
+      return null;
     case "cancelled":
-      return "This booking was cancelled and no longer reserves the court.";
+      return null;
     case "expired":
       return "The payment window expired and the court is no longer held.";
   }
@@ -758,10 +738,6 @@ function OverviewView({
             </div>
           )}
 
-          <footer className={styles.paymentInboxFooter}>
-            <span>Private receipt images open only when you choose Review payment.</span>
-            <span>Overview and Bookings refresh automatically while visible.</span>
-          </footer>
         </section>
       )}
 
@@ -811,16 +787,6 @@ function OverviewView({
                 <h3>{isPreview ? "The next reservation will appear here." : "No booking rows were returned for this query."}</h3>
               </div>
             )}
-          </div>
-          <div className={styles.flowFooter}>
-            <span className={styles.livePulse} aria-hidden="true" />
-            <span>
-              {isPreview
-                ? `${snapshot.courts.length} ${snapshot.courts.length === 1 ? "court" : "courts"} loaded`
-                : `${snapshot.bookings.length} booking ${snapshot.bookings.length === 1 ? "row" : "rows"} loaded`}
-            </span>
-            <span>·</span>
-            <span>{isPreview ? "Provisional schedule" : "Server-scoped tenant results"}</span>
           </div>
         </article>
 
@@ -1141,13 +1107,7 @@ function BookingsView({
   return (
     <section className={cx(styles.panel, styles.bookingRegisterPanel)} aria-labelledby="booking-list-title">
       <div className={styles.panelHeading}>
-        <div>
-          <p className={styles.eyebrow}>Reservation workspace</p>
-          <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>Reservation list</h2>
-          <p className={styles.bookingListIntro}>
-            Find a player, then work from the status that needs attention.
-          </p>
-        </div>
+        <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>All bookings</h2>
         <ActionButton
           disabled={!can("booking:create") || (!isPreview && !courts.length)}
           onClick={() => isPreview ? goTo("schedule") : setCreating((value) => !value)}
@@ -1253,7 +1213,7 @@ function BookingsView({
           />
         </label>
         <span className={styles.bookingResultCount} aria-live="polite">
-          <strong>{filtered.length}</strong> shown · counts reflect {bookings.length} loaded {bookings.length === 1 ? "record" : "records"}
+          <strong>{filtered.length}</strong> of {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}
         </span>
       </div>
 
@@ -1281,6 +1241,7 @@ function BookingsView({
               booking.status === "cancelled" || booking.status === "expired";
             const canCancelBooking = !terminal && booking.status !== "checked_in";
             const canMoveBooking = !isPreview && booking.status === "confirmed" && booking.payment === "paid";
+            const statusDetail = bookingStatusDetail(booking);
             return (
               <li key={booking.bookingId}>
                 <article className={styles.bookingRecord} aria-labelledby={`booking-${booking.bookingId}`}>
@@ -1310,8 +1271,8 @@ function BookingsView({
                     </span>
                   </div>
 
-                  <footer className={styles.bookingRecordFooter}>
-                    <p>{bookingStatusDetail(booking)}</p>
+                  <footer className={cx(styles.bookingRecordFooter, statusDetail && styles.bookingRecordNotice)}>
+                    {statusDetail && <p>{statusDetail}</p>}
                     <div className={styles.bookingRecordActions}>
                       {booking.paymentEvidence?.reviewable && !terminal && (
                         <button
@@ -1463,12 +1424,6 @@ function ScheduleView({
             <p>The workspace does not substitute preview reservations or court blocks.</p>
           </div>
         )}
-        <div className={styles.flowFooter}>
-          <span className={styles.livePulse} aria-hidden="true" />
-          <span>Tenant-scoped reads</span>
-          <span>·</span>
-          <span>Use Court blocks or Venue settings for authorized writes</span>
-        </div>
       </section>
     );
   }
@@ -1550,7 +1505,6 @@ function ScheduleView({
           <div className={styles.availabilityFoot}>
             <div><strong>11</strong><span>open court-hours</span></div>
             <div><strong>74%</strong><span>expected utilization</span></div>
-            <p>Select any booking to inspect it. Production availability must be rechecked by the API before a write.</p>
           </div>
         </section>
       ) : (
@@ -1649,14 +1603,8 @@ function BlocksView({
                 <div className={styles.blockInfo}>
                   <strong>{block.publicLabel}</strong>
                   <span>{block.court} · {block.time}</span>
-                  <small className={styles.blockMeta}>
-                    {block.internalReason
-                      ? `Private note: ${block.internalReason}`
-                      : "No private note returned"}
-                  </small>
-                  <small className={styles.blockMeta}>
-                    {block.createdBy ?? "Creator not returned by the API"}
-                  </small>
+                  {block.internalReason && <small className={styles.blockMeta}>Private note: {block.internalReason}</small>}
+                  {block.createdBy && <small className={styles.blockMeta}>{block.createdBy}</small>}
                 </div>
                 {canManage && (
                   <button
@@ -1846,6 +1794,9 @@ function CustomersView({ snapshot }: { snapshot: ManagementSnapshot }) {
         </div>
         {customers.length ? (
           <div className={styles.customerList}>
+            <div className={styles.customerTableHeader} aria-hidden="true">
+              <span /><span>Player</span><span>Bookings</span><span>Paid value</span><span>Last visit</span><span />
+            </div>
             {customers.map((customer, index) => (
               <article className={styles.customerRow} key={customer.id}>
                 <Avatar initials={customer.initials} tone={index} />
@@ -1853,9 +1804,9 @@ function CustomersView({ snapshot }: { snapshot: ManagementSnapshot }) {
                   <strong>{customer.name}</strong>
                   <span>{customer.contact}</span>
                 </div>
-                <div><span className={styles.mobileLabel}>Visits</span><strong>{customer.visits}</strong><small>bookings</small></div>
-                <div><span className={styles.mobileLabel}>Value</span><strong>{formatPeso(customer.lifetimeValue)}</strong><small>loaded paid value</small></div>
-                <div><span className={styles.mobileLabel}>Last visit</span><strong>{customer.lastVisit}</strong><small>{customer.note ?? "No private note"}</small></div>
+                <div><span className={styles.mobileLabel}>Bookings</span><strong>{customer.visits}</strong></div>
+                <div><span className={styles.mobileLabel}>Paid value</span><strong>{formatPeso(customer.lifetimeValue)}</strong></div>
+                <div><span className={styles.mobileLabel}>Last visit</span><strong>{customer.lastVisit}</strong>{customer.note && <small>{customer.note}</small>}</div>
                 <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`}>→</button>
               </article>
             ))}
@@ -3037,7 +2988,7 @@ function AccessView({
     (capability) => capability !== "booking:check-in",
   );
   return (
-    <section className={styles.accessGrid}>
+    <section className={cx(styles.accessGrid, !isPreview && styles.accessGridLive)}>
       <article className={styles.panel}>
         <div className={styles.panelHeading}><div><p className={styles.eyebrow}>{isPreview ? "Dinktopia team" : "Tenant memberships"}</p><h2>{isPreview ? "4 preview people" : "Membership details unavailable"}</h2></div><span className={styles.previewTag}>{isPreview ? "UI preview" : "Protected"}</span></div>
         {isPreview ? <div className={styles.teamList}>
@@ -3064,17 +3015,20 @@ function AccessView({
         <ul className={styles.capabilityList}>
           {(Object.keys(CAPABILITY_LABEL) as ManagementCapability[])
             .filter((capability) => visibleCapabilities.includes(capability))
-            .map((capability) => <li key={capability} className={styles.granted}><span aria-hidden="true">✓</span>{CAPABILITY_LABEL[capability]}</li>)}
+            .map((capability) => <li key={capability} className={styles.granted}>
+              <span aria-hidden="true">✓</span>
+              {CAPABILITY_LABEL[capability]}
+              {!isPreview && toolAvailability && (
+                <small className={toolAvailability[capability] === false ? styles.capabilityUnavailable : styles.capabilityReady}>
+                  {toolAvailability[capability] === false ? "Unavailable" : "Connected"}
+                </small>
+              )}
+            </li>)}
         </ul>
-        {!isPreview && toolAvailability && (
-          <div className={styles.toolStatusList}>
-            <strong>Connected controls</strong>
-            {visibleCapabilities.map((capability) => (
-              <span key={capability}><i className={toolAvailability[capability] === false ? styles.toolUnavailable : styles.toolReady} />{CAPABILITY_LABEL[capability]} · {toolAvailability[capability] === false ? "setup unavailable" : "connected"}</span>
-            ))}
-          </div>
-        )}
-        <p className={styles.authorityNote}><strong>{isPreview ? "Preview, not policy." : "Account authority and tool readiness are separate."}</strong> {isPreview ? "The production adapter uses capabilities from the authenticated tenant session. This UI does not grant access." : "A temporary read or setup gap does not remove System Owner authority. Every write is still re-authorized by the server."}</p>
+        <details className={styles.authorityNote}>
+          <summary>{isPreview ? "About preview access" : "About access enforcement"}</summary>
+          <p>{isPreview ? "The production adapter uses capabilities from the authenticated tenant session. This UI does not grant access." : "A temporary read or setup gap does not remove System Owner authority. Every write is still re-authorized by the server."}</p>
+        </details>
       </aside>
     </section>
   );
@@ -3638,7 +3592,7 @@ export default function ManagePage() {
         <div className={styles.topbar}>
           <div className={styles.statusLine}>
             <span className={styles.previewMode}><i aria-hidden="true" /> {isPreview ? "Preview" : "Live"}</span>
-            <span>{isPreview ? "Bookings are not public" : snapshot ? "Authenticated tenant data" : "Connecting to tenant data"}</span>
+            <span>{isPreview ? "Bookings are not public" : snapshot ? "Tenant data" : "Connecting"}</span>
             <span className={styles.syncText}>{snapshot ? `Synced ${snapshot.tenant.lastSynced}` : "Sync pending"}</span>
           </div>
           {isPreview ? (
@@ -3649,15 +3603,15 @@ export default function ManagePage() {
             </div>
           ) : (
             <div className={styles.liveSyncControls}>
-              <span className={styles.liveReadOnly}>Live · writes capability-gated</span>
               <button
                 type="button"
                 className={styles.syncButton}
+                aria-label="Refresh live tenant data"
                 disabled={syncPending}
                 onClick={() => void refreshWorkspace(true)}
               >
                 <span aria-hidden="true">↻</span>
-                {syncPending ? "Refreshing…" : "Refresh data"}
+                {syncPending ? "Refreshing…" : "Refresh"}
               </button>
             </div>
           )}
@@ -3666,7 +3620,6 @@ export default function ManagePage() {
         <main id="main-content" className={styles.main} tabIndex={-1}>
           <header className={styles.pageHeader}>
             <div>
-              <p className={styles.eyebrow}>{selectedCopy.eyebrow}</p>
               <h1>{selectedCopy.title}</h1>
               <p>{selectedCopy.description}</p>
             </div>
@@ -3686,9 +3639,6 @@ export default function ManagePage() {
           </header>
 
           {renderView()}
-          <footer className={styles.pageFooter}>
-            <span>Dinktopia tenant {isPreview ? "preview" : "workspace"}</span><span>Asia/Manila · PHP</span><span>Server policy remains authoritative</span>
-          </footer>
         </main>
       </div>
 

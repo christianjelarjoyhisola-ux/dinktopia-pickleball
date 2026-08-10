@@ -3,10 +3,10 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line, #cfdae5);
-  border-radius: 24px;
+  border-radius: var(--admin-radius, 14px);
   background: var(--surface, #fff);
   color: var(--ink, #102a43);
-  box-shadow: 0 12px 34px rgba(16, 42, 67, 0.07);
+  box-shadow: 0 6px 20px rgba(16, 42, 67, 0.05);
 }
 
 .calendar *,
@@ -33,8 +33,8 @@
 
 .calendarHeader {
   display: grid;
-  gap: 22px;
-  padding: 26px 28px 22px;
+  gap: 12px;
+  padding: 14px 16px;
   background:
     radial-gradient(circle at 98% -20%, rgba(130, 245, 0, 0.18), transparent 35%),
     linear-gradient(135deg, #f9fcff 0%, #f2f7fb 100%);
@@ -43,9 +43,9 @@
 
 .titleRow {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
+  gap: 16px;
 }
 
 .titleBlock {
@@ -67,7 +67,7 @@
 .titleBlock h2 {
   margin: 0;
   font-family: var(--font-display), var(--font-body), Arial, sans-serif;
-  font-size: clamp(1.55rem, 3vw, 2.25rem);
+  font-size: clamp(1.2rem, 2vw, 1.55rem);
   line-height: 1.08;
   letter-spacing: -0.035em;
 }
@@ -117,7 +117,7 @@
   display: grid;
   grid-template-columns: auto minmax(175px, 0.8fr) minmax(180px, 1fr) auto;
   align-items: end;
-  gap: 12px;
+  gap: 8px;
 }
 
 .dayNavigation {
@@ -170,29 +170,37 @@
   padding: 0 15px;
 }
 
+.summaryStrip {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  border-bottom: 1px solid var(--line, #cfdae5);
+}
+
 .summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   margin: 0;
   background: var(--line, #cfdae5);
-  border-bottom: 1px solid var(--line, #cfdae5);
+  border-bottom: 0;
 }
 
 .summary > div {
   position: relative;
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 1px 14px;
+  gap: 1px 10px;
   min-width: 0;
   background: #fff;
-  padding: 18px 24px;
+  min-height: 56px;
+  padding: 9px 14px;
 }
 
 .summary > div::before {
   position: absolute;
-  top: 18px;
-  bottom: 18px;
+  top: 11px;
+  bottom: 11px;
   left: 0;
   width: 4px;
   border-radius: 0 4px 4px 0;
@@ -221,7 +229,7 @@
   align-self: center;
   margin: 0;
   font-family: var(--font-display), var(--font-body), Arial, sans-serif;
-  font-size: 2rem;
+  font-size: 1.45rem;
   font-weight: 850;
   line-height: 1;
 }
@@ -237,9 +245,10 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  min-height: 52px;
-  padding: 10px 28px;
+  gap: 14px;
+  min-height: 56px;
+  border-left: 1px solid var(--line, #cfdae5);
+  padding: 8px 14px;
   background: var(--paper-deep, #eaf0f6);
   color: var(--muted, #526678);
   font-size: 0.78rem;
@@ -264,17 +273,17 @@
 
 .courtBoard {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 430px), 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
   align-items: start;
-  gap: 16px;
-  padding: 22px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .courtCard {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line, #cfdae5);
-  border-radius: 17px;
+  border-radius: 13px;
   background: #fff;
 }
 
@@ -290,7 +299,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 14px;
-  padding: 16px 17px;
+  padding: 12px 14px;
   border-bottom: 1px solid var(--line, #cfdae5);
   background: #f9fbfd;
 }
@@ -369,8 +378,8 @@
   display: grid;
   grid-template-columns: minmax(108px, 0.34fr) minmax(0, 1fr);
   min-width: 0;
-  gap: 15px;
-  padding: 16px 17px 16px 20px;
+  gap: 12px;
+  padding: 12px 14px 12px 17px;
   border-bottom: 1px solid var(--line, #cfdae5);
 }
 
@@ -380,8 +389,8 @@
 
 .agendaItem::before {
   position: absolute;
-  top: 16px;
-  bottom: 16px;
+  top: 12px;
+  bottom: 12px;
   left: 0;
   width: 4px;
   border-radius: 0 4px 4px 0;
@@ -579,12 +588,12 @@
 .loadingState {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-  padding: 22px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .loadingState span {
-  min-height: 220px;
+  min-height: 170px;
   border: 1px solid var(--line, #cfdae5);
   border-radius: 17px;
   background: linear-gradient(100deg, #f1f4f7 20%, #fafbfd 45%, #f1f4f7 70%);
@@ -617,6 +626,15 @@
 }
 
 @media (max-width: 900px) {
+  .summaryStrip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .resultBar {
+    border-top: 1px solid var(--line, #cfdae5);
+    border-left: 0;
+  }
+
   .toolbar {
     grid-template-columns: auto minmax(165px, 1fr) minmax(165px, 1fr);
   }
@@ -632,13 +650,13 @@
   }
 
   .calendarHeader {
-    gap: 18px;
-    padding: 20px 18px 18px;
+    gap: 12px;
+    padding: 14px 16px;
   }
 
   .titleRow {
     display: grid;
-    gap: 16px;
+    gap: 10px;
   }
 
   .blockButton {
@@ -659,22 +677,22 @@
   }
 
   .summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .summary > div {
-    min-height: 75px;
-    padding: 15px 18px;
+    min-height: 54px;
+    padding: 9px 12px;
   }
 
   .summary > div::before {
-    top: 14px;
-    bottom: 14px;
+    top: 10px;
+    bottom: 10px;
   }
 
   .resultBar {
     align-items: flex-start;
-    padding: 12px 18px;
+    padding: 9px 16px;
   }
 
   .resultBar > div {
@@ -683,8 +701,8 @@
 
   .courtBoard {
     grid-template-columns: minmax(0, 1fr);
-    gap: 12px;
-    padding: 14px;
+    gap: 9px;
+    padding: 10px;
   }
 
   .globalCourtCard {
