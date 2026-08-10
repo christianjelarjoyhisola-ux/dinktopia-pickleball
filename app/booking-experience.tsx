@@ -2305,13 +2305,60 @@ export function BookingExperience({
   );
 
   return (
-    <div className="dinktopia-site">
+    <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route" : ""}`}>
       {!isLive && (
         <div className="preview-ribbon" role="status">
           <strong>Setup preview</strong><span>No live reservations or payments are created.</span>
         </div>
       )}
-      <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
+      {isBookingPage && (
+        <header className={`booking-app-header ${!isLive ? "has-preview-ribbon" : ""}`}>
+          <div className="booking-app-mobile-bar">
+            <button
+              className="booking-app-menu-button"
+              type="button"
+              aria-expanded={mobileNavOpen}
+              aria-controls="primary-navigation"
+              aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              <span className="menu-lines" aria-hidden="true" />
+            </button>
+            <strong>Book a court</strong>
+            <Link className="booking-player-chip" href="/book?mode=manage" aria-label="Manage your booking">
+              <span>D</span><i aria-hidden="true">⌄</i>
+            </Link>
+          </div>
+          <div className="booking-app-desktop-bar">
+            <div className="booking-app-title">
+              <small>Dinktopia Court Hub</small>
+              <strong>Book a court</strong>
+            </div>
+            <div className="booking-app-actions">
+              <label className="booking-app-search">
+                <span aria-hidden="true">⌕</span>
+                <input type="search" placeholder="Search anything" aria-label="Search Dinktopia" />
+                <kbd>⌘ K</kbd>
+              </label>
+              <Link className="booking-app-notification" href="/book?mode=manage" aria-label="Manage booking notifications">♧<b>2</b></Link>
+              <Link className="booking-app-player" href="/book?mode=manage">
+                <span>D</span><small>Viewing as<strong>Player</strong></small><i aria-hidden="true">⌄</i>
+              </Link>
+            </div>
+          </div>
+          <nav
+            id="primary-navigation"
+            className={`primary-nav booking-app-navigation ${mobileNavOpen ? "is-open" : ""}`}
+            aria-label="Primary navigation"
+          >
+            <Link href="/" onClick={() => setMobileNavOpen(false)}>Home</Link>
+            <Link href="/courts" onClick={() => setMobileNavOpen(false)}>Courts</Link>
+            <Link href="/book" aria-current={mode === "book" ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>New booking</Link>
+            <Link href="/book?mode=manage" aria-current={mode === "manage" ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>Manage booking</Link>
+          </nav>
+        </header>
+      )}
+      {!isBookingPage && <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
         <div className="site-container header-inner">
           <Link className="wordmark" href="/" aria-label="Dinktopia home">
             <Image
@@ -2368,7 +2415,7 @@ export function BookingExperience({
             </Link>
           </nav>
         </div>
-      </header>
+      </header>}
 
       <main id="main-content" className={isHome ? undefined : "route-main"}>
         {isHome && <section className="hero" id="top">
@@ -2616,7 +2663,7 @@ export function BookingExperience({
                         const state = number === step ? "current" : number < step ? "complete" : "upcoming";
                         return (
                           <li key={label} className={`is-${state}`} aria-current={number === step ? "step" : undefined}>
-                            <span>{number < step ? "✓" : String(number).padStart(2, "0")}</span>
+                            <span>{number < step ? "✓" : number}</span>
                             <small>{label}</small>
                           </li>
                         );
@@ -2634,9 +2681,10 @@ export function BookingExperience({
                       </div>
 
                       <fieldset className="booking-fieldset">
-                        <legend>Choose a date</legend>
+                        <legend className="sr-only">Select a date</legend>
+                        <div className="booking-field-label"><strong>Select a date</strong><span>Next 6 days</span></div>
                         <div className="date-rail">
-                          {dates.map((date) => (
+                          {dates.slice(1).map((date, index) => (
                             <button
                               type="button"
                               key={date.iso}
@@ -2645,7 +2693,7 @@ export function BookingExperience({
                               aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
                             >
-                              <span>{date.isToday ? "Today" : date.day}</span>
+                              <span>{index === 0 ? "Tomorrow" : date.day}</span>
                               <strong>{date.date}</strong>
                               <small>{date.month}</small>
                             </button>
@@ -2665,16 +2713,22 @@ export function BookingExperience({
                                 : "Select any open times across one or more courts."}
                             </p>
                           </div>
+                          <div
+                            className="schedule-selection-count"
+                            role="status"
+                            aria-live="polite"
+                            aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}
+                          >
+                            {selectedSlots.length
+                              ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} · ${peso(courtSubtotal)}`
+                              : "No slots selected"}
+                          </div>
                         </div>
                         <div className="availability-legend-row">
                           <div className="slot-legend" aria-label="Availability key">
                             <span><i className="legend-open" />Open</span>
-                            <span><i className="legend-selected" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
-                          </div>
-                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}>
-                            <span className="schedule-count-number">{selectedSlots.length}</span>
-                            <span>selected</span>
+                            <span><i className="legend-selected" />Your selection</span>
                           </div>
                         </div>
 
@@ -2782,7 +2836,10 @@ export function BookingExperience({
                                 )})}
                               </tbody>
                             </table>
-                            <table className="schedule-matrix schedule-matrix-mobile">
+                            <table
+                              className="schedule-matrix schedule-matrix-mobile"
+                              style={{ minWidth: `${80 + displayCourts.length * 58}px` }}
+                            >
                               <thead>
                                 <tr>
                                   <th scope="col"><strong>Time</strong><span>Hourly</span></th>
@@ -2840,7 +2897,7 @@ export function BookingExperience({
 
                       <div className="slot-step-footer" role="region" aria-label="Selected court-hours">
                         <div>
-                          <strong>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
+                          <strong><i aria-hidden="true">✓</i>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
                           {selectedSlots.length > 0 && <span>{selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"} · {peso(total)}</span>}
                         </div>
                         <button

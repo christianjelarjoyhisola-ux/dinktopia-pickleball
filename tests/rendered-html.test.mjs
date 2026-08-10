@@ -886,7 +886,8 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     renderedSelectionCount[0],
     /aria-label="0 court-hours selected"/i,
   );
-  assert.doesNotMatch(renderedSelectionCount[0], /aria-live=/i);
+  assert.match(renderedSelectionCount[0], /role="status"/i);
+  assert.match(renderedSelectionCount[0], /aria-live="polite"/i);
   assert.doesNotMatch(bookHtml, /<legend>How long\?<\/legend>|class="duration-control"/i);
 
   const previewStart = config.indexOf("previewCourts: [");
@@ -934,9 +935,8 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     /<p className="sr-live" aria-live="polite" aria-atomic="true">\{selectionState\.announcement\}<\/p>/,
   );
 
-  const selectionCountStart = booking.indexOf(
-    '<div className="schedule-selection-count"',
-  );
+  const selectionCountClass = booking.indexOf('className="schedule-selection-count"');
+  const selectionCountStart = booking.lastIndexOf("<div", selectionCountClass);
   const selectionCountEnd = booking.indexOf("</div>", selectionCountStart);
   assert.ok(selectionCountStart >= 0 && selectionCountEnd > selectionCountStart);
   const selectionCountSource = booking.slice(
@@ -947,7 +947,8 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     selectionCountSource,
     /aria-label=\{`\$\{selectedSlots\.length\} court-hour\$\{selectedSlots\.length === 1 \? "" : "s"\} selected`\}/,
   );
-  assert.doesNotMatch(selectionCountSource, /aria-live=/);
+  assert.match(selectionCountSource, /role="status"/);
+  assert.match(selectionCountSource, /aria-live="polite"/);
   assert.doesNotMatch(selectionCountSource, /<button/);
   assert.match(
     booking,
@@ -4425,7 +4426,8 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(customerHtml, /aria-label="Availability key"/i);
   assert.match(customerHtml, /role="status"[^>]*aria-live="polite"/i);
   assert.match(customerHtml, /<fieldset\b/i);
-  assert.match(customerHtml, /<legend>Choose a date<\/legend>/i);
+  assert.match(customerHtml, /<legend class="sr-only">Select a date<\/legend>/i);
+  assert.match(customerHtml, /<div class="booking-field-label"><strong>Select a date<\/strong><span>Next 6 days<\/span><\/div>/i);
   assert.match(customerHtml, /aria-pressed="true"/i);
 
   assert.match(managerHtml, /aria-label="Management navigation"/i);
