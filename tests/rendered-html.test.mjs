@@ -4434,9 +4434,12 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     readFile(files.publicCss, "utf8"),
   ]);
 
-  const stepStarts = [1, 2, 3, 4].map((step) =>
-    booking.indexOf(`{step === ${step} &&`),
-  );
+  const stepStarts = [
+    booking.indexOf('{step === 1 && (\n                  <div className="booking-layout booking-slot-step">'),
+    booking.indexOf('{step === 2 && (\n                  <div className="checkout-layout booking-details-view">'),
+    booking.indexOf('{step === 3 && checkoutSlot && pendingBooking && ('),
+    booking.indexOf('{step === 4 && confirmedBooking && ('),
+  ];
   assert.ok(
     stepStarts.every((start) => start >= 0) &&
       stepStarts.every((start, index) => index === 0 || start > stepStarts[index - 1]),
@@ -4447,9 +4450,10 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   const stepOne = booking.slice(stepOneStart, stepTwoStart);
   const stepTwo = booking.slice(stepTwoStart, stepThreeStart);
   const stepThree = booking.slice(stepThreeStart, stepFourStart);
-  const bookingSummaryStart = booking.indexOf("function BookingSummary(", stepFourStart);
-  assert.ok(bookingSummaryStart > stepFourStart);
-  const stepFour = booking.slice(stepFourStart, bookingSummaryStart);
+  const rallySummaryStart = booking.indexOf("function RallyBookingSummary(", stepFourStart);
+  const bookingSummaryStart = booking.indexOf("function BookingSummary(", rallySummaryStart);
+  assert.ok(rallySummaryStart > stepFourStart && bookingSummaryStart > rallySummaryStart);
+  const stepFour = booking.slice(stepFourStart, rallySummaryStart);
 
   assert.match(
     booking,
@@ -4461,7 +4465,8 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(stepOne, /<span className="step-chip">01<\/span>[\s\S]*?Court booking[\s\S]*?<h3>Choose your slots<\/h3>/);
   assert.doesNotMatch(stepOne, /When are you playing\?|schedule-kicker|schedule-scroll-hint/);
-  assert.match(stepTwo, /<span className="step-chip">02<\/span>[\s\S]*?Player details[\s\S]*?<h3>Tell us who to expect<\/h3>[\s\S]*?No account needed/);
+  assert.match(booking, /className="booking-compact-title"[\s\S]*?className="back-link"[\s\S]*?Almost yours[\s\S]*?<h2>Who&apos;s playing\?<\/h2>/);
+  assert.match(stepTwo, /<span className="step-chip">02<\/span>[\s\S]*?Player details[\s\S]*?<h3>Tell us who to expect<\/h3>/);
   assert.doesNotMatch(stepTwo, /Who&apos;s rallying\?|className="guest-note"/);
   assert.match(
     stepThree,
@@ -4477,29 +4482,31 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
 
   assert.match(
     stepTwo,
-    /className="booking-layout compact-step booking-details-step"/,
+    /className="checkout-layout booking-details-view"/,
   );
-  const stepTwoSummary = stepTwo.indexOf("<BookingSummary");
+  const stepTwoSummary = stepTwo.indexOf("<RallyBookingSummary");
   const stepTwoForm = stepTwo.indexOf(
-    '<form className="booking-main-card booking-details-form"',
+    '<form className="booking-main-card booking-details-form booking-stage surface-card guest-form"',
   );
   const stepTwoHeading = stepTwo.indexOf("Tell us who to expect");
   assert.ok(
     stepTwoSummary >= 0 &&
-      stepTwoForm > stepTwoSummary &&
+      stepTwoForm >= 0 &&
+      stepTwoSummary > stepTwoForm &&
       stepTwoHeading > stepTwoForm,
-    "expected the concise Step 2 summary before the customer details form",
+    "expected the RallyOS form followed by its mobile-first reservation summary",
   );
 
-  const summarySource = booking.slice(bookingSummaryStart);
+  const summarySource = booking.slice(rallySummaryStart, bookingSummaryStart);
   assert.match(summarySource, /aria-label="Booking summary"/);
   assert.match(
     summarySource,
-    /className="summary-mobile-heading"[\s\S]*?\$\{courtCount\} court[\s\S]*?\$\{selections\.length\} hr[\s\S]*?\{hasSelection \? dateLabel : "Select a court and time"\}[\s\S]*?\{hasSelection \? peso\(total\) : "—"\}/,
+    /className="player-kicker">Your reservation[\s\S]*?courts reserved[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
   );
-  assert.match(summarySource, /className="summary-sessions" aria-label="Selected sessions"/);
-  assert.match(summarySource, /className="price-breakdown"/);
-  assert.match(summarySource, /Court booking[\s\S]*Booking fee[\s\S]*summary-total[\s\S]*Total/);
+  assert.match(summarySource, /className="summary-detail"[\s\S]*?Dinktopia Court Hub/);
+  assert.match(summarySource, /className="summary-price-lines"/);
+  assert.match(summarySource, /Court reservation[\s\S]*Booking fee[\s\S]*rally-summary-total[\s\S]*Total/);
+  assert.match(summarySource, /Free cancellation up to 12 hours before your booking/);
   assert.match(stepTwo, /aria-invalid=\{Boolean\(detailErrors\./);
   assert.match(stepTwo, /className="field-error"/);
   assert.match(stepTwo, /aria-busy=\{isSubmitting\}/);
@@ -4517,9 +4524,9 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     stepTwo,
-    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported \|\| \(isLive && !turnstileTokenValue\)\}[\s\S]*?Holding your slot[\s\S]*?Hold slot &amp; proceed to payment/,
+    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported \|\| \(isLive && !turnstileTokenValue\)\}[\s\S]*?Holding your slot[\s\S]*?Review payment/,
   );
-  assert.match(stepTwo, /className="hold-helper">No charge yet\.<\/p>/);
+  assert.match(stepTwo, /className="stage-footer form-footer">[\s\S]*?By continuing, you agree to the venue booking policy/);
 
   const policyDisclosures =
     stepTwo.match(/<details className="policy-disclosure">[\s\S]*?<\/details>/g) ?? [];
@@ -4563,9 +4570,9 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     /booking-review-step|review-to-payment|Review booking|One last look|data-testid="reserve-slot"/,
   );
 
-  const mobileDetailsLayout = cssBlock(publicCss, ".booking-details-step");
-  assert.match(mobileDetailsLayout, /grid-template-areas:\s*"summary"\s*"form"/s);
-  assert.match(cssBlock(publicCss, ".summary-mobile-heading"), /display:\s*flex/);
+  const mobileDetailsLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-details-view");
+  assert.match(mobileDetailsLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
+  assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-details-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
   assert.match(cssBlock(publicCss, ".checkout-snapshot"), /display:\s*none/);
 
   const desktopCss = cssBlock(publicCss, "@media (min-width: 980px)");

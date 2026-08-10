@@ -1774,6 +1774,14 @@ export function BookingExperience({
   }, [pendingBooking, step]);
 
   useEffect(() => {
+    if (!isBookingPage || step !== 2) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".booking-compact-title")?.scrollIntoView({ block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isBookingPage, step]);
+
+  useEffect(() => {
     if (!isBookingPage || !isLive || step !== 2 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
     let disposed = false;
     const container = turnstileContainerRef.current;
@@ -2626,7 +2634,7 @@ export function BookingExperience({
               </nav>
             </div>
 
-            {mode === "book" && (
+            {mode === "book" && step === 1 && (
               <div className="booking-venue-hero player-hero player-hero-image" aria-label="Dinktopia Court Hub booking">
                 <div className="booking-venue-hero-copy">
                   <span className="booking-venue-mark" aria-hidden="true">DT</span>
@@ -2655,6 +2663,18 @@ export function BookingExperience({
               </div>
             ) : mode === "book" ? (
               <div className="booking-shell">
+                {step === 2 && (
+                  <div className="booking-compact-title">
+                    <button className="back-link" type="button" onClick={() => setStep(1)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                      Back
+                    </button>
+                    <div>
+                      <p className="player-kicker">Almost yours</p>
+                      <h2>Who&apos;s playing?</h2>
+                    </div>
+                  </div>
+                )}
                 {step < 4 && (
                   <>
                     <p className="booking-step-summary">
@@ -2894,16 +2914,15 @@ export function BookingExperience({
                 )}
 
                 {step === 2 && (
-                  <div className="booking-layout compact-step booking-details-step">
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
-                    <form className="booking-main-card booking-details-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
-                      <div className="booking-card-heading">
+                  <div className="checkout-layout booking-details-view">
+                    <form className="booking-main-card booking-details-form booking-stage surface-card guest-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
+                      <div className="booking-card-heading stage-heading">
                         <span className="step-chip">02</span>
-                        <div><p className="booking-card-kicker">Player details</p><h3>Tell us who to expect</h3><p>No account needed. We&apos;ll send booking updates here.</p></div>
+                        <div><p className="player-kicker">Player details</p><h3>Tell us who to expect</h3></div>
                       </div>
-                      <div className="form-grid">
-                        <div className="form-field form-field-wide">
-                          <label htmlFor={`${formId}-name`}>Full name</label>
+                      <div className="form-grid player-form-grid">
+                        <label className="player-field full">
+                          <span>Full name</span>
                           <input
                             id={`${formId}-name`}
                             autoComplete="name"
@@ -2911,12 +2930,30 @@ export function BookingExperience({
                             aria-invalid={Boolean(detailErrors.fullName)}
                             aria-describedby={detailErrors.fullName ? fieldErrorId(formId, "name") : undefined}
                             onChange={(event) => setCustomer({ ...customer, fullName: event.target.value })}
-                            placeholder="Juan Dela Cruz"
+                            placeholder="e.g. Gabriela Ramos"
                           />
                           {detailErrors.fullName && <span className="field-error" id={fieldErrorId(formId, "name")}>{detailErrors.fullName}</span>}
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`${formId}-email`}>Email address</label>
+                        </label>
+                        <label className="player-field">
+                          <span>Mobile number</span>
+                          <div className="phone-field">
+                            <b>+63</b>
+                            <input
+                              id={`${formId}-phone`}
+                              type="tel"
+                              inputMode="tel"
+                              autoComplete="tel"
+                              value={customer.phone.replace(/^\+63\s?/, "").replace(/^0/, "")}
+                              aria-invalid={Boolean(detailErrors.phone)}
+                              aria-describedby={detailErrors.phone ? fieldErrorId(formId, "phone") : undefined}
+                              onChange={(event) => setCustomer({ ...customer, phone: `+63 ${event.target.value}` })}
+                              placeholder="917 123 4567"
+                            />
+                          </div>
+                          {detailErrors.phone && <span className="field-error" id={fieldErrorId(formId, "phone")}>{detailErrors.phone}</span>}
+                        </label>
+                        <label className="player-field">
+                          <span>Email address</span>
                           <input
                             id={`${formId}-email`}
                             type="email"
@@ -2925,24 +2962,14 @@ export function BookingExperience({
                             aria-invalid={Boolean(detailErrors.email)}
                             aria-describedby={detailErrors.email ? fieldErrorId(formId, "email") : undefined}
                             onChange={(event) => setCustomer({ ...customer, email: event.target.value })}
-                            placeholder="juan@example.com"
+                            placeholder="you@example.com"
                           />
                           {detailErrors.email && <span className="field-error" id={fieldErrorId(formId, "email")}>{detailErrors.email}</span>}
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`${formId}-phone`}>Mobile number</label>
-                          <input
-                            id={`${formId}-phone`}
-                            type="tel"
-                            autoComplete="tel"
-                            value={customer.phone}
-                            aria-invalid={Boolean(detailErrors.phone)}
-                            aria-describedby={detailErrors.phone ? fieldErrorId(formId, "phone") : undefined}
-                            onChange={(event) => setCustomer({ ...customer, phone: event.target.value })}
-                            placeholder="0917 123 4567"
-                          />
-                          {detailErrors.phone && <span className="field-error" id={fieldErrorId(formId, "phone")}>{detailErrors.phone}</span>}
-                        </div>
+                        </label>
+                        <label className="player-field full">
+                          <span>Booking note <small>Optional</small></span>
+                          <input name="note" placeholder="Celebration, coaching session, accessibility request…" />
+                        </label>
                       </div>
                       <label className="check-row booking-updates-choice">
                         <input type="checkbox" checked={customer.updates} onChange={(event) => setCustomer({ ...customer, updates: event.target.checked })} />
@@ -2981,19 +3008,19 @@ export function BookingExperience({
                           </div>
                         )}
                       </div>
-                      <div className="step-actions">
-                        <button className="button button-ghost" type="button" onClick={() => setStep(1)}><span aria-hidden="true">←</span> Back</button>
+                      <div className="stage-footer form-footer">
+                        <span>By continuing, you agree to the venue booking policy.</span>
                         <button
                           data-testid="hold-and-pay"
                           className="button button-blue"
                           type="submit"
                           disabled={isSubmitting || !acceptedPolicy || !liveSelectionSupported || (isLive && !turnstileTokenValue)}
                         >
-                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Hold slot &amp; proceed to payment <span aria-hidden="true">→</span></>}
+                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Review payment <span aria-hidden="true">→</span></>}
                         </button>
                       </div>
-                      <p className="hold-helper">No charge yet.</p>
                     </form>
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                   </div>
                 )}
 
@@ -3205,6 +3232,54 @@ type BookingSummaryProps = {
   actionDisabled?: boolean;
   onAction?: () => void;
 };
+
+function RallyBookingSummary({
+  selections,
+  dateLabel,
+  subtotal,
+  bookingFee,
+  total,
+}: BookingSummaryProps) {
+  const groups = groupSelectionDetails(selections);
+  const courts = Array.from(
+    new Map(selections.map((item) => [item.court.id, item.court])).values(),
+  );
+  const courtSchedule = courts
+    .map((court) => {
+      const times = groups
+        .filter((group) => group.court.id === court.id)
+        .map((group) => formatHourRange(group.startHour, group.endHour))
+        .join(", ");
+      return `${court.name}: ${times}`;
+    })
+    .join(" · ");
+  const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"} selected`;
+
+  return (
+    <aside className="booking-summary rally-booking-summary surface-card" aria-label="Booking summary">
+      <p className="player-kicker">Your reservation</p>
+      <h3>{courts.length === 1 ? courts[0]?.name : `${courts.length} courts reserved`}</h3>
+      <div className="summary-detail">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
+        <span><strong>{dateLabel}</strong><small>{slotLabel}</small></span>
+      </div>
+      <div className="summary-detail">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+        <span><strong>{courts.map((court) => court.name).join(", ")}</strong><small>{courtSchedule}</small></span>
+      </div>
+      <div className="summary-detail">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+        <span><strong>Dinktopia Court Hub</strong><small>{activeTenant.venue.locationLabel}</small></span>
+      </div>
+      <div className="summary-price-lines">
+        <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
+        {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
+      </div>
+      <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
+      <p className="summary-note">Free cancellation up to 12 hours before your booking.</p>
+    </aside>
+  );
+}
 
 function BookingSummary({
   selections,

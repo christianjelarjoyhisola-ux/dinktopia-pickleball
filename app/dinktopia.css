@@ -23,6 +23,326 @@
   line-height: var(--leading-copy);
 }
 
+/* RallyOS booking details — the reference layout, scoped to the player flow. */
+.booking-route .booking-compact-title {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  scroll-margin-top: 84px;
+}
+
+.booking-route .booking-compact-title .back-link { flex: 0 0 auto; }
+
+.booking-route .booking-compact-title h2 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2.1rem);
+}
+
+.booking-route .booking-compact-title .player-kicker { margin-bottom: 4px; }
+
+.booking-route .player-kicker {
+  margin: 0;
+  color: #6558e8;
+  font-size: 0.64rem;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.booking-route .back-link {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  padding: 8px 0;
+  color: #344640;
+  font-size: 0.74rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.booking-route .back-link svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.booking-route .booking-compact-title + .booking-progress {
+  max-width: 520px;
+  margin: 23px auto 25px;
+}
+
+.booking-route .checkout-layout.booking-details-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(270px, 0.72fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.booking-route .booking-details-view .booking-stage {
+  min-width: 0;
+  border-radius: 24px;
+  padding: clamp(22px, 3.3vw, 39px);
+}
+
+.booking-route .booking-details-view .stage-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 24px;
+}
+
+.booking-route .booking-details-view .stage-heading > .step-chip {
+  display: grid;
+  width: 39px;
+  height: 39px;
+  place-items: center;
+  border-radius: 12px;
+  background: var(--ink);
+  padding: 0;
+  color: var(--lime);
+  font-size: 0.66rem;
+  font-weight: 800;
+}
+
+.booking-route .booking-details-view .stage-heading .player-kicker { margin-bottom: 3px; }
+
+.booking-route .booking-details-view .stage-heading h3 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.booking-route .booking-details-view .player-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 17px;
+  margin-top: 25px;
+}
+
+.booking-route .booking-details-view .player-field {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+}
+
+.booking-route .booking-details-view .player-field.full { grid-column: 1 / -1; }
+
+.booking-route .booking-details-view .player-field > span {
+  color: #344640;
+  font-size: 0.71rem;
+  font-weight: 700;
+}
+
+.booking-route .booking-details-view .player-field > span small {
+  margin-left: 4px;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.booking-route .booking-details-view .player-field > input,
+.booking-route .booking-details-view .phone-field input {
+  width: 100%;
+  min-width: 0;
+  height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  outline: 0;
+  background: white;
+  padding: 0 13px;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.booking-route .booking-details-view .player-field > input:focus {
+  border-color: #6558e8;
+  box-shadow: 0 0 0 3px rgba(101, 88, 232, 0.1);
+}
+
+.booking-route .booking-details-view .phone-field {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: white;
+}
+
+.booking-route .booking-details-view .phone-field:focus-within {
+  border-color: #6558e8;
+  box-shadow: 0 0 0 3px rgba(101, 88, 232, 0.1);
+}
+
+.booking-route .booking-details-view .phone-field b {
+  border-right: 1px solid var(--line);
+  padding: 0 11px;
+  color: var(--muted);
+  font-size: 0.71rem;
+}
+
+.booking-route .booking-details-view .phone-field input {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none !important;
+}
+
+.booking-route .booking-details-view .field-error {
+  color: #a83232;
+  font-size: 0.64rem;
+  font-weight: 700;
+}
+
+.booking-route .booking-details-view .booking-updates-choice { margin-top: 21px; }
+
+.booking-route .booking-details-view .details-hold-gate { margin-top: 18px; }
+
+.booking-route .booking-details-view .form-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 31px;
+  border-top: 1px solid var(--line);
+  padding-top: 21px;
+}
+
+.booking-route .booking-details-view .form-footer > span {
+  display: flex;
+  max-width: 250px;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.booking-route .rally-booking-summary {
+  position: sticky;
+  top: 86px;
+  align-self: start;
+  overflow: visible;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.96);
+  padding: 23px;
+  color: var(--ink);
+}
+
+.booking-route .rally-booking-summary::after { display: none; }
+
+.booking-route .rally-booking-summary h3 {
+  margin: 0 0 22px;
+  font-size: 1.28rem;
+}
+
+.booking-route .rally-booking-summary .summary-detail {
+  display: grid;
+  grid-template-columns: 31px 1fr;
+  align-items: start;
+  gap: 9px;
+  margin: 15px 0;
+}
+
+.booking-route .rally-booking-summary .summary-detail > svg {
+  width: 31px;
+  height: 31px;
+  border-radius: 9px;
+  background: #eeebff;
+  padding: 7px;
+  fill: none;
+  stroke: #6558e8;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.booking-route .rally-booking-summary .summary-detail strong,
+.booking-route .rally-booking-summary .summary-detail small { display: block; }
+
+.booking-route .rally-booking-summary .summary-detail strong { font-size: 0.69rem; }
+
+.booking-route .rally-booking-summary .summary-detail small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.61rem;
+  line-height: 1.4;
+}
+
+.booking-route .rally-booking-summary .summary-price-lines {
+  display: grid;
+  gap: 9px;
+  margin-top: 20px;
+  border-top: 1px solid var(--line);
+  padding-top: 15px;
+}
+
+.booking-route .rally-booking-summary .summary-price-lines > span,
+.booking-route .rally-booking-summary .rally-summary-total {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.booking-route .rally-booking-summary .summary-price-lines small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.booking-route .rally-booking-summary .summary-price-lines strong { font-size: 0.66rem; }
+
+.booking-route .rally-booking-summary .rally-summary-total {
+  margin-top: 15px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.booking-route .rally-booking-summary .rally-summary-total strong {
+  color: #6558e8;
+  font-family: var(--font-display), var(--font-body), system-ui, sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.booking-route .rally-booking-summary .summary-note {
+  margin: 17px 0 0;
+  border-radius: 10px;
+  background: #e4f6ef;
+  padding: 11px;
+  color: #16845b;
+  font-size: 0.61rem;
+  line-height: 1.45;
+  text-align: center;
+}
+
+@media (max-width: 760px) {
+  .booking-route .checkout-layout.booking-details-view { grid-template-columns: 1fr; }
+  .booking-route .booking-details-view .rally-booking-summary {
+    position: static;
+    grid-row: 1;
+  }
+  .booking-route .booking-details-view .player-form-grid { grid-template-columns: 1fr; }
+  .booking-route .booking-details-view .player-field.full { grid-column: auto; }
+  .booking-route .booking-details-view .form-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .booking-route .booking-details-view .form-footer > span { justify-content: center; }
+  .booking-route .booking-details-view .form-footer .button { width: 100%; }
+}
+
+@media (max-width: 430px) {
+  .booking-route .booking-compact-title { display: block; }
+  .booking-route .booking-compact-title .back-link { margin-bottom: 11px; }
+}
+
 .dinktopia-site *,
 .dinktopia-site *::before,
 .dinktopia-site *::after {
