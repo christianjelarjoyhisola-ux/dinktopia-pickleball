@@ -809,36 +809,13 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     /schedule-scroll-hint|Scroll sideways to see more courts|Swipe sideways/i,
   );
 
-  const mobilePickerStart = booking.indexOf(
-    '<div className="mobile-availability-picker">',
+  assert.doesNotMatch(
+    booking,
+    /mobile-availability-picker|mobile-court-rail|mobile-time-grid|desktop-schedule-picker/,
   );
-  const desktopPickerStart = booking.indexOf(
-    '<div className="schedule-scroll desktop-schedule-picker"',
-    mobilePickerStart,
-  );
-  assert.ok(
-    mobilePickerStart >= 0 && desktopPickerStart > mobilePickerStart,
-    "expected the focused mobile picker before the desktop matrix",
-  );
-  const mobilePickerSource = booking.slice(mobilePickerStart, desktopPickerStart);
-  assert.match(
-    mobilePickerSource,
-    /className="mobile-court-rail" role="group" aria-label="Choose a court"/,
-  );
-  assert.match(
-    mobilePickerSource,
-    /displayCourts\.map\(\(court\) => \([\s\S]*?aria-pressed=\{court\.id === pickerCourtId\}[\s\S]*?onClick=\{\(\) => chooseCourt\(court\.id\)\}/,
-  );
-  assert.match(
-    mobilePickerSource,
-    /className="mobile-time-grid" role="group" aria-label=\{`Times for \$\{pickerCourt\.name\} on \$\{selectedBaseDateLabel\}`\}/,
-  );
-  assert.match(mobilePickerSource, /aria-pressed=\{isSelected\}/);
-  assert.match(mobilePickerSource, /disabled=\{isUnavailable\}/);
-
-  const matrixStart = desktopPickerStart;
+  const matrixStart = booking.indexOf('<div className="schedule-scroll"');
   const matrixEnd = booking.indexOf("</table>", matrixStart);
-  assert.ok(matrixStart >= 0 && matrixEnd > matrixStart);
+  assert.ok(matrixStart >= 0 && matrixEnd > matrixStart, "expected one responsive court-by-time matrix");
   const matrixSource = booking.slice(matrixStart, matrixEnd + "</table>".length);
   assert.ok(
     (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length >= 2,
@@ -1084,22 +1061,9 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     publicCss,
     /\.schedule-matrix tbody th\s*\{[^}]*position:\s*sticky[^}]*left:\s*0/s,
   );
-  assert.match(
-    cssBlock(publicCss, ".mobile-time-grid"),
-    /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/,
-  );
-  assert.match(
-    cssBlock(publicCss, ".desktop-schedule-picker"),
-    /display:\s*none/,
-  );
-  const tabletBookingCss = cssBlock(publicCss, "@media (min-width: 780px)");
-  assert.match(
-    tabletBookingCss,
-    /\.mobile-availability-picker\s*\{\s*display:\s*none;?\s*\}/,
-  );
-  assert.match(
-    tabletBookingCss,
-    /\.desktop-schedule-picker\s*\{\s*display:\s*block;?\s*\}/,
+  assert.doesNotMatch(
+    publicCss,
+    /\.mobile-availability-picker|\.mobile-court-rail|\.mobile-time-grid|\.desktop-schedule-picker/,
   );
 
   const scheduleCellRules = [
@@ -1159,7 +1123,6 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   for (const [selector, expectedDimensions, minimum] of [
     ["date-option", ["min-width", "min-height"], 44],
     ["mobile-selection-clear", ["min-width", "min-height"], 44],
-    ["mobile-time-option", ["min-height"], 44],
   ]) {
     const rule = publicCss.match(new RegExp(`\\.${selector}\\s*\\{([^}]*)\\}`, "s"));
     assert.ok(rule, `expected ${selector} styles`);
@@ -1171,14 +1134,6 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
       );
     }
   }
-  const mobileCourtTarget = publicCss.match(
-    /\.mobile-court-rail button\s*\{([^}]*)\}/s,
-  );
-  assert.ok(mobileCourtTarget, "expected mobile court target styles");
-  assert.match(
-    mobileCourtTarget[1],
-    /min-height:\s*(?:4[4-9]|[5-9][0-9]|[1-9][0-9]{2,})px/,
-  );
   assert.match(
     publicCss,
     /\.booking-mobile-action \.button\s*\{[^}]*min-height:\s*(?:4[89]|[5-9][0-9]|[1-9][0-9]{2,})px/s,

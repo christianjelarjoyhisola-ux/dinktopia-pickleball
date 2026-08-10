@@ -1509,14 +1509,6 @@ export function BookingExperience({
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
-  const pickerCourtId = displayCourts.some((court) => court.id === selectedCourtId)
-    ? selectedCourtId
-    : displayCourts[0]?.id ?? "";
-  const pickerCourt = displayCourts.find((court) => court.id === pickerCourtId) ?? null;
-  const pickerCourtSchedule = schedule.find((court) => court.courtId === pickerCourtId);
-  const pickerCourtOpenCount = pickerCourtSchedule?.slots.filter(
-    (slot) => slot.status !== "unavailable",
-  ).length ?? 0;
   const securitySiteKey = turnstileSiteKey();
   const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods[0] ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
@@ -2730,69 +2722,7 @@ export function BookingExperience({
                         )}
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <>
-                          {pickerCourt && (
-                            <div className="mobile-availability-picker">
-                              <div className="mobile-court-rail" role="group" aria-label="Choose a court">
-                                {displayCourts.map((court) => (
-                                  <button
-                                    type="button"
-                                    key={court.id}
-                                    className={court.id === pickerCourtId ? "is-selected" : undefined}
-                                    aria-pressed={court.id === pickerCourtId}
-                                    onClick={() => chooseCourt(court.id)}
-                                  >
-                                    <strong>C{Number(court.number)}</strong>
-                                    <span>{court.name}</span>
-                                  </button>
-                                ))}
-                              </div>
-                              <div className="mobile-picker-heading">
-                                <strong>{pickerCourt.name}</strong>
-                                <span>{pickerCourtOpenCount} open {pickerCourtOpenCount === 1 ? "time" : "times"}</span>
-                              </div>
-                              <div className="mobile-time-grid" role="group" aria-label={`Times for ${pickerCourt.name} on ${selectedBaseDateLabel}`}>
-                                {scheduleHours.map((hour) => {
-                                  const slot = pickerCourtSchedule?.slots.find((item) => item.hour === hour);
-                                  const key = selectionKey(pickerCourt.id, hour);
-                                  const isSelected = selectedKeys.has(key);
-                                  const isClosed = !slot;
-                                  const isBooked = slot?.status === "unavailable";
-                                  const isUnavailable = isClosed || isBooked;
-                                  const stateLabel = isClosed
-                                    ? "closed"
-                                    : isBooked
-                                      ? "booked"
-                                      : isSelected
-                                        ? "selected"
-                                        : "available";
-                                  return (
-                                    <Fragment key={hour}>
-                                      {hour === 24 && selectedFollowingDate && (
-                                        <div className="mobile-time-divider" role="separator" aria-label={`Next day, ${longDateLabel(selectedFollowingDate)}`}>
-                                          <span>Next day</span><strong>{shortDateLabel(selectedFollowingDate)}</strong>
-                                        </div>
-                                      )}
-                                      <button
-                                        type="button"
-                                        className={`mobile-time-option${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}`}
-                                        aria-pressed={isSelected}
-                                        disabled={isUnavailable}
-                                        aria-label={`${pickerCourt.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot!.price)}, ${stateLabel}`}`}
-                                        onClick={() => slot && !isUnavailable && chooseSlot(pickerCourt, slot)}
-                                      >
-                                        <span className="mobile-time-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
-                                        <span className="mobile-time-range">{formatHour(hour).replace(":00", "")}–{formatHour(hour + 1).replace(":00", "")}</span>
-                                        <strong>{isClosed ? "Closed" : isBooked ? "Booked" : peso(slot!.price)}</strong>
-                                        <small>{isSelected ? "Selected" : isUnavailable ? stateLabel : "Open"}</small>
-                                      </button>
-                                    </Fragment>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                          <div className="schedule-scroll desktop-schedule-picker" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
+                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
                             <table className="schedule-matrix">
                               <thead>
                                 <tr>
@@ -2862,7 +2792,6 @@ export function BookingExperience({
                               </tbody>
                             </table>
                           </div>
-                          </>
                         )}
                         {isLive && selectedSlots.length > 0 && !liveSelectionSupported && (
                           <div className="schedule-live-guard" role="status">
