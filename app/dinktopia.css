@@ -6095,14 +6095,21 @@
   padding-left: 24px;
 }
 .home-route .hero-proof strong {
+  font-family: var(--font-display), var(--font-body), system-ui, sans-serif;
   color: #fffefa;
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: -0.035em;
+  font-size: clamp(1rem, 1.2vw, 1.15rem);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.028em;
+  line-height: 1.15;
+  text-wrap: balance;
 }
 .home-route .hero-proof span {
   color: rgba(241, 247, 244, 0.58);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
+  font-weight: 450;
+  letter-spacing: -0.005em;
+  line-height: 1.4;
 }
 
 .home-route .hero-visual { min-height: 500px; }

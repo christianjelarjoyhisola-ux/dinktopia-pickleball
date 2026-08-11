@@ -2620,9 +2620,9 @@ export function BookingExperience({
                 </a>
               </div>
               <ul className="hero-proof" aria-label="Booking highlights">
-                <li><strong>{displayCourts.length}</strong><span>{isLive ? "courts online" : "courts in preview"}</span></li>
-                <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>transparent hourly rates</span></li>
-                <li><strong>Live</strong><span>availability from the venue</span></li>
+                <li><strong>{displayCourts.length} {displayCourts.length === 1 ? "Court" : "Courts"}</strong><span>{isLive ? "Available to book" : "Preview inventory"}</span></li>
+                <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>Per court-hour</span></li>
+                <li><strong>Book online 24/7</strong><span>Live court availability</span></li>
               </ul>
             </div>
 
