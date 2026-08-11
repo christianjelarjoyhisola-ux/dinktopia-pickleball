@@ -8,6 +8,7 @@ import {
   Check,
   Clock3,
   Grid2X2,
+  MapPin,
   Share2,
   TriangleAlert,
   WalletCards,
@@ -2613,6 +2614,17 @@ export function BookingExperience({
                 Choose an available court, reserve the exact hours you need, and
                 keep the whole booking in one clear place.
               </p>
+              <a
+                className="hero-location"
+                href="https://www.google.com/maps/place/Dinktopia+Court+Hub/@10.3822914,123.9624269,17z/data=!4m6!3m5!1s0x33a9a3006085e30b:0x485500b6ce1fa4b0!8m2!3d10.3822914!4d123.9624269!16s%2Fg%2F11zd14x5xw?entry=ttu"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open Dinktopia Court Hub in Google Maps (opens in a new tab)"
+              >
+                <span className="hero-location-icon" aria-hidden="true"><MapPin size={17} strokeWidth={1.9} /></span>
+                <span className="hero-location-copy"><strong>Dinktopia Court Hub</strong><small>Diversion Road · Cansaga, Consolacion, Cebu</small></span>
+                <span className="hero-location-action">Open in Maps <ArrowUpRight aria-hidden="true" size={15} strokeWidth={1.8} /></span>
+              </a>
               <div className="hero-actions">
                 <Link className="button button-lime button-large" href="/book">
                   Book a court <span aria-hidden="true">→</span>
