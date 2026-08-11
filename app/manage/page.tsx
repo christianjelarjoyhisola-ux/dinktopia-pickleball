@@ -10,7 +10,9 @@ import {
   CircleDollarSign,
   Clock3,
   LayoutDashboard,
+  Mail,
   MapPin,
+  Phone,
   Plus,
   Search,
   Settings2,
@@ -18,6 +20,7 @@ import {
   SquareActivity,
   Users,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   useCallback,
@@ -2009,58 +2012,125 @@ function BlocksView({
   );
 }
 
-function CustomersView({ snapshot }: { snapshot: ManagementSnapshot }) {
+function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo: (view: View) => void }) {
   const [query, setQuery] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const customers = snapshot.customers.filter((customer) =>
-    `${customer.name} ${customer.contact}`.toLowerCase().includes(query.toLowerCase()),
+    `${customer.name} ${customer.contact} ${customer.phone ?? ""} ${customer.email ?? ""}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
   );
-  const averageVisits = snapshot.customers.length
-    ? snapshot.customers.reduce((total, customer) => total + customer.visits, 0) /
+  const selectedCustomer = selectedCustomerId
+    ? snapshot.customers.find((customer) => customer.id === selectedCustomerId) ?? null
+    : null;
+  const averageBookings = snapshot.customers.length
+    ? snapshot.customers.reduce((total, customer) => total + (customer.totalBookings ?? customer.visits), 0) /
       snapshot.customers.length
     : 0;
-  const returningPlayers = snapshot.customers.filter((customer) => customer.visits > 1).length;
+  const returningPlayers = snapshot.customers.filter((customer) => (customer.totalBookings ?? customer.visits) > 1).length;
   const returnRate = snapshot.customers.length
     ? Math.round((returningPlayers / snapshot.customers.length) * 100)
     : 0;
+  const needsDetails = snapshot.customers.filter((customer) => customer.identityStatus && customer.identityStatus !== "resolved").length;
+
+  useEffect(() => {
+    if (!selectedCustomer) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedCustomerId(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedCustomer]);
+
   return (
     <>
       <section className={styles.customerMetrics} aria-label="Customer summary">
-        <div><span>Loaded players</span><strong>{snapshot.customers.length}</strong><small>Tenant-scoped result</small></div>
-        <div><span>Return rate</span><strong>{returnRate}%</strong><small>Within loaded bookings</small></div>
-        <div><span>Average visits</span><strong>{averageVisits.toFixed(1)}</strong><small>Per loaded player</small></div>
+        <div><span>Loaded players</span><strong>{snapshot.customers.length}</strong><small>Tenant-scoped identities</small></div>
+        <div><span>Return rate</span><strong>{returnRate}%</strong><small>{returningPlayers} returning {returningPlayers === 1 ? "player" : "players"}</small></div>
+        <div><span>Average bookings</span><strong>{averageBookings.toFixed(1)}</strong><small>{needsDetails ? `${needsDetails} ${needsDetails === 1 ? "profile needs" : "profiles need"} details` : "Every profile is linked"}</small></div>
       </section>
-      <section className={styles.panel} aria-labelledby="customer-title">
+      <section className={`${styles.panel} ${styles.customerDirectory}`} aria-labelledby="customer-title">
         <div className={styles.panelHeading}>
-          <div><p className={styles.eyebrow}>Tenant directory</p><h2 id="customer-title">Players</h2></div>
+          <div><p className={styles.eyebrow}>Tenant directory</p><h2 id="customer-title">Players</h2><span className={styles.customerDirectoryNote}>Matched by mobile number first, then email.</span></div>
           <label className={styles.searchField}>
             <span className={styles.srOnly}>Search customers</span>
             <span aria-hidden="true">⌕</span>
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search players" />
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, mobile or email" />
           </label>
         </div>
         {customers.length ? (
           <div className={styles.customerList}>
             <div className={styles.customerTableHeader} aria-hidden="true">
-              <span /><span>Player</span><span>Bookings</span><span>Paid value</span><span>Last visit</span><span />
+              <span /><span>Player</span><span>Bookings</span><span>Upcoming</span><span>Paid value</span><span>Last visit</span><span />
             </div>
             {customers.map((customer, index) => (
-              <article className={styles.customerRow} key={customer.id}>
+              <article className={`${styles.customerRow} ${customer.identityStatus && customer.identityStatus !== "resolved" ? styles.customerNeedsDetails : ""}`} key={customer.id}>
                 <Avatar initials={customer.initials} tone={index} />
                 <div className={styles.customerName}>
                   <strong>{customer.name}</strong>
                   <span>{customer.contact}</span>
+                  {customer.identityStatus && customer.identityStatus !== "resolved" ? <small>{customer.identityStatus === "review" ? "Identity review needed" : "Contact details needed"}</small> : null}
                 </div>
-                <div><span className={styles.mobileLabel}>Bookings</span><strong>{customer.visits}</strong></div>
+                <div><span className={styles.mobileLabel}>Bookings</span><strong>{customer.totalBookings ?? customer.visits}</strong><small>{customer.completedVisits ?? 0} completed</small></div>
+                <div><span className={styles.mobileLabel}>Upcoming</span><strong>{customer.upcomingBookings ?? 0}</strong><small>{customer.cancelledBookings ?? 0} cancelled</small></div>
                 <div><span className={styles.mobileLabel}>Paid value</span><strong>{formatPeso(customer.lifetimeValue)}</strong></div>
                 <div><span className={styles.mobileLabel}>Last visit</span><strong>{customer.lastVisit}</strong>{customer.note && <small>{customer.note}</small>}</div>
-                <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`}>→</button>
+                <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`} onClick={() => setSelectedCustomerId(customer.id)}>→</button>
               </article>
             ))}
           </div>
         ) : (
-          <div className={styles.inlineEmpty}><span aria-hidden="true">00</span><h3>No players found</h3><p>Try a name or mobile number.</p></div>
+          <div className={styles.inlineEmpty}><span aria-hidden="true">00</span><h3>No players found</h3><p>Try a name, mobile number, or email.</p></div>
         )}
       </section>
+      {selectedCustomer ? (
+        <div className={styles.customerDrawerBackdrop} role="presentation" onMouseDown={() => setSelectedCustomerId(null)}>
+          <aside className={styles.customerDrawer} role="dialog" aria-modal="true" aria-labelledby="customer-profile-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className={styles.customerProfileHeader}>
+              <div className={styles.customerProfileIdentity}>
+                <Avatar initials={selectedCustomer.initials} tone={0} />
+                <div>
+                  <span className={styles.customerProfileEyebrow}>{selectedCustomer.identityStatus === "resolved" || !selectedCustomer.identityStatus ? "Linked player profile" : "Profile needs attention"}</span>
+                  <h2 id="customer-profile-title">{selectedCustomer.name}</h2>
+                  <p>{selectedCustomer.identityStatus === "review" ? "The contact identifiers conflict and were not merged automatically." : selectedCustomer.note}</p>
+                </div>
+              </div>
+              <button type="button" className={styles.customerDrawerClose} onClick={() => setSelectedCustomerId(null)} aria-label="Close customer profile"><X aria-hidden="true" size={18} /></button>
+            </header>
+            <section className={styles.customerContactCard} aria-label="Customer contact details">
+              <div><Phone aria-hidden="true" size={16} /><span>Mobile</span><strong>{selectedCustomer.phone ?? "Not provided"}</strong></div>
+              <div><Mail aria-hidden="true" size={16} /><span>Email</span><strong>{selectedCustomer.email ?? "Not provided"}</strong></div>
+            </section>
+            <section className={styles.customerProfileMetrics} aria-label="Customer activity summary">
+              <div><span>Bookings</span><strong>{selectedCustomer.totalBookings ?? selectedCustomer.visits}</strong></div>
+              <div><span>Completed</span><strong>{selectedCustomer.completedVisits ?? 0}</strong></div>
+              <div><span>Upcoming</span><strong>{selectedCustomer.upcomingBookings ?? 0}</strong></div>
+              <div><span>Paid value</span><strong>{formatPeso(selectedCustomer.lifetimeValue)}</strong></div>
+            </section>
+            <section className={styles.customerNextBooking}>
+              <div><CalendarDays aria-hidden="true" size={18} /><span>Next reservation</span></div>
+              <strong>{selectedCustomer.nextBooking ?? "No upcoming reservation"}</strong>
+            </section>
+            <section className={styles.customerHistory} aria-labelledby="customer-history-title">
+              <div className={styles.customerHistoryHeading}><div><p className={styles.eyebrow}>Booking timeline</p><h3 id="customer-history-title">Recent activity</h3></div><span>{selectedCustomer.bookingHistory?.length ?? 0} loaded</span></div>
+              {selectedCustomer.bookingHistory?.length ? (
+                <ol>
+                  {selectedCustomer.bookingHistory.map((booking) => (
+                    <li key={booking.bookingId}>
+                      <div><strong>{booking.date}</strong><span>{booking.time} · {booking.court}</span></div>
+                      <div><StatusPill status={booking.status} /><strong>{formatPeso(booking.amount)}</strong><span>{booking.reference}</span></div>
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className={styles.customerHistoryEmpty}>No booking activity was returned for this player.</p>}
+            </section>
+            <footer className={styles.customerProfileFooter}>
+              <span>Only bookings from {snapshot.tenant.name} are included.</span>
+              <button type="button" onClick={() => { setSelectedCustomerId(null); goTo("bookings"); }}>Create booking <ArrowRight aria-hidden="true" size={15} /></button>
+            </footer>
+          </aside>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -3702,7 +3772,7 @@ export default function ManagePage() {
         />
       ) : <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
       case "blocks": return <BlocksView snapshot={snapshot} can={can} request={request} />;
-      case "customers": return <CustomersView snapshot={snapshot} />;
+      case "customers": return <CustomersView snapshot={snapshot} goTo={setView} />;
       case "reports": return <AnalyticsView
         report={insights?.report ?? null}
         period={analyticsPeriod}

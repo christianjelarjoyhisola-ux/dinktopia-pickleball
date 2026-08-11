@@ -380,6 +380,24 @@ export type Customer = {
   lifetimeValue: number;
   lastVisit: string;
   note?: string;
+  phone?: string | null;
+  email?: string | null;
+  totalBookings?: number;
+  completedVisits?: number;
+  upcomingBookings?: number;
+  cancelledBookings?: number;
+  nextBooking?: string | null;
+  identityStatus?: "resolved" | "needs_details" | "review";
+  bookingHistory?: Array<{
+    bookingId: string;
+    reference: string;
+    date: string;
+    time: string;
+    court: string;
+    amount: number;
+    status: BookingStatus;
+    payment: BookingPaymentStatus;
+  }>;
 };
 
 export type Court = {
@@ -978,7 +996,7 @@ export const managementAdapter: ManagementAdapter = {
       policyResult,
       remittanceResult,
     ] = await Promise.all([
-      listManagerBookings(session.access_token, { activeOnly: false, limit: 100 }),
+      listManagerBookings(session.access_token, { activeOnly: false, limit: 500 }),
       listManagerBlocks(session.access_token, { limit: 100 }),
       canReadManagerSettings
         ? getActivationSettings(session.access_token).catch(() => null)
@@ -1038,7 +1056,7 @@ export const managementAdapter: ManagementAdapter = {
         lastSynced: formatManilaDateTime(new Date()),
       },
       bookings,
-      customers: deriveLiveCustomers(bookingRows),
+      customers: deriveLiveCustomers(bookingRows, courtNames),
       courts,
       schedule: deriveLiveSchedule(bookingRows, blockRows, courtNames),
       blocks,
@@ -1182,7 +1200,7 @@ export const managementAdapter: ManagementAdapter = {
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const [serverSessionResult, bookingResult] = await Promise.all([
       getManagerSession(session.access_token),
-      listManagerBookings(session.access_token, { activeOnly: false, limit: 100 }),
+      listManagerBookings(session.access_token, { activeOnly: false, limit: 500 }),
     ]);
     const serverSession = normalizeManagerSession(serverSessionResult);
     const bookingRows = bookingResult.bookings;
@@ -1196,7 +1214,7 @@ export const managementAdapter: ManagementAdapter = {
         lastSynced: formatManilaDateTime(new Date()),
       },
       bookings,
-      customers: deriveLiveCustomers(bookingRows),
+      customers: deriveLiveCustomers(bookingRows, courtNames),
       session: {
         ...serverSession,
         capabilities: authorityCapabilities(serverSession),
@@ -3746,9 +3764,27 @@ function deriveLiveSchedule(
   return [...bookingSlots, ...blockSlots];
 }
 
-type CustomerAccumulator = Customer & {
+type CustomerAccumulator = {
   key: string;
+  id: string;
+  name: string;
+  initials: string;
+  contact: string;
+  phone: string | null;
+  email: string | null;
+  totalBookings: number;
+  completedVisits: number;
+  upcomingBookings: number;
+  cancelledBookings: number;
+  lifetimeValue: number;
+  lastVisit: string;
+  nextBooking: string | null;
+  note: string;
+  identityStatus: "resolved" | "needs_details" | "review";
+  bookingHistory: NonNullable<Customer["bookingHistory"]>;
   latestCompletedAt: number | null;
+  nextBookingAt: number | null;
+  latestNameAt: number;
 };
 
 function stableCustomerId(key: string): string {
@@ -3760,31 +3796,91 @@ function stableCustomerId(key: string): string {
   return `customer-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-function deriveLiveCustomers(bookingRows: JsonObject[]): Customer[] {
+function normalizedCustomerPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("9")) return `63${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `63${digits.slice(1)}`;
+  if (digits.length >= 7) return digits;
+  return "";
+}
+
+function normalizedCustomerEmail(raw: string): string {
+  const email = raw.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function isPendingCustomerName(name: string): boolean {
+  return /^(booking details pending|details pending|customer details pending)$/i.test(name.trim());
+}
+
+function deriveLiveCustomers(
+  bookingRows: JsonObject[],
+  courtNames: ReadonlyMap<string, string>,
+): Customer[] {
   const customers = new Map<string, CustomerAccumulator>();
+  const phoneIndex = new Map<string, CustomerAccumulator>();
+  const emailIndex = new Map<string, CustomerAccumulator>();
+  const now = Date.now();
+
   for (const row of bookingRows) {
-    const name = value(row, ["customer_name", "customerName"]);
-    if (!name) continue;
-    const email = value(row, ["customer_email", "customerEmail"]).toLowerCase();
-    const phone = value(row, ["customer_phone", "phone", "mobile"]);
-    const key = email || phone.replace(/\D/g, "") || name.toLowerCase();
-    const existing = customers.get(key) ?? {
+    const booking = mapLiveBooking(row, courtNames);
+    const rawName = value(row, ["customer_name", "customerName"]);
+    const phone = normalizedCustomerPhone(value(row, ["customer_phone", "phone", "mobile"]));
+    const email = normalizedCustomerEmail(value(row, ["customer_email", "customerEmail"]));
+    const phoneMatch = phone ? phoneIndex.get(phone) : undefined;
+    const emailMatch = email ? emailIndex.get(email) : undefined;
+    const identityConflict = Boolean(phoneMatch && emailMatch && phoneMatch !== emailMatch);
+    const existingMatch = identityConflict ? undefined : phoneMatch ?? emailMatch;
+    const key = existingMatch?.key ?? (identityConflict
+      ? `review:${booking.bookingId}`
+      : phone
+        ? `phone:${phone}`
+        : email
+          ? `email:${email}`
+          : `unresolved:${booking.bookingId}`);
+    const startsAt = parsedInstant(row, ["starts_at"]);
+    const endsAt = parsedInstant(row, ["ends_at"]);
+    const name = !rawName || isPendingCustomerName(rawName) ? "Customer details needed" : rawName;
+    const nameTimestamp = startsAt?.getTime() ?? 0;
+    const existing = existingMatch ?? customers.get(key) ?? {
       key,
       id: stableCustomerId(key),
       name,
       initials: initialsFor(name),
-      contact: phone || email || "Contact unavailable",
-      visits: 0,
+      contact: phone ? `+${phone}` : email || "Contact unavailable",
+      phone: phone ? `+${phone}` : null,
+      email: email || null,
+      totalBookings: 0,
+      completedVisits: 0,
+      upcomingBookings: 0,
+      cancelledBookings: 0,
       lifetimeValue: 0,
       lastVisit: "No completed visit",
-      note: "Derived from the loaded booking result",
+      nextBooking: null,
+      note: phone || email ? "Identity linked from tenant bookings" : "Add a mobile number or email to link future bookings",
+      identityStatus: identityConflict ? "review" : phone || email ? "resolved" : "needs_details",
+      bookingHistory: [],
       latestCompletedAt: null,
+      nextBookingAt: null,
+      latestNameAt: nameTimestamp,
     };
     const status = value(row, ["status"]);
     const paymentStatus = value(row, ["payment_status"]);
-    const endsAt = parsedInstant(row, ["ends_at"]);
+    const terminalCancelled = status === "cancelled" || status === "expired";
+
+    if (!isPendingCustomerName(rawName) && nameTimestamp >= existing.latestNameAt) {
+      existing.name = rawName;
+      existing.initials = initialsFor(rawName);
+      existing.latestNameAt = nameTimestamp;
+    }
+    if (!existing.phone && phone) existing.phone = `+${phone}`;
+    if (!existing.email && email) existing.email = email;
+    existing.contact = existing.phone || existing.email || "Contact unavailable";
+    if (identityConflict) existing.identityStatus = "review";
+    if (!terminalCancelled) existing.totalBookings += 1;
+    else existing.cancelledBookings += 1;
     if (status === "completed") {
-      existing.visits += 1;
+      existing.completedVisits += 1;
       if (
         endsAt &&
         (existing.latestCompletedAt === null || endsAt.getTime() > existing.latestCompletedAt)
@@ -3793,23 +3889,60 @@ function deriveLiveCustomers(bookingRows: JsonObject[]): Customer[] {
         existing.lastVisit = formatManilaDate(endsAt);
       }
     }
-    if (paymentStatus === "paid") {
+    if (paymentStatus === "paid" && !terminalCancelled) {
       existing.lifetimeValue += bookingAmount(row);
     }
+    if (!terminalCancelled && startsAt && startsAt.getTime() > now) {
+      existing.upcomingBookings += 1;
+      if (existing.nextBookingAt === null || startsAt.getTime() < existing.nextBookingAt) {
+        existing.nextBookingAt = startsAt.getTime();
+        existing.nextBooking = `${booking.date} · ${booking.time} · ${booking.court}`;
+      }
+    }
+    existing.bookingHistory.push({
+      bookingId: booking.bookingId,
+      reference: booking.reference,
+      date: booking.date,
+      time: booking.time,
+      court: booking.court,
+      amount: booking.amount,
+      status: booking.status,
+      payment: booking.payment,
+    });
     customers.set(key, existing);
+    if (!identityConflict) {
+      if (phone) phoneIndex.set(phone, existing);
+      if (email) emailIndex.set(email, existing);
+    }
   }
 
   return [...customers.values()]
-    .sort((left, right) => left.name.localeCompare(right.name, "en-PH"))
+    .sort((left, right) => {
+      if (left.identityStatus !== right.identityStatus) {
+        return left.identityStatus === "resolved" ? 1 : -1;
+      }
+      return left.name.localeCompare(right.name, "en-PH");
+    })
     .map((customer) => ({
       id: customer.id,
       name: customer.name,
       initials: customer.initials,
       contact: customer.contact,
-      visits: customer.visits,
+      visits: customer.totalBookings,
+      totalBookings: customer.totalBookings,
+      completedVisits: customer.completedVisits,
+      upcomingBookings: customer.upcomingBookings,
+      cancelledBookings: customer.cancelledBookings,
       lifetimeValue: customer.lifetimeValue,
       lastVisit: customer.lastVisit,
       note: customer.note,
+      phone: customer.phone,
+      email: customer.email,
+      nextBooking: customer.nextBooking,
+      identityStatus: customer.identityStatus,
+      bookingHistory: customer.bookingHistory.sort((left, right) =>
+        `${right.date} ${right.time}`.localeCompare(`${left.date} ${left.time}`, "en-PH")
+      ),
     }));
 }
 
