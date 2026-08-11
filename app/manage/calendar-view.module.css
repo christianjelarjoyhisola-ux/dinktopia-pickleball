@@ -387,7 +387,7 @@
 .scheduleLegend { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 13px; color: #7a847f; font-size: 10px; }
 .scheduleLegend span { display: flex; align-items: center; gap: 5px; }
 .scheduleLegend i { width: 8px; height: 8px; border-radius: 3px; }
-.scheduleLegend i.playing { background: #16845b; }
+.scheduleLegend i.completed { background: #16845b; }
 .scheduleLegend i.reserved { background: #6558e8; }
 .scheduleLegend i.review { background: #d59b17; }
 .scheduleLegend i.blocked { background: #d35b49; }
@@ -436,7 +436,7 @@
 .bookingBlock strong { font-size: 10px; }
 .bookingBlock span { margin-top: 4px; font-size: 9px; opacity: .72; }
 .bookingBlock small { margin-top: 3px; font-size: 9px; opacity: .72; }
-.playingBlock { border-color: #add9c9; background: #e5f6f0; color: #126948; }
+.completedBlock { border-color: #add9c9; background: #e5f6f0; color: #126948; }
 .reservedBlock { border-color: #d1cdf7; background: #efedff; color: #4d42bd; }
 .reviewBlock { border-color: #ead59b; background: #fff4d7; color: #8d6515; }
 .blockedBlock { border-color: #efb7ae; background: #fff0ec; color: #a54734; }

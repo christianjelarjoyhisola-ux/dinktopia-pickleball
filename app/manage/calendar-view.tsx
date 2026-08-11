@@ -658,7 +658,7 @@ export function CalendarView({
           <section className={styles.scheduleBoard} aria-label={`Court schedule for ${dateHeading}`}>
             <div className={styles.boardMeta}>
               <div><span className={styles.liveMark}><i /> Live coverage</span><strong>{shortTime(timeline.start)}–{shortTime(timeline.end)}</strong></div>
-              <div className={styles.scheduleLegend}><span><i className={styles.playing} />Checked in</span><span><i className={styles.reserved} />Confirmed</span><span><i className={styles.review} />Payment review</span><span><i className={styles.blocked} />Court block</span></div>
+              <div className={styles.scheduleLegend}><span><i className={styles.completed} />Completed</span><span><i className={styles.reserved} />Confirmed</span><span><i className={styles.review} />Payment review</span><span><i className={styles.blocked} />Court block</span></div>
               <label className={styles.courtFilter}><span>Show</span><select value={effectiveCourtFilter} onChange={(event) => setCourtFilter(event.target.value)}><option value="all">All courts</option>{[...courts].sort((left, right) => left.sortOrder - right.sortOrder).map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}</select></label>
             </div>
             <div className={styles.boardScroll} tabIndex={0} aria-label="Scroll horizontally through court times">
@@ -671,7 +671,7 @@ export function CalendarView({
                   <div className={styles.rowCourt}><span>{group.global ? "ALL" : group.name.match(/\d+/)?.[0] ?? group.name.slice(0, 2).toUpperCase()}</span><div><strong>{group.name}</strong><small>{group.detail}</small></div></div>
                   {timeline.hours.map((hour, index) => <span className={`${styles.hourCell} ${currentHour === hour ? styles.currentHourCell : ""}`} style={{ gridColumn: index + 2 }} aria-hidden="true" key={`${group.key}-${hour}`} />)}
                   {group.entries.map((entry) => entry.kind === "booking" ? (
-                    <button type="button" key={entry.booking.bookingId} className={`${styles.bookingBlock} ${selectedBookingId === entry.booking.bookingId ? styles.selectedBlock : ""} ${entry.booking.status === "checked_in" ? styles.playingBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`} onClick={() => setSelectedBookingId(entry.booking.bookingId)}>
+                    <button type="button" key={entry.booking.bookingId} className={`${styles.bookingBlock} ${selectedBookingId === entry.booking.bookingId ? styles.selectedBlock : ""} ${entry.booking.status === "completed" ? styles.completedBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`} onClick={() => setSelectedBookingId(entry.booking.bookingId)}>
                       <strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small>
                     </button>
                   ) : (
