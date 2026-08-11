@@ -116,7 +116,7 @@ type ToastState = {
 const NAV_ITEMS: { id: View; label: string; short: string }[] = [
   { id: "overview", label: "Today", short: "OV" },
   { id: "schedule", label: "Schedule", short: "CA" },
-  { id: "bookings", label: "Play", short: "BK" },
+  { id: "bookings", label: "Bookings", short: "BK" },
   { id: "blocks", label: "Court issues", short: "BL" },
   { id: "customers", label: "Customers", short: "CU" },
   { id: "finance", label: "Money", short: "FN" },
@@ -1263,6 +1263,10 @@ function BookingsView({
         booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
       ) ?? null
     : null;
+  const today = manilaCalendarDate();
+  const todayCount = bookings.filter((booking) => booking.bookingDate === today).length;
+  const activeCount = bookings.filter((booking) => !["cancelled", "expired", "completed"].includes(booking.status)).length;
+  const reviewCount = bookings.filter((booking) => booking.paymentEvidence?.reviewable === true).length;
 
   const closePaymentReview = () => {
     const returnTarget = reviewReturnRef.current;
@@ -1288,15 +1292,26 @@ function BookingsView({
   };
 
   return (
-    <section className={cx(styles.panel, styles.bookingRegisterPanel)} aria-labelledby="booking-list-title">
-      <div className={styles.panelHeading}>
-        <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>All bookings</h2>
+    <section className={styles.bookingsWorkspace} aria-labelledby="booking-list-title">
+      <header className={styles.bookingsHero}>
+        <div>
+          <p className={styles.eyebrow}>Reservation desk</p>
+          <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>Keep every booking clear and moving.</h2>
+          <p>Search reservations, review payment state, and handle changes from one organized workspace.</p>
+        </div>
         <ActionButton
           disabled={!can("booking:create") || (!isPreview && !courts.length)}
           onClick={() => isPreview ? goTo("schedule") : setCreating((value) => !value)}
         >
           <span aria-hidden="true">＋</span> {creating ? "Close form" : "New booking"}
         </ActionButton>
+      </header>
+
+      <div className={styles.bookingOverview} aria-label="Booking overview">
+        <article><span>Total bookings</span><strong>{bookings.length}</strong><small>Loaded tenant reservations</small></article>
+        <article><span>Active queue</span><strong>{activeCount}</strong><small>Open booking workflows</small></article>
+        <article><span>Today</span><strong>{todayCount}</strong><small>{todayCount === 1 ? "Reservation today" : "Reservations today"}</small></article>
+        <article><span>Payment review</span><strong>{reviewCount}</strong><small>{reviewCount ? "Receipt action needed" : "Everything reconciled"}</small></article>
       </div>
       {!isPreview && creating && (
         <form className={styles.compactActionForm} onSubmit={(event) => {
@@ -1384,21 +1399,24 @@ function BookingsView({
           onClose={closePaymentReview}
         />
       )}
-      <div className={styles.bookingToolbar}>
-        <label className={styles.searchField}>
-          <span className={styles.srOnly}>Search bookings</span>
-          <span aria-hidden="true">⌕</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search player, reference or court"
-          />
-        </label>
-        <span className={styles.bookingResultCount} aria-live="polite">
-          <strong>{filtered.length}</strong> of {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}
-        </span>
-      </div>
+      <section className={styles.bookingRegisterPanel} aria-label="Reservation register">
+        <div className={styles.bookingRegisterHeader}>
+          <div><p className={styles.eyebrow}>Live register</p><h3>All bookings</h3></div>
+          <span className={styles.bookingResultCount} aria-live="polite"><strong>{filtered.length}</strong> of {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}</span>
+        </div>
+
+        <div className={styles.bookingToolbar}>
+          <label className={styles.searchField}>
+            <span className={styles.srOnly}>Search bookings</span>
+            <span aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search player, reference or court"
+            />
+          </label>
+        </div>
 
       <div className={styles.bookingFilterRail}>
         <div className={styles.bookingFilters} role="group" aria-label="Filter bookings by workflow status">
@@ -1415,6 +1433,10 @@ function BookingsView({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className={styles.bookingColumnsHeader} aria-hidden="true">
+        <span>Player</span><span>Reservation</span><span>Payment</span><span>Status</span><span>Actions</span>
       </div>
 
       {filtered.length ? (
@@ -1434,7 +1456,6 @@ function BookingsView({
                       <h3 id={`booking-${booking.bookingId}`}>{booking.customer}</h3>
                       <span>{booking.reference}</span>
                     </div>
-                    <StatusPill status={booking.status} />
                   </header>
 
                   <div className={styles.bookingRecordSession}>
@@ -1454,8 +1475,9 @@ function BookingsView({
                     </span>
                   </div>
 
-                  <footer className={cx(styles.bookingRecordFooter, statusDetail && styles.bookingRecordNotice)}>
-                    {statusDetail && <p>{statusDetail}</p>}
+                  <div className={styles.bookingRecordStatus}><StatusPill status={booking.status} /></div>
+
+                  <footer className={styles.bookingRecordFooter}>
                     <div className={styles.bookingRecordActions}>
                       {booking.paymentEvidence?.reviewable && !terminal && (
                         <button
@@ -1507,6 +1529,7 @@ function BookingsView({
                       )}
                     </div>
                   </footer>
+                  {statusDetail && <p className={styles.bookingRecordNotice}>{statusDetail}</p>}
                 </article>
               </li>
             );
@@ -1522,6 +1545,7 @@ function BookingsView({
           </button>
         </div>
       )}
+      </section>
     </section>
   );
 }
@@ -3820,7 +3844,7 @@ export default function ManagePage() {
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
-          {view !== "overview" && view !== "reports" && <header className={styles.pageHeader}>
+          {view !== "overview" && view !== "reports" && view !== "bookings" && <header className={styles.pageHeader}>
             <div>
               <h1>{selectedCopy.title}</h1>
               <p>{selectedCopy.description}</p>
