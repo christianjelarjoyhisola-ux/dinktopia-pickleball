@@ -10,6 +10,7 @@ import type {
   CreateBookingInput,
   PlatformErrorBody,
   PlatformMode,
+  PublicPromotion,
   TenantBootstrap,
 } from "./types";
 
@@ -350,10 +351,19 @@ function previewBootstrap(): TenantBootstrap {
 
 export async function getTenantBootstrap(): Promise<TenantBootstrap> {
   if (platformMode() === "preview") return previewBootstrap();
-  const result = await rpc<TenantBootstrap | null>("get_public_tenant_bootstrap", {
-    p_tenant_slug: activeTenant.identity.slug,
-    p_hostname: currentHostname(),
-  });
+  const [result, promotions] = await Promise.all([
+    rpc<TenantBootstrap | null>("get_public_tenant_bootstrap", {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: currentHostname(),
+    }),
+    rpc<PublicPromotion[]>("get_public_active_promotions", {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: currentHostname(),
+    }).catch((error) => {
+      if (error instanceof PlatformRequestError && error.code === "PGRST202") return [];
+      throw error;
+    }),
+  ]);
   if (!result) {
     throw new PlatformRequestError(
       404,
@@ -361,7 +371,7 @@ export async function getTenantBootstrap(): Promise<TenantBootstrap> {
       "This Dinktopia hostname is not registered with the booking platform.",
     );
   }
-  return result;
+  return { ...result, promotions };
 }
 
 export async function getAvailability(date: string): Promise<AvailabilityResponse> {
@@ -1012,6 +1022,52 @@ export async function getManagerRegularBookingReport(
       p_date_from: input.dateFrom,
       p_date_to: input.dateTo,
       p_court_id: input.courtId || null,
+    },
+    accessToken,
+  );
+}
+
+export async function getManagerPromotions(accessToken: string): Promise<unknown> {
+  return rpc<unknown>(
+    "get_manager_promotions",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+    },
+    accessToken,
+  );
+}
+
+export async function createTenantPromotion(
+  accessToken: string,
+  input: {
+    name: string;
+    discountType: "percentage" | "fixed_amount";
+    discountValue: number;
+    weekdays: number[];
+    startsAt: string;
+    endsAt: string;
+    validFrom: string;
+    validUntil: string;
+    courtIds: string[];
+    maxRedemptions?: number | null;
+  },
+): Promise<unknown> {
+  return rpc<unknown>(
+    "create_tenant_promotion",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+      p_name: input.name,
+      p_discount_type: input.discountType,
+      p_discount_value: input.discountValue,
+      p_weekdays: input.weekdays,
+      p_starts_at: input.startsAt,
+      p_ends_at: input.endsAt,
+      p_valid_from: input.validFrom,
+      p_valid_until: input.validUntil,
+      p_court_ids: input.courtIds,
+      p_max_redemptions: input.maxRedemptions ?? null,
     },
     accessToken,
   );

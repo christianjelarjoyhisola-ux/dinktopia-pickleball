@@ -6,6 +6,7 @@ import {
   applySharedCourtSchedule,
   cancelTenantBooking,
   checkInTenantBooking,
+  createTenantPromotion,
   createManualBooking,
   currentOwnerSession,
   deleteTenantPaymentQr,
@@ -14,6 +15,7 @@ import {
   getBookingFeeRemittanceDashboard,
   getBookingFeeRemittanceHistory,
   getManagerCourts,
+  getManagerPromotions,
   getManagerRegularBookingReport,
   getManagerSession,
   getPaymentReceiptView,
@@ -324,7 +326,42 @@ export type ManagementInsights = {
     dashboard: RemittanceDashboard;
     history: RemittanceSummary[];
   } | null;
+  promotions: TenantPromotionState;
   loadedAt: string;
+};
+
+export type TenantPromotion = {
+  id: string;
+  name: string;
+  status: "active" | "paused" | "ended";
+  discountType: "percentage" | "fixed_amount";
+  discountValue: number;
+  weekdays: number[];
+  startsAt: string;
+  endsAt: string;
+  validFrom: string;
+  validUntil: string;
+  courtIds: string[];
+  maxRedemptions: number | null;
+  redemptionCount: number;
+};
+
+export type TenantPromotionState = {
+  canCreate: boolean;
+  items: TenantPromotion[];
+};
+
+export type PromotionCreateInput = {
+  name: string;
+  discountType: "percentage" | "fixed_amount";
+  discountValue: number;
+  weekdays: number[];
+  startsAt: string;
+  endsAt: string;
+  validFrom: string;
+  validUntil: string;
+  courtIds: string[];
+  maxRedemptions?: number | null;
 };
 
 export type ManagementInsightFilters = {
@@ -516,6 +553,10 @@ export interface ManagementAdapter {
     context: ManagementContext,
     verificationId: string,
   ): Promise<PaymentReceiptView>;
+  createPromotion(
+    context: ManagementContext,
+    input: PromotionCreateInput,
+  ): Promise<TenantPromotion>;
   uploadPaymentQr(
     context: ManagementContext,
     methodCode: string,
@@ -1087,6 +1128,7 @@ export const managementAdapter: ManagementAdapter = {
         mode: "preview",
         report: null,
         finance: null,
+        promotions: { canCreate: false, items: [] },
         loadedAt: formatManilaDateTime(new Date()),
       };
     }
@@ -1100,10 +1142,16 @@ export const managementAdapter: ManagementAdapter = {
     );
     assertInsightsViewer(authority);
 
-    const [reportResult, remittanceResult, historyResult] = await Promise.all([
+    const [reportResult, remittanceResult, historyResult, promotionResult] = await Promise.all([
       getManagerRegularBookingReport(session.access_token, normalizedFilters),
       getBookingFeeRemittanceDashboard(session.access_token),
       getBookingFeeRemittanceHistory(session.access_token, { limit: 50 }),
+      getManagerPromotions(session.access_token).catch((error) => {
+        if (error instanceof PlatformRequestError && error.code === "PGRST202") {
+          return { canCreate: false, items: [] };
+        }
+        throw error;
+      }),
     ]);
 
     return {
@@ -1113,6 +1161,7 @@ export const managementAdapter: ManagementAdapter = {
         dashboard: remittanceDashboard(remittanceResult),
         history: remittanceHistory(historyResult),
       },
+      promotions: tenantPromotionState(promotionResult),
       loadedAt: formatManilaDateTime(new Date()),
     };
   },
@@ -1178,6 +1227,18 @@ export const managementAdapter: ManagementAdapter = {
       verificationId: id,
       status,
     };
+  },
+  async createPromotion(context, input) {
+    if (platformMode() === "preview") throw new Error("PREVIEW_PROMOTION_UNAVAILABLE");
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    if (!authority.isSystemOwner && authority.membershipRole !== "owner") {
+      throw new Error("PROMOTION_PUBLISH_ACCESS_DENIED");
+    }
+    const result = await createTenantPromotion(session.access_token, input);
+    return tenantPromotion(result);
   },
   async uploadPaymentQr(context, methodCode, file) {
     if (platformMode() === "preview") {
@@ -3096,6 +3157,62 @@ function record(candidate: unknown): JsonObject | null {
   return candidate && typeof candidate === "object" && !Array.isArray(candidate)
     ? (candidate as JsonObject)
     : null;
+}
+
+function tenantPromotion(candidate: unknown): TenantPromotion {
+  const row = record(candidate);
+  if (!row) throw new Error("PROMOTION_RESPONSE_INVALID");
+  const status = value(row, ["status"]);
+  const discountType = value(row, ["discountType", "discount_type"]);
+  const weekdays = Array.isArray(row.weekdays)
+    ? row.weekdays.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  const courtIds = Array.isArray(row.courtIds ?? row.court_ids)
+    ? (row.courtIds ?? row.court_ids as unknown[]).filter(
+        (id): id is string => typeof id === "string" && UUID_PATTERN.test(id),
+      )
+    : [];
+  const maxRedemptions = numberValue(row, ["maxRedemptions", "max_redemptions"]);
+  const redemptionCount = numberValue(row, ["redemptionCount", "redemption_count"]);
+  const id = value(row, ["id"]);
+  const name = value(row, ["name"]);
+  const discountValue = numberValue(row, ["discountValue", "discount_value"]);
+  const startsAt = value(row, ["startsAt", "starts_at"]);
+  const endsAt = value(row, ["endsAt", "ends_at"]);
+  const validFrom = value(row, ["validFrom", "valid_from"]);
+  const validUntil = value(row, ["validUntil", "valid_until"]);
+  if (
+    !UUID_PATTERN.test(id) || !name ||
+    !["active", "paused", "ended"].includes(status) ||
+    !["percentage", "fixed_amount"].includes(discountType) ||
+    discountValue === null || discountValue <= 0 || !weekdays.length ||
+    !/^\d{2}:\d{2}/.test(startsAt) || !/^\d{2}:\d{2}/.test(endsAt) ||
+    !DATE_PATTERN.test(validFrom) || !DATE_PATTERN.test(validUntil) ||
+    !courtIds.length || redemptionCount === null
+  ) throw new Error("PROMOTION_RESPONSE_INVALID");
+  return {
+    id,
+    name,
+    status: status as TenantPromotion["status"],
+    discountType: discountType as TenantPromotion["discountType"],
+    discountValue,
+    weekdays,
+    startsAt: startsAt.slice(0, 5),
+    endsAt: endsAt.slice(0, 5),
+    validFrom,
+    validUntil,
+    courtIds,
+    maxRedemptions: maxRedemptions === null ? null : Math.trunc(maxRedemptions),
+    redemptionCount: Math.trunc(redemptionCount),
+  };
+}
+
+function tenantPromotionState(candidate: unknown): TenantPromotionState {
+  const row = record(candidate);
+  if (!row || typeof row.canCreate !== "boolean" || !Array.isArray(row.items)) {
+    throw new Error("PROMOTION_RESPONSE_INVALID");
+  }
+  return { canCreate: row.canCreate, items: row.items.map(tenantPromotion) };
 }
 
 function value(row: Record<string, unknown>, keys: string[], fallback = ""): string {

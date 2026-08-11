@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
+
 import type {
   ManagementInsights,
+  PromotionCreateInput,
   RegularBookingReport,
   RemittanceSummary,
 } from "./management-adapter";
@@ -22,6 +25,8 @@ export type AnalyticsViewProps = LoadingState & {
   courts?: Array<{ id: string; name: string }>;
   courtId?: string | null;
   onCourtChange?: (courtId: string | null) => void;
+  promotions?: ManagementInsights["promotions"] | null;
+  onCreatePromotion?: (input: PromotionCreateInput) => Promise<void>;
 };
 
 export type FinanceViewProps = LoadingState & {
@@ -189,10 +194,15 @@ export function AnalyticsView({
   courts = [],
   courtId = null,
   onCourtChange,
+  promotions = null,
+  onCreatePromotion,
   loading = false,
   error = null,
   onRetry,
 }: AnalyticsViewProps) {
+  const [offerDraft, setOfferDraft] = useState<PromotionCreateInput | null>(null);
+  const [offerPending, setOfferPending] = useState(false);
+  const [offerError, setOfferError] = useState<string | null>(null);
   if (loading && !report) return <LoadingPanel label="analytics" />;
   if (error || !report) {
     return (
@@ -210,6 +220,72 @@ export function AnalyticsView({
     ...report.breakdowns.courts.map((court) => court.venueSalesPaid),
     0,
   );
+  const recommendationWindows = [
+    { startsAt: "12:00", endsAt: "15:00", label: "Lunch rally offer" },
+    { startsAt: "06:00", endsAt: "09:00", label: "Early-bird package" },
+    { startsAt: "09:00", endsAt: "12:00", label: "Morning court saver" },
+  ];
+  const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  const weekdayPerformance = Array.from({ length: 7 }, (_, weekday) => {
+    const days = report.breakdowns.daily.filter((entry) => {
+      const date = new Date(`${entry.date}T00:00:00Z`);
+      return (date.getUTCDay() + 6) % 7 === weekday;
+    });
+    return {
+      weekday,
+      bookedHours: days.reduce((sum, day) => sum + day.bookedHours, 0),
+      observations: days.length,
+    };
+  }).filter((item) => item.observations > 0)
+    .sort((left, right) => left.bookedHours / left.observations - right.bookedHours / right.observations)
+    .slice(0, 3);
+  const validFrom = new Date().toISOString().slice(0, 10);
+  const validUntilDate = new Date();
+  validUntilDate.setUTCDate(validUntilDate.getUTCDate() + 28);
+  const validUntil = validUntilDate.toISOString().slice(0, 10);
+  const recommendedActions = weekdayPerformance.map((item, index) => {
+    const window = recommendationWindows[index];
+    const availableHours = item.observations * Math.max(courts.length, 1) * 3;
+    return {
+      weekday: item.weekday,
+      utilization: availableHours > 0
+        ? Math.min(100, Math.round(item.bookedHours / availableHours * 100))
+        : 0,
+      ...window,
+    };
+  });
+
+  const openOffer = (action: typeof recommendedActions[number]) => {
+    setOfferError(null);
+    setOfferDraft({
+      name: action.label,
+      discountType: "percentage",
+      discountValue: 15,
+      weekdays: [action.weekday],
+      startsAt: action.startsAt,
+      endsAt: action.endsAt,
+      validFrom,
+      validUntil,
+      courtIds: courtId ? [courtId] : courts.map((court) => court.id),
+      maxRedemptions: 40,
+    });
+  };
+
+  const publishOffer = async () => {
+    if (!offerDraft || !onCreatePromotion) return;
+    setOfferPending(true);
+    setOfferError(null);
+    try {
+      await onCreatePromotion(offerDraft);
+      setOfferDraft(null);
+    } catch (offerFailure) {
+      setOfferError(offerFailure instanceof Error
+        ? offerFailure.message
+        : "The offer could not be published.");
+    } finally {
+      setOfferPending(false);
+    }
+  };
   const periodLabel = `${localDate(report.range.dateFrom)} – ${localDate(report.range.dateTo)}`;
 
   return (
@@ -336,6 +412,66 @@ export function AnalyticsView({
           <p className={styles.emptyCopy}>No courts are included in this report.</p>
         )}
       </article>
+
+      <article className={`${styles.panel} ${styles.recommendationPanel}`}>
+        <div className={styles.panelHeading}>
+          <div>
+            <span className={styles.eyebrow}>Recommended actions</span>
+            <h3>Underused slots</h3>
+          </div>
+          <span className={styles.summaryPill}>{recommendedActions.length} opportunities</span>
+        </div>
+        <div className={styles.recommendationList}>
+          {recommendedActions.map((action) => (
+            <article key={`${action.weekday}-${action.startsAt}`}>
+              <span>{weekdayNames[action.weekday]} / {action.startsAt}-{action.endsAt}</span>
+              <div><strong>{action.label}</strong><small>{action.utilization}% utilized in this reporting window</small></div>
+              <button
+                type="button"
+                onClick={() => openOffer(action)}
+                disabled={!promotions?.canCreate || !onCreatePromotion}
+              >Create offer</button>
+            </article>
+          ))}
+        </div>
+        {!promotions?.canCreate && (
+          <p className={styles.recommendationNote}>Publishing offers is reserved for the System Owner or this tenant&apos;s court owner.</p>
+        )}
+        {promotions?.items.some((offer) => offer.status === "active") ? (
+          <div className={styles.activeOffers}>
+            <span>Published offers</span>
+            {promotions.items.filter((offer) => offer.status === "active").map((offer) => (
+              <strong key={offer.id}>{offer.name} - {offer.discountValue}{offer.discountType === "percentage" ? "%" : " PHP"} off - {offer.redemptionCount} used</strong>
+            ))}
+          </div>
+        ) : null}
+        <p className={styles.recommendationNote}>Recommendations use this tenant&apos;s selected reporting range. The owner controls the final discount, dates, and redemption limit.</p>
+      </article>
+
+      {offerDraft && (
+        <div className={styles.offerBackdrop} role="presentation">
+          <section className={styles.offerDialog} role="dialog" aria-modal="true" aria-labelledby="offer-title">
+            <header>
+              <div><span className={styles.eyebrow}>Owner approval</span><h3 id="offer-title">Publish a targeted offer</h3></div>
+              <button type="button" aria-label="Close offer dialog" onClick={() => setOfferDraft(null)}>x</button>
+            </header>
+            <p>Only matching future slots for this tenant receive the discount. Existing bookings are never repriced.</p>
+            <div className={styles.offerGrid}>
+              <label><span>Offer name</span><input value={offerDraft.name} maxLength={120} onChange={(event) => setOfferDraft({ ...offerDraft, name: event.target.value })} /></label>
+              <label><span>Discount</span><div className={styles.discountInput}><input type="number" min="1" max="50" value={offerDraft.discountValue} onChange={(event) => setOfferDraft({ ...offerDraft, discountValue: Number(event.target.value) })} /><b>%</b></div></label>
+              <label><span>Starts</span><input type="date" value={offerDraft.validFrom} onChange={(event) => setOfferDraft({ ...offerDraft, validFrom: event.target.value })} /></label>
+              <label><span>Ends</span><input type="date" value={offerDraft.validUntil} onChange={(event) => setOfferDraft({ ...offerDraft, validUntil: event.target.value })} /></label>
+              <label><span>Maximum redemptions</span><input type="number" min="1" max="10000" value={offerDraft.maxRedemptions ?? ""} onChange={(event) => setOfferDraft({ ...offerDraft, maxRedemptions: Number(event.target.value) || null })} /></label>
+              <div className={styles.offerScope}><span>Applies to</span><strong>{weekdayNames[offerDraft.weekdays[0]]} - {offerDraft.startsAt}-{offerDraft.endsAt} - {offerDraft.courtIds.length} {offerDraft.courtIds.length === 1 ? "court" : "courts"}</strong></div>
+            </div>
+            {offerError && <p className={styles.offerError} role="alert">{offerError}</p>}
+            <footer>
+              <button type="button" onClick={() => setOfferDraft(null)} disabled={offerPending}>Cancel</button>
+              <button type="button" className={styles.publishOffer} onClick={() => void publishOffer()} disabled={offerPending || !offerDraft.name.trim() || offerDraft.discountValue <= 0 || offerDraft.discountValue > 50}>{offerPending ? "Publishing..." : "Publish offer"}</button>
+            </footer>
+          </section>
+        </div>
+      )}
 
       <details className={styles.boundaryNote}>
         <summary>About these totals</summary>

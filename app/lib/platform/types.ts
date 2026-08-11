@@ -47,6 +47,19 @@ export type BookingCapabilities = {
   atomicMultiSessionBookingV1?: boolean;
 };
 
+export type PublicPromotion = {
+  id: string;
+  name: string;
+  discountType: "percentage" | "fixed_amount";
+  discountValue: number;
+  weekdays: number[];
+  startsAt: string;
+  endsAt: string;
+  validFrom: string;
+  validUntil: string;
+  courtIds: string[];
+};
+
 export type TenantBootstrap = {
   tenant: {
     slug: string;
@@ -65,6 +78,7 @@ export type TenantBootstrap = {
   readiness: BookingReadiness;
   bookingFee?: { feeMode?: string; feeAmount?: number };
   refundReschedulePolicy?: Record<string, unknown> | null;
+  promotions?: PublicPromotion[];
 };
 
 export type AvailabilityCourt = {

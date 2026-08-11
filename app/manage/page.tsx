@@ -3365,6 +3365,14 @@ export default function ManagePage() {
     setInsightsRevision((revision) => revision + 1);
   }, []);
 
+  const publishRecommendedOffer = useCallback(async (
+    input: Parameters<typeof managementAdapter.createPromotion>[1],
+  ) => {
+    const promotion = await managementAdapter.createPromotion(context, input);
+    setToast({ message: `${promotion.name} is live for matching future slots.`, tone: "success" });
+    setInsightsRevision((revision) => revision + 1);
+  }, [context]);
+
   useEffect(() => {
     if (!snapshot || (view !== "reports" && view !== "finance")) return;
     if (isPreview) return;
@@ -3639,6 +3647,8 @@ export default function ManagePage() {
         courts={snapshot.courts.map((court) => ({ id: court.id, name: court.name }))}
         courtId={analyticsCourtId}
         onCourtChange={setAnalyticsCourtId}
+        promotions={insights?.promotions ?? null}
+        onCreatePromotion={publishRecommendedOffer}
         loading={insightsPending}
         error={insightsError}
         onRetry={retryInsights}

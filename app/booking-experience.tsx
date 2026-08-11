@@ -45,6 +45,7 @@ import type {
   BookingSessionInput,
   PaymentMethod,
   PublicCourt,
+  PublicPromotion,
   TenantBootstrap,
 } from "./lib/platform/types";
 
@@ -72,6 +73,9 @@ export type AvailabilitySlot = {
   startsAt: string;
   endsAt: string;
   price: number;
+  originalPrice?: number;
+  promotionId?: string;
+  promotionName?: string;
   status: SlotStatus;
 };
 
@@ -616,6 +620,56 @@ function getConfiguredPrice(
   );
 }
 
+function promotionClockMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})/.exec(value);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return Number.isInteger(hours) && hours >= 0 && hours <= 23 &&
+      Number.isInteger(minutes) && minutes >= 0 && minutes <= 59
+    ? hours * 60 + minutes
+    : null;
+}
+
+function promotedHourlyPrice(
+  promotions: PublicPromotion[] | undefined,
+  courtId: string,
+  date: string,
+  logicalHour: number,
+  basePrice: number,
+) {
+  const day = new Date(`${date}T00:00:00Z`);
+  const weekday = (day.getUTCDay() + 6) % 7;
+  const minute = (((logicalHour % 24) + 24) % 24) * 60;
+  const matches = (promotions ?? []).filter((promotion) => {
+    const startsAt = promotionClockMinutes(promotion.startsAt);
+    const endsAt = promotionClockMinutes(promotion.endsAt);
+    const inWindow = startsAt !== null && endsAt !== null && (
+      endsAt > startsAt
+        ? minute >= startsAt && minute < endsAt
+        : minute >= startsAt || minute < endsAt
+    );
+    return promotion.courtIds.includes(courtId) &&
+      promotion.weekdays.includes(weekday) &&
+      date >= promotion.validFrom && date <= promotion.validUntil &&
+      inWindow;
+  });
+  const ranked = matches.map((promotion) => {
+    const discount = promotion.discountType === "percentage"
+      ? basePrice * promotion.discountValue / 100
+      : promotion.discountValue;
+    return { promotion, discount: Math.min(basePrice, Math.max(0, discount)) };
+  }).sort((left, right) => right.discount - left.discount);
+  const winner = ranked[0];
+  if (!winner || winner.discount <= 0) return { price: basePrice };
+  return {
+    price: Math.round((basePrice - winner.discount) * 100) / 100,
+    originalPrice: basePrice,
+    promotionId: winner.promotion.id,
+    promotionName: winner.promotion.name,
+  };
+}
+
 function getMinimumConfiguredHourlyRate(courts: PublicCourt[]) {
   const rates = courts.flatMap((court) => {
     const pricingConfig = court.pricingConfig as
@@ -937,11 +991,19 @@ const platformAdapter: BookingAdapter = {
         ).getTime();
         const tooSoon =
           candidateStartsAt < Date.now() + minimumLeadMinutes * 60 * 1000;
+        const basePrice = getConfiguredPrice(publicCourt, hour, 1);
+        const promoted = promotedHourlyPrice(
+          tenantBootstrap.promotions,
+          publicCourt.id,
+          slotDate,
+          hour,
+          basePrice,
+        );
         return {
           hour,
           startsAt: formatClockLabel(hour),
           endsAt: formatClockLabel(hour + 1),
-          price: getConfiguredPrice(publicCourt, hour, 1),
+          ...promoted,
           status: tooSoon || overlapsBlock || overlapsBooking ? "unavailable" : "available",
         };
       });
