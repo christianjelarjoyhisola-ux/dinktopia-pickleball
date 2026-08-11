@@ -242,8 +242,7 @@ as $$
 declare
   v_tenant_id uuid;
   v_membership_role text;
-  v_promotion_id uuid;
-  v_promotion_name text;
+  v_promotion public.tenant_promotions%rowtype;
   v_weekdays smallint[];
 begin
   if auth.uid() is null or auth.role() is distinct from 'authenticated' then
@@ -366,7 +365,8 @@ declare
   v_timezone text;
   v_booking public.bookings%rowtype;
   v_slot public.booking_slots%rowtype;
-  v_promotion public.tenant_promotions%rowtype;
+  v_promotion_id uuid;
+  v_promotion_name text;
   v_slot_base numeric(12,2);
   v_slot_discount numeric(12,2);
   v_discount numeric(12,2) := 0;
