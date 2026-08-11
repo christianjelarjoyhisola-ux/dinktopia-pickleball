@@ -1149,7 +1149,7 @@ export const managementAdapter: ManagementAdapter = {
       getBookingFeeRemittanceHistory(session.access_token, { limit: 50 }),
       getManagerPromotions(session.access_token).catch((error) => {
         if (error instanceof PlatformRequestError && error.code === "PGRST202") {
-          return { available: false, canCreate: false, items: [] };
+          return null;
         }
         throw error;
       }),
@@ -1162,7 +1162,9 @@ export const managementAdapter: ManagementAdapter = {
         dashboard: remittanceDashboard(remittanceResult),
         history: remittanceHistory(historyResult),
       },
-      promotions: tenantPromotionState(promotionResult),
+      promotions: promotionResult === null
+        ? { available: false, canCreate: false, items: [] }
+        : tenantPromotionState(promotionResult),
       loadedAt: formatManilaDateTime(new Date()),
     };
   },
