@@ -3649,6 +3649,7 @@ export default function ManagePage() {
         onCourtChange={setAnalyticsCourtId}
         promotions={insights?.promotions ?? null}
         onCreatePromotion={publishRecommendedOffer}
+        bookings={snapshot.bookings}
         loading={insightsPending}
         error={insightsError}
         onRetry={retryInsights}
