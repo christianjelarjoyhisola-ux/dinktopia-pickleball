@@ -3289,7 +3289,7 @@ export default function ManagePage() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("30d");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
   const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
   const [insights, setInsights] = useState<ManagementInsights | null>(null);
   const [insightsPending, setInsightsPending] = useState(false);
@@ -3795,7 +3795,7 @@ export default function ManagePage() {
 
         <div className={styles.topbar}>
           <div className={styles.topbarTitle}>
-            <span>{view === "overview" ? "Today’s operations" : "Dinktopia operations"}</span>
+            <span>{view === "overview" ? "Today’s operations" : view === "reports" ? "Venue performance" : "Dinktopia operations"}</span>
             <h1>{view === "overview" ? "Today" : selectedCopy.title}</h1>
           </div>
           <div className={styles.rallyTopActions}>
@@ -3820,7 +3820,7 @@ export default function ManagePage() {
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
-          {view !== "overview" && <header className={styles.pageHeader}>
+          {view !== "overview" && view !== "reports" && <header className={styles.pageHeader}>
             <div>
               <h1>{selectedCopy.title}</h1>
               <p>{selectedCopy.description}</p>

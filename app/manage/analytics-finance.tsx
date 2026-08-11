@@ -37,13 +37,6 @@ export type FinanceViewProps = LoadingState & {
   preparing?: boolean;
 };
 
-const PERIODS: Array<{ value: AnalyticsPeriod; label: string }> = [
-  { value: "today", label: "Today" },
-  { value: "7d", label: "7 days" },
-  { value: "30d", label: "30 days" },
-  { value: "90d", label: "90 days" },
-];
-
 function money(value: number, currency: string): string {
   return new Intl.NumberFormat("en-PH", {
     style: "currency",
@@ -307,11 +300,8 @@ function BookingMix({ report }: { report: RegularBookingReport }) {
 
 export function AnalyticsView({
   report,
-  period,
-  onPeriodChange,
   courts = [],
   courtId = null,
-  onCourtChange,
   promotions = null,
   onCreatePromotion,
   bookings = [],
@@ -441,15 +431,6 @@ export function AnalyticsView({
         </div>
         <button type="button" className={styles.exportButton} onClick={() => window.print()}><span aria-hidden="true">↗</span>Export owner brief</button>
       </header>
-
-      <div className={styles.insightToolbar}>
-        <div className={styles.compactPeriods} role="group" aria-label="Analytics date range">
-          {PERIODS.map((option) => <button type="button" key={option.value} className={period === option.value ? styles.compactPeriodActive : undefined} aria-pressed={period === option.value} onClick={() => onPeriodChange(option.value)}>{option.label}</button>)}
-        </div>
-        <span>Updated {localInstant(report.asOf, report.timezone)}</span>
-        {onCourtChange && <label><span className={styles.srOnly}>Court</span><select value={courtId || ""} onChange={(event) => onCourtChange(event.target.value || null)}><option value="">All courts</option>{courts.map((court) => <option value={court.id} key={court.id}>{court.name}</option>)}</select></label>}
-        {loading && <span className={styles.refreshing} aria-live="polite">Refreshing…</span>}
-      </div>
 
       {!report.complete && <div className={styles.warning} role="status">This report contains {report.completeness.anomalyCount} source {report.completeness.anomalyCount === 1 ? "anomaly" : "anomalies"}.</div>}
 
