@@ -5989,8 +5989,8 @@
 
 /* Premium public homepage — deliberately isolated from booking and admin UI. */
 .home-route {
-  --home-forest: #0d2820;
-  --home-forest-soft: #173a30;
+  --home-forest: #0b1f3a;
+  --home-forest-soft: #173a66;
   --home-accent: #7eaf43;
   --home-accent-soft: #a8cd79;
   --home-accent-wash: rgba(126, 175, 67, 0.14);
@@ -6029,7 +6029,7 @@
   overflow: hidden;
   background:
     radial-gradient(circle at 82% 22%, rgba(126, 175, 67, 0.065), transparent 27%),
-    linear-gradient(135deg, #0b211b 0%, var(--home-forest) 58%, #102d25 100%);
+    linear-gradient(135deg, #08182d 0%, var(--home-forest) 58%, #12335d 100%);
 }
 
 .home-route .hero::before {
@@ -6148,7 +6148,7 @@
   position: relative;
   z-index: 6;
   border-block: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(4, 22, 17, 0.5);
+  background: rgba(5, 18, 35, 0.66);
 }
 .home-route .home-benefits > div {
   display: grid;
@@ -6285,7 +6285,7 @@
   border-radius: 28px;
   background:
     radial-gradient(circle at 92% 20%, rgba(126, 175, 67, 0.1), transparent 28%),
-    linear-gradient(135deg, #123128, #0b211b);
+    linear-gradient(135deg, #153963, #08182d);
   padding: clamp(46px, 6vw, 76px);
   box-shadow: var(--home-shadow);
 }
@@ -6298,7 +6298,7 @@
 
 .home-route .site-footer {
   border-top: 0;
-  background: #091c17;
+  background: #07172b;
   padding-block: 58px 22px;
   color: #fffefa;
 }
