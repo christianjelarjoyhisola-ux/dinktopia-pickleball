@@ -6888,7 +6888,8 @@
   .home-route .hero-lede { margin-top: 18px; }
   .home-route .hero-lede,
   .home-route .hero-location,
-  .home-route .hero-actions {
+  .home-route .hero-actions,
+  .home-route .hero-proof {
     position: relative;
     top: 12px;
   }
