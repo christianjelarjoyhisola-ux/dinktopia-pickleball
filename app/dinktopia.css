@@ -6419,6 +6419,21 @@
   font-weight: 700;
   letter-spacing: -0.02em;
 }
+.home-route .community-mark > svg {
+  width: 18px;
+  height: 18px;
+}
+.home-route .community-mark-reclub {
+  overflow: hidden;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: #f4f7f3;
+}
+.home-route .community-mark-reclub > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 .home-route .community-card-copy { display: grid; min-width: 0; gap: 4px; }
 .home-route .community-card-copy small {
   color: var(--home-accent-soft);

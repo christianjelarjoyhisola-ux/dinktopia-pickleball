@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { FaFacebookF, FaInstagram, FaTiktok } from "react-icons/fa6";
 import {
   ArrowUpRight,
   CalendarDays,
@@ -3387,22 +3388,22 @@ export function BookingExperience({
             </div>
             <nav className="community-links" aria-label="Dinktopia community channels">
               <a className="community-card community-card-featured" href="https://reclub.co/clubs/@dinktopia-5f6utc" target="_blank" rel="noopener noreferrer" aria-label="Join Dinktopia on Reclub (opens in a new tab)">
-                <span className="community-mark" aria-hidden="true">R</span>
+                <span className="community-mark community-mark-reclub" aria-hidden="true"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7d/8b/99/7d8b99e0-36d8-44ac-546d-b823d5b91eac/reclub-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg" alt="" /></span>
                 <span className="community-card-copy"><small>Play &amp; connect</small><strong>Reclub</strong><span>Join games &amp; community</span></span>
                 <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
               </a>
               <a className="community-card" href="https://www.instagram.com/dinktopiacourthub/" target="_blank" rel="noopener noreferrer" aria-label="Visit Dinktopia on Instagram (opens in a new tab)">
-                <span className="community-mark" aria-hidden="true">IG</span>
+                <span className="community-mark" aria-hidden="true"><FaInstagram /></span>
                 <span className="community-card-copy"><strong>Instagram</strong><span>See court highlights</span></span>
                 <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
               </a>
               <a className="community-card" href="https://www.facebook.com/dinktopia/" target="_blank" rel="noopener noreferrer" aria-label="Visit Dinktopia on Facebook (opens in a new tab)">
-                <span className="community-mark" aria-hidden="true">f</span>
+                <span className="community-mark" aria-hidden="true"><FaFacebookF /></span>
                 <span className="community-card-copy"><strong>Facebook</strong><span>News &amp; announcements</span></span>
                 <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
               </a>
               <a className="community-card" href="https://www.tiktok.com/@dinktopiacourthub" target="_blank" rel="noopener noreferrer" aria-label="Visit Dinktopia on TikTok (opens in a new tab)">
-                <span className="community-mark" aria-hidden="true">TT</span>
+                <span className="community-mark" aria-hidden="true"><FaTiktok /></span>
                 <span className="community-card-copy"><strong>TikTok</strong><span>Watch the latest rallies</span></span>
                 <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
               </a>
