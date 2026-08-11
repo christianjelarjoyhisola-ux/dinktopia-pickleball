@@ -2319,7 +2319,7 @@
   border-radius: 50%;
   background: var(--ink);
   color: var(--lime);
-  font-size: 11px;
+  font-size: 12px;
   opacity: 1;
 }
 
@@ -3612,6 +3612,165 @@
   justify-content: center;
   gap: 10px;
   margin-top: 16px;
+}
+
+/* RallyOS payment outcome: the same calm shell, with status-specific truth. */
+.rally-confirmation-view {
+  width: min(840px, 100%);
+  margin: 0 auto;
+}
+
+.rally-confirmation-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dadbd5;
+  border-radius: 28px;
+  background: #fffefa;
+  padding: clamp(32px, 5vw, 58px);
+  text-align: center;
+  box-shadow: 0 18px 45px rgba(16, 34, 28, 0.07);
+}
+
+.rally-confirmation-card::before {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  background: linear-gradient(90deg, #6558e8, #7dd7b8);
+  content: "";
+}
+
+.rally-confirmation-card.is-pending::before { background: linear-gradient(90deg, #6558e8, #e9b35d); }
+.rally-confirmation-card.is-attention::before { background: linear-gradient(90deg, #ef6a5b, #e9b35d); }
+
+.rally-confirmation-orbit {
+  display: grid;
+  width: 91px;
+  height: 91px;
+  place-items: center;
+  margin: 0 auto 22px;
+  border: 1px solid rgba(22, 132, 91, 0.17);
+  border-radius: 50%;
+  box-shadow: 0 0 0 11px #e4f7f0, 0 0 0 12px rgba(22, 132, 91, 0.1);
+}
+
+.rally-confirmation-orbit > span {
+  display: grid;
+  width: 55px;
+  height: 55px;
+  place-items: center;
+  border-radius: 50%;
+  background: #16845b;
+  color: #fff;
+}
+
+.rally-confirmation-orbit svg { width: 24px; height: 24px; stroke-width: 2.3; }
+.rally-confirmation-card.is-pending .rally-confirmation-orbit { border-color: rgba(101, 88, 232, 0.18); box-shadow: 0 0 0 11px #efedff, 0 0 0 12px rgba(101, 88, 232, 0.1); }
+.rally-confirmation-card.is-pending .rally-confirmation-orbit > span { background: #6558e8; }
+.rally-confirmation-card.is-attention .rally-confirmation-orbit { border-color: rgba(203, 74, 58, 0.18); box-shadow: 0 0 0 11px #fff0ed, 0 0 0 12px rgba(203, 74, 58, 0.1); }
+.rally-confirmation-card.is-attention .rally-confirmation-orbit > span { background: #cb4a3a; }
+
+.rally-confirmation-kicker {
+  margin: 0 0 9px;
+  color: #6558e8;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.rally-confirmation-card.is-pending .rally-confirmation-kicker { color: #765a16; }
+.rally-confirmation-card.is-attention .rally-confirmation-kicker { color: #a6382c; }
+
+.rally-confirmation-card > h3 {
+  margin: 0;
+  color: #0d1f19;
+  font-size: clamp(29px, 4vw, 42px);
+  font-weight: 780;
+  letter-spacing: -0.052em;
+  line-height: 1.06;
+}
+
+.rally-confirmation-lead {
+  max-width: 560px;
+  margin: 14px auto 0;
+  color: #68756f;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.rally-confirmation-reference {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  width: min(360px, 100%);
+  margin: 26px auto 0;
+  border: 1px dashed #c9cbc5;
+  border-radius: 12px;
+  background: #fbfaf6;
+  padding: 12px 14px;
+  text-align: left;
+}
+
+.rally-confirmation-reference span { color: #77817c; font-size: 12px; }
+.rally-confirmation-reference strong { color: #0d1f19; font-size: 15px; letter-spacing: 0.02em; }
+.rally-confirmation-reference button,
+.rally-confirmation-again {
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  color: #6558e8;
+  padding: 2px 0;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.rally-confirmation-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 28px;
+  border-block: 1px solid #dedfd9;
+}
+
+.rally-confirmation-details > div {
+  display: grid;
+  min-width: 0;
+  justify-items: center;
+  gap: 4px;
+  padding: 20px 18px;
+}
+
+.rally-confirmation-details > div:not(:last-child) { border-right: 1px solid #dedfd9; }
+.rally-confirmation-details svg { width: 18px; height: 18px; margin-bottom: 3px; color: #6558e8; stroke-width: 1.9; }
+.rally-confirmation-details span { color: #8a928e; font-size: 12px; }
+.rally-confirmation-details strong { overflow-wrap: anywhere; color: #10231c; font-size: 12px; line-height: 1.45; }
+
+.rally-confirmation-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+  margin-top: 24px;
+}
+
+.rally-confirmation-actions .button { min-height: 44px; border-radius: 12px; padding: 0 19px; font-size: 13px; }
+.rally-confirmation-actions svg { width: 17px; height: 17px; }
+.rally-confirmation-primary { border-color: #6558e8; background: #6558e8; color: #fff; box-shadow: 0 9px 20px rgba(101, 88, 232, 0.2); }
+.rally-confirmation-primary:hover { border-color: #5448d6; background: #5448d6; }
+.rally-confirmation-again { display: inline-block; margin-top: 18px; color: #66736d; }
+
+@media (max-width: 680px) {
+  .rally-confirmation-card { border-radius: 22px; padding: 36px 20px 28px; }
+  .rally-confirmation-card > h3 { font-size: 29px; }
+  .rally-confirmation-details { grid-template-columns: 1fr; text-align: left; }
+  .rally-confirmation-details > div { grid-template-columns: 30px 1fr; justify-items: start; padding: 15px 10px; }
+  .rally-confirmation-details > div:not(:last-child) { border-right: 0; border-bottom: 1px solid #dedfd9; }
+  .rally-confirmation-details svg { grid-row: 1 / 3; align-self: center; margin: 0; }
+  .rally-confirmation-actions { flex-direction: column; }
+  .rally-confirmation-actions .button { width: 100%; }
+  .rally-confirmation-reference { grid-template-columns: 1fr auto; }
+  .rally-confirmation-reference span { grid-column: 1 / -1; }
 }
 
 .manage-shell {

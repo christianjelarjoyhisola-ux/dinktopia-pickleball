@@ -2,6 +2,15 @@
 
 import Image from "next/image";
 import {
+  CalendarDays,
+  Check,
+  Clock3,
+  Grid2X2,
+  Share2,
+  TriangleAlert,
+  WalletCards,
+} from "lucide-react";
+import {
   CSSProperties,
   FormEvent,
   Fragment,
@@ -110,6 +119,7 @@ export type BookingRecord = {
   items?: BookingSelection[];
   customer: CustomerDetails;
   detailsComplete?: boolean;
+  paymentReviewState?: "auto_approved" | "manual_review" | "pending" | "short_payment" | "rejected";
 };
 
 export type BookingHoldRequest = {
@@ -1199,11 +1209,15 @@ const platformAdapter: BookingAdapter = {
       : typeof receipt.outcome === "string"
         ? receipt.outcome
         : "manual_review";
+    const paymentReviewState = (
+      ["auto_approved", "manual_review", "pending", "short_payment", "rejected"] as const
+    ).find((status) => status === verificationStatus) ?? "manual_review";
     const record = {
       ...parsed.record,
       status: verificationStatus === "auto_approved"
         ? "confirmed" as const
         : mappedBookingStatus(receiptBooking?.status, "payment_review"),
+      paymentReviewState,
     };
     try {
       sessionStorage.setItem(storageKey, JSON.stringify({ ...parsed, record }));
@@ -2173,6 +2187,58 @@ export function BookingExperience({
     }
   }
 
+  function addConfirmationToCalendar() {
+    if (!confirmedBooking || confirmedBooking.status !== "confirmed") return;
+    const sessions = confirmedBooking.items?.length ? confirmedBooking.items : selectedSlots;
+    const earliestHour = sessions.length
+      ? Math.min(...sessions.map((item) => item.startHour))
+      : confirmedBooking.startHour;
+    const latestHour = sessions.length
+      ? Math.max(...sessions.map((item) => item.startHour + item.durationHours))
+      : confirmedBooking.startHour + confirmedBooking.durationHours;
+    const calendarDate = confirmedBooking.date.replaceAll("-", "");
+    const courtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || "Dinktopia court";
+    const escapeCalendar = (value: string) => value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll(";", "\\;").replaceAll("\n", "\\n");
+    const calendar = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Dinktopia//Court Booking//EN",
+      "BEGIN:VEVENT",
+      `UID:${escapeCalendar(confirmedBooking.reference)}@dinktopia.pages.dev`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`,
+      `DTSTART;TZID=Asia/Manila:${calendarDate}T${String(earliestHour).padStart(2, "0")}0000`,
+      `DTEND;TZID=Asia/Manila:${calendarDate}T${String(latestHour).padStart(2, "0")}0000`,
+      `SUMMARY:${escapeCalendar(`Pickleball at Dinktopia · ${courtNames}`)}`,
+      `DESCRIPTION:${escapeCalendar(`Booking reference: ${confirmedBooking.reference}`)}`,
+      `LOCATION:${escapeCalendar(bootstrap?.tenant.locationLabel || "Dinktopia Court Hub")}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `dinktopia-${confirmedBooking.reference.toLowerCase()}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function shareConfirmation() {
+    if (!confirmedBooking) return;
+    const shareText = `Dinktopia booking ${confirmedBooking.reference} · ${selectedBookingDateLabel || confirmedBooking.date} · ${selectedCourtCount} court${selectedCourtCount === 1 ? "" : "s"}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Dinktopia court booking", text: shareText, url: window.location.origin + "/book" });
+      } else {
+        await navigator.clipboard?.writeText(`${shareText}\n${window.location.origin}/book`);
+        setLiveMessage("Booking details copied. Share them with your players.");
+      }
+    } catch {
+      // Closing the native share sheet should leave the confirmation unchanged.
+    }
+  }
+
   function clearHoldForReselection(message: string) {
     try {
       sessionStorage.removeItem("dinktopia:active-hold");
@@ -2293,6 +2359,19 @@ export function BookingExperience({
   }
 
   const stepLabels = ["Courts", "Details", "Payment"];
+  const confirmationApproved = confirmedBooking?.status === "confirmed";
+  const confirmationNeedsAttention = confirmedBooking?.paymentReviewState === "short_payment" || confirmedBooking?.paymentReviewState === "rejected";
+  const confirmationTone = !isLive
+    ? "is-preview"
+    : confirmationApproved
+      ? "is-approved"
+      : confirmationNeedsAttention
+        ? "is-attention"
+        : "is-pending";
+  const confirmationCourtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || "Court details pending";
+  const confirmationEarliestHour = selectedSlots.length ? Math.min(...selectedSlots.map((item) => item.startHour)) : confirmedBooking?.startHour ?? 0;
+  const confirmationLatestHour = selectedSlots.length ? Math.max(...selectedSlots.map((item) => item.startHour + item.durationHours)) : (confirmedBooking?.startHour ?? 0) + (confirmedBooking?.durationHours ?? 1);
+  const confirmationTimeLabel = selectedSlots.length ? formatHourRange(confirmationEarliestHour, confirmationLatestHour) : "Time in booking record";
   const gallerySection = (
     <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
       <div className="site-container">
@@ -3161,37 +3240,64 @@ export function BookingExperience({
                 )}
 
                 {step === 4 && confirmedBooking && (
-                  <div className="confirmation-card" role="status">
-                    <div className="confirmation-burst" aria-hidden="true"><span>✓</span></div>
-                    <p className="eyebrow eyebrow-dark">{!isLive ? "Preview complete" : confirmedBooking.status === "confirmed" ? "Booking confirmed" : "Receipt received"}</p>
-                    <h3>{!isLive ? "You completed the preview." : confirmedBooking.status === "confirmed" ? "Your court is confirmed." : "Your rally is on the board."}</h3>
-                    <p className="confirmation-lede">{!isLive ? <>No real reservation or payment was created. This reference is for the current browser preview only.</> : confirmedBooking.status === "confirmed" ? <>Payment was accepted and booking <strong>{confirmedBooking.reference}</strong> is confirmed. Use <strong>{confirmedBooking.customer.email}</strong> to manage it.</> : <>The receipt for <strong>{confirmedBooking.reference}</strong> was received and is awaiting review. Use <strong>{confirmedBooking.customer.email}</strong> to check its status.</>}</p>
-                    <div className="confirmation-reference"><span>BOOKING REFERENCE</span><strong>{confirmedBooking.reference}</strong><button type="button" onClick={() => navigator.clipboard?.writeText(confirmedBooking.reference)}>Copy</button></div>
-                    <div className="confirmation-details">
-                      <div><span>Courts</span><strong>{selectedCourtCount}</strong></div>
-                      <div><span>Date</span><strong>{selectedBookingDateLabel || confirmedBooking.date}</strong></div>
-                      <div><span>Play</span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"}</strong></div>
-                      <div><span>Total</span><strong>{peso(confirmedBooking.amount)}</strong></div>
-                    </div>
-                    {groupedSelections.length > 0 && (
-                      <ul className="confirmation-sessions" aria-label="Confirmed court sessions">
-                        {groupedSelections.map((group) => (
-                          <li key={`${group.court.id}:${group.startHour}`}>
-                            <strong>{group.court.name}</strong>
-                            <span>{formatHourRange(group.startHour, group.endHour)} · {group.courtHours} hour{group.courtHours === 1 ? "" : "s"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="confirmation-next"><span className="status-pulse" aria-hidden="true" /><div><strong>{!isLive ? "Preview reminder" : confirmedBooking.status === "confirmed" ? "You’re booked" : "What happens next?"}</strong><p>{!isLive ? "Do not travel to the venue or send money based on this preview." : confirmedBooking.status === "confirmed" ? "Keep this reference handy for status checks or owner-assisted changes." : "The club will review the submitted receipt. Keep this reference handy to check status."}</p></div></div>
-                    <div className="confirmation-actions">
-                      <button className="button button-blue" type="button" onClick={() => {
-                        setLookupReference(confirmedBooking.reference);
-                        setLookupEmail(confirmedBooking.customer.email);
-                        openManage();
-                      }}>{isLive ? "Manage this booking" : "Inspect preview status"}</button>
-                      <button className="button button-outline" type="button" onClick={resetBooking}>Book another court</button>
-                    </div>
+                  <div className="rally-confirmation-view" role="status" aria-live="polite">
+                    <article className={`rally-confirmation-card ${confirmationTone}`}>
+                      <div className="rally-confirmation-orbit" aria-hidden="true">
+                        <span>{confirmationNeedsAttention ? <TriangleAlert /> : confirmationApproved || !isLive ? <Check /> : <Clock3 />}</span>
+                      </div>
+                      <p className="rally-confirmation-kicker">
+                        {!isLive ? "Preview complete" : confirmationApproved ? "Payment received" : confirmationNeedsAttention ? "Payment needs attention" : "Receipt submitted"}
+                      </p>
+                      <h3>
+                        {!isLive
+                          ? "You completed the preview."
+                          : confirmationApproved
+                            ? selectedCourtCount === 1 ? "Your court is ready." : "Your courts are ready."
+                            : confirmationNeedsAttention
+                              ? "Please review your payment."
+                              : "Dinktopia is reviewing your receipt."}
+                      </h3>
+                      <p className="rally-confirmation-lead">
+                        {!isLive
+                          ? "No real reservation or payment was created. This reference is for this browser preview only."
+                          : confirmationApproved
+                            ? "Your payment is verified and your booking is confirmed. We’ll see you on court."
+                            : confirmationNeedsAttention
+                              ? "The submitted receipt could not be approved. Check your payment details and use your booking reference when contacting the Dinktopia team."
+                              : "Your receipt was submitted successfully. The Dinktopia team is reviewing it now, and your booking will remain pending until payment is approved."}
+                      </p>
+
+                      <div className="rally-confirmation-reference">
+                        <span>Booking reference</span>
+                        <strong>{confirmedBooking.reference}</strong>
+                        <button type="button" onClick={() => {
+                          void navigator.clipboard?.writeText(confirmedBooking.reference);
+                          setLiveMessage(`Booking reference ${confirmedBooking.reference} copied.`);
+                        }}>Copy</button>
+                      </div>
+
+                      <div className="rally-confirmation-details" aria-label="Booking summary">
+                        <div><CalendarDays aria-hidden="true" /><span>Date &amp; time</span><strong>{selectedBookingDateLabel || confirmedBooking.date} · {confirmationTimeLabel}</strong></div>
+                        <div><Grid2X2 aria-hidden="true" /><span>{selectedCourtCount === 1 ? "Court" : "Courts"}</span><strong>{confirmationCourtNames}</strong></div>
+                        <div><WalletCards aria-hidden="true" /><span>Paid with GCash</span><strong>{peso(confirmedBooking.amount)} · {confirmationApproved ? "Payment verified" : confirmationNeedsAttention ? "Needs attention" : "Review pending"}</strong></div>
+                      </div>
+
+                      <div className="rally-confirmation-actions">
+                        {confirmationApproved && isLive ? (
+                          <>
+                            <button className="button rally-confirmation-primary" type="button" onClick={addConfirmationToCalendar}><CalendarDays aria-hidden="true" /> Add to calendar</button>
+                            <button className="button button-outline" type="button" onClick={() => void shareConfirmation()}><Share2 aria-hidden="true" /> Share booking</button>
+                          </>
+                        ) : (
+                          <button className="button rally-confirmation-primary" type="button" onClick={() => {
+                            setLookupReference(confirmedBooking.reference);
+                            setLookupEmail(confirmedBooking.customer.email);
+                            openManage();
+                          }}>{isLive ? "Check booking status" : "Inspect preview status"}</button>
+                        )}
+                      </div>
+                      <button className="rally-confirmation-again" type="button" onClick={resetBooking}>Book another court</button>
+                    </article>
                   </div>
                 )}
               </div>

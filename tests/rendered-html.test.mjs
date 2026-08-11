@@ -4496,8 +4496,12 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     booking,
     /\{step === 3 && \([\s\S]*?className="booking-compact-title"[\s\S]*?Secure checkout[\s\S]*?<h2>Pay with \{paymentLabel\}<\/h2>/,
   );
-  assert.match(stepFour, /className="confirmation-card" role="status"/);
-  assert.match(stepFour, /confirmedBooking\.status === "confirmed"/);
+  assert.match(stepFour, /className="rally-confirmation-view" role="status" aria-live="polite"/);
+  assert.match(stepFour, /className=\{`rally-confirmation-card \$\{confirmationTone\}`\}/);
+  assert.match(stepFour, /Your court is ready\./);
+  assert.match(stepFour, /Dinktopia is reviewing your receipt\./);
+  assert.match(stepFour, /Payment needs attention/);
+  assert.match(stepFour, /Add to calendar[\s\S]*?Share booking/);
   assert.match(
     stepOne,
     /\{selectedSlots\.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours\.<\/p>\}/,
