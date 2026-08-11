@@ -116,6 +116,10 @@ function normalized(value: string): string {
   return value.trim().toLocaleLowerCase("en");
 }
 
+function isAllCourtBlock(block: CourtBlock): boolean {
+  return normalized(block.court) === "all courts";
+}
+
 function minutesFromClock(value: string | null): number {
   if (!value) return Number.MAX_SAFE_INTEGER;
   const match = CLOCK_PATTERN.exec(value.trim());
@@ -229,21 +233,10 @@ function courtGroups(
   const selectedCourts = courtFilter === "all"
     ? [...courts].sort((left, right) => left.sortOrder - right.sortOrder)
     : courts.filter((court) => court.id === courtFilter);
-  const allCourtBlocks = blocks.filter((block) => normalized(block.court) === "all courts");
+  const allCourtBlocks = blocks.filter(isAllCourtBlock);
   const matchedBookingIds = new Set<string>();
   const matchedBlockIds = new Set<string>(allCourtBlocks.map((block) => block.id));
   const groups: CourtGroup[] = [];
-
-  if (allCourtBlocks.length) {
-    groups.push({
-      key: "all-courts",
-      name: "All courts",
-      detail: "Venue-wide restriction",
-      status: "all",
-      global: true,
-      entries: sortEntries(allCourtBlocks.map(blockEntry)),
-    });
-  }
 
   for (const court of selectedCourts) {
     const courtBookings = bookings.filter((booking) => booking.courtId === court.id);
@@ -257,6 +250,7 @@ function courtGroups(
       status: court.status,
       entries: sortEntries([
         ...courtBookings.map(bookingEntry),
+        ...allCourtBlocks.map(blockEntry),
         ...courtBlocks.map(blockEntry),
       ]),
     });
@@ -470,7 +464,15 @@ export function CalendarView({
   );
   const holdCount = visibleBookings.filter((booking) => HOLD_STATUSES.has(booking.status)).length;
   const bookingCount = visibleBookings.length - holdCount;
-  const blockCount = visibleBlocks.length;
+  const visibleCourtCount = Math.max(
+    effectiveCourtFilter === "all" ? courts.length : selectedCourt ? 1 : 0,
+    1,
+  );
+  const projectedBlockCount = visibleBlocks.reduce(
+    (count, block) => count + (isAllCourtBlock(block) ? visibleCourtCount : 1),
+    0,
+  );
+  const blockCount = projectedBlockCount;
   const resultCount = bookingCount + holdCount + blockCount;
   const dateHeading = readableDate(selectedDate, {
     weekday: "long",
@@ -497,9 +499,15 @@ export function CalendarView({
     return { start, end, slotCount, hours };
   }, [courts, groups]);
   const bookedMinutes = visibleBookings.reduce((sum, booking) => sum + durationMinutes(booking.duration), 0);
+  const blockedMinutes = visibleBlocks.reduce((sum, block) => {
+    const range = displayTimeRange(block.time);
+    const minutes = range ? Math.max(0, range.end - range.start) : Math.max(0, timeline.end - timeline.start);
+    return sum + minutes * (isAllCourtBlock(block) ? visibleCourtCount : 1);
+  }, 0);
   const paidRevenue = visibleBookings.filter((booking) => booking.payment === "paid").reduce((sum, booking) => sum + booking.amount, 0);
   const totalInventoryMinutes = Math.max(0, timeline.end - timeline.start) * Math.max(groups.filter((group) => !group.global).length, 1);
-  const openCourtHours = Math.max(0, (totalInventoryMinutes - bookedMinutes) / 60);
+  const openCourtHours = Math.max(0, (totalInventoryMinutes - bookedMinutes - blockedMinutes) / 60);
+  const blockedCourtHours = blockedMinutes / 60;
 
   const timelineEntryStyle = (entry: AgendaEntry): CSSProperties => {
     const rawStart = entry.kind === "block" ? displayTimeRange(entry.block.time)?.start ?? timeline.start : entry.startMinutes;
@@ -664,7 +672,7 @@ export function CalendarView({
           <section className={styles.scheduleSummary} aria-label="Schedule totals">
             <article><span>Booked court hours</span><strong>{(bookedMinutes / 60).toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{bookingCount} confirmed booking{bookingCount === 1 ? "" : "s"}</small></article>
             <article><span>Paid booking value</span><strong>{amountLabel(paidRevenue, currency)}</strong><small>Server-returned paid bookings</small></article>
-            <article><span>Open inventory</span><strong>{openCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>Before court-block overlap</small></article>
+            <article><span>Open inventory</span><strong>{openCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{blockedCourtHours ? `After ${blockedCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })} blocked court-hours` : "No court blocks today"}</small></article>
             <button type="button" onClick={onOpenBlocks} disabled={!canBlock}><span><Ban aria-hidden="true" size={17} /></span><strong>Block court time</strong><small>Take a court out of inventory</small></button>
           </section>
         </>
