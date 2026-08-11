@@ -61,7 +61,6 @@ tenant UUIDs or expose a service-role key.
 - Cancellation, refund, no-show, weather, and rescheduling terms
 - Owner Auth user ID, staff roster, and role assignments
 - Reply-to email, phone, sender identity, and payment/remittance details
-- Turnstile site configuration and approved origins
 
 Until those values are supplied, keep the tenant setup-required and the site
 private or no-index.

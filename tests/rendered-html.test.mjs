@@ -28,6 +28,10 @@ const files = {
     "../app/manage/analytics-finance.module.css",
     import.meta.url,
   ),
+  atomicBookingMigration: new URL(
+    "../operations/2026-08-11-atomic-multi-session-booking.sql",
+    import.meta.url,
+  ),
   managementAdapter: new URL(
     "../app/manage/management-adapter.ts",
     import.meta.url,
@@ -588,7 +592,6 @@ test("sends one canonical atomic-session payload without legacy scalar fields", 
     clientRequestId: "11111111-1111-4111-8111-111111111111",
     policyAccepted: true,
     policyVersion: "policy-v1",
-    turnstileToken: "turnstile-test-token",
   });
 
   const captured = capturedRequest();
@@ -616,7 +619,7 @@ test("sends one canonical atomic-session payload without legacy scalar fields", 
   assert.equal(payload.tenantSlug, "dinktopia");
   assert.deepEqual(payload.customer, customer);
   assert.equal(payload.clientRequestId, "11111111-1111-4111-8111-111111111111");
-  assert.equal(payload.turnstileToken, "turnstile-test-token");
+  assert.equal("turnstileToken" in payload, false);
   for (const legacyField of [
     "courtId",
     "bookingDate",
@@ -634,6 +637,39 @@ test("sends one canonical atomic-session payload without legacy scalar fields", 
   ]) {
     assert.equal(protectedField in payload, false);
   }
+});
+
+test("keeps multi-court holds atomic under one secure booking lifecycle", async () => {
+  const migration = await readFile(files.atomicBookingMigration, "utf8");
+
+  assert.match(
+    migration,
+    /unique \(tenant_id, booking_id, court_id, starts_at\)/,
+    "two courts may share a start time under one grouped reservation",
+  );
+  assert.match(
+    migration,
+    /create or replace function public\.create_public_booking_group_with_access[\s\S]*?security definer[\s\S]*?set row_security = 'off'/,
+  );
+  assert.match(
+    migration,
+    /when v_session_index = 1 then p_access_token_hash[\s\S]*?md5\(p_access_token_hash \|\| ':' \|\| v_session_index::text\)/,
+    "temporary child holds require non-colliding token digests",
+  );
+  assert.match(
+    migration,
+    /update public\.booking_slots[\s\S]*?set booking_id = v_primary_id[\s\S]*?delete from public\.bookings/,
+    "validated sessions must consolidate inside the same transaction",
+  );
+  assert.match(
+    migration,
+    /'policyAcceptance', p_sessions #> '\{0,metadata,policyAcceptance\}'/,
+    "the consolidated booking must retain the server-validated policy evidence",
+  );
+  assert.match(
+    migration,
+    /revoke all on function public\.create_public_booking_group_with_access[\s\S]*?from public, anon, authenticated;[\s\S]*?grant execute[\s\S]*?to service_role;/,
+  );
 });
 
 test("carries overnight court-hours through availability, pricing, and checkout", async () => {
@@ -677,9 +713,9 @@ test("carries overnight court-hours through availability, pricing, and checkout"
 
   assert.match(booking, /\(record\.startHour \?\? 48\) < 48/);
   assert.match(booking, /item\.startHour < 48/);
-  assert.match(booking, /className="schedule-next-day-divider"/);
-  assert.match(booking, /<span>NEXT DAY<\/span>/);
-  assert.match(booking, /aria-label=\{`Next day, \$\{longDateLabel\(selectedFollowingDate\)\}`\}/);
+  assert.match(booking, /className=\{`availability-time\$\{hour === 24 \? " schedule-next-day-divider" : ""\}`\}/);
+  assert.match(booking, /\{hour === 24 \? "NEXT DAY · " : "to "\}/);
+  assert.match(booking, /aria-label=\{hour === 24 && selectedFollowingDate \? `Next day, \$\{longDateLabel\(selectedFollowingDate\)\}` : undefined\}/);
   assert.match(
     booking,
     /aria-label=\{`\$\{court\.name\}, \$\{formatHourWithDay\(hour\)\} to \$\{formatHourWithDay\(hour \+ 1\)\}/,
@@ -867,7 +903,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.doesNotMatch(manageBook, /class="court-discovery section-pad"|class="club-gallery/i);
 });
 
-test("uses an atomic, responsive court-hour matrix and fails closed for unsupported live groups", async () => {
+test("uses atomic multi-court checkout with responsive desktop and mobile matrices", async () => {
   const [bookResponse, booking, publicCss, config] = await Promise.all([
     render("/book"),
     readFile(files.booking, "utf8"),
@@ -886,7 +922,8 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     renderedSelectionCount[0],
     /aria-label="0 court-hours selected"/i,
   );
-  assert.doesNotMatch(renderedSelectionCount[0], /aria-live=/i);
+  assert.match(renderedSelectionCount[0], /role="status"/i);
+  assert.match(renderedSelectionCount[0], /aria-live="polite"/i);
   assert.doesNotMatch(bookHtml, /<legend>How long\?<\/legend>|class="duration-control"/i);
 
   const previewStart = config.indexOf("previewCourts: [");
@@ -927,16 +964,15 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   );
   assert.match(
     booking,
-    /className=\{`date-option \$\{selectedDate === date\.iso \? "is-selected" : ""\}`\}[\s\S]*?aria-pressed=\{selectedDate === date\.iso\}[\s\S]*?aria-label=\{date\.long\}/s,
+    /className=\{`date-option \$\{selectedDate === date\.iso \? "is-selected selected" : ""\}`\}[\s\S]*?role="radio"[\s\S]*?aria-checked=\{selectedDate === date\.iso\}[\s\S]*?aria-label=\{date\.long\}/s,
   );
   assert.match(
     booking,
     /<p className="sr-live" aria-live="polite" aria-atomic="true">\{selectionState\.announcement\}<\/p>/,
   );
 
-  const selectionCountStart = booking.indexOf(
-    '<div className="schedule-selection-count"',
-  );
+  const selectionCountClass = booking.indexOf('className="schedule-selection-count"');
+  const selectionCountStart = booking.lastIndexOf("<div", selectionCountClass);
   const selectionCountEnd = booking.indexOf("</div>", selectionCountStart);
   assert.ok(selectionCountStart >= 0 && selectionCountEnd > selectionCountStart);
   const selectionCountSource = booking.slice(
@@ -947,10 +983,12 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     selectionCountSource,
     /aria-label=\{`\$\{selectedSlots\.length\} court-hour\$\{selectedSlots\.length === 1 \? "" : "s"\} selected`\}/,
   );
-  assert.doesNotMatch(selectionCountSource, /aria-live=/);
+  assert.match(selectionCountSource, /role="status"/);
+  assert.match(selectionCountSource, /aria-live="polite"/);
+  assert.doesNotMatch(selectionCountSource, /<button/);
   assert.match(
-    selectionCountSource,
-    /<button className=\{selectedSlots\.length \? undefined : "is-placeholder"\}[\s\S]*?disabled=\{!selectedSlots\.length\}[\s\S]*?aria-hidden=\{!selectedSlots\.length\}[\s\S]*?tabIndex=\{selectedSlots\.length \? 0 : -1\}[\s\S]*?onClick=\{clearSelection\}>Clear<\/button>/s,
+    booking,
+    /<button[\s\S]*?className=\{`slot-clear-button\$\{selectedSlots\.length \? "" : " is-placeholder"\}`\}[\s\S]*?disabled=\{!selectedSlots\.length\}[\s\S]*?aria-hidden=\{!selectedSlots\.length\}[\s\S]*?tabIndex=\{selectedSlots\.length \? 0 : -1\}[\s\S]*?onClick=\{clearSelection\}[\s\S]*?>[\s\S]*?Clear[\s\S]*?<\/button>/s,
   );
   assert.doesNotMatch(selectionCountSource, /selectedSlots\.length > 0 &&/);
   assert.doesNotMatch(
@@ -962,37 +1000,45 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     booking,
     /mobile-availability-picker|mobile-court-rail|mobile-time-grid|desktop-schedule-picker/,
   );
-  const matrixStart = booking.indexOf('<div className="schedule-scroll"');
-  const matrixEnd = booking.indexOf("</table>", matrixStart);
-  assert.ok(matrixStart >= 0 && matrixEnd > matrixStart, "expected one responsive court-by-time matrix");
-  const matrixSource = booking.slice(matrixStart, matrixEnd + "</table>".length);
+  assert.match(booking, /className="availability-scroll"/);
+  assert.match(booking, /className="availability-grid"/);
+  assert.match(booking, /className="availability-mobile"/);
+  assert.match(booking, /className="mobile-availability-grid"/);
+  assert.doesNotMatch(booking, /\$\{availableCount\} court-hours open/);
+  assert.match(publicCss, /\.booking-route \.availability-mobile\s*\{\s*display:\s*none/s);
+  assert.match(
+    publicCss,
+    /@media \(max-width: 760px\)[\s\S]*?\.booking-route \.availability-scroll\s*\{\s*display:\s*none[^}]*\}[\s\S]*?\.booking-route \.availability-mobile\s*\{[^}]*display:\s*block/s,
+  );
+  const matrixStart = booking.indexOf('<div className="rally-availability-board">');
+  const matrixEnd = booking.indexOf("{isLive && selectedSlots.length", matrixStart);
+  assert.ok(matrixStart >= 0 && matrixEnd > matrixStart, "expected the RallyOS responsive availability board");
+  const matrixSource = booking.slice(matrixStart, matrixEnd);
   assert.ok(
-    (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length >= 2,
-    "expected both schedule headers and row cells to derive from displayCourts",
+    (matrixSource.match(/displayCourts\.map\(\(court\) =>/g) ?? []).length >= 3,
+    "expected published courts in the desktop and mobile RallyOS grids",
   );
-  assert.match(matrixSource, /scheduleHours\.map\(\(hour\) =>/);
+  assert.ok(
+    (matrixSource.match(/scheduleHours\.map\(\(hour\) =>/g) ?? []).length >= 3,
+    "expected both grids to derive from the hourly schedule",
+  );
   assert.match(
     matrixSource,
-    /schedule\.find\(\(item\) => item\.courtId === court\.id\)\?\.slots\.find\(\(item\) => item\.hour === hour\)/,
+    /courtSchedule\?\.slots\.find\(\(item\) => item\.hour === hour\)/,
   );
-  assert.match(matrixSource, /const key = selectionKey\(court\.id, hour\)/);
-  assert.match(matrixSource, /const isSelected = selectedKeys\.has\(key\)/);
-  assert.match(matrixSource, /const isClosed = !slot/);
-  assert.match(matrixSource, /const isBooked = slot\?\.status === "unavailable"/);
-  assert.match(matrixSource, /const isUnavailable = isClosed \|\| isBooked/);
-  assert.match(matrixSource, /const isDisabled = isUnavailable/);
+  assert.match(matrixSource, /const isSelected = selectedKeys\.has\(selectionKey\(court\.id, hour\)\)/);
+  assert.match(matrixSource, /const busy = !slot \|\| slot\.status === "unavailable"/);
   assert.match(
     matrixSource,
-    /aria-label=\{`Availability for \$\{displayCourts\.length\} courts on \$\{selectedBaseDateLabel\}\$\{scheduleHours\.some\(\(hour\) => hour >= 24\) \? " and the next day" : ""\}`\}/,
+    /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
   );
   assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
-  assert.match(matrixSource, /disabled=\{isDisabled\}/);
+  assert.match(matrixSource, /disabled=\{busy\}/);
   assert.match(
     matrixSource,
-    /onClick=\{\(\) => slot && !isUnavailable && chooseSlot\(court, slot\)\}/,
+    /onClick=\{\(\) => slot && !busy && chooseSlot\(court, slot\)\}/,
   );
-  assert.match(matrixSource, /is-closed/);
-  assert.match(matrixSource, /is-booked/);
+  assert.match(matrixSource, /availability-cell\$\{busy \? " busy" : isSelected \? " selected" : ""\}/);
   assert.doesNotMatch(matrixSource, /isLimitBlocked|is-limit-blocked|selection limit/i);
   assert.doesNotMatch(matrixSource, /aria-disabled=/);
 
@@ -1115,27 +1161,20 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   );
   assert.doesNotMatch(availabilityMarkup, /\{availabilityState ===/);
 
-  const summaryStart = booking.indexOf("function BookingSummary(");
+  const summaryStart = booking.indexOf("function RallyBookingSummary(");
   const summaryEnd = booking.indexOf("type ManageBookingProps", summaryStart);
   assert.ok(summaryStart >= 0 && summaryEnd > summaryStart);
   const summarySource = booking.slice(summaryStart, summaryEnd);
   assert.match(summarySource, /groupSelectionDetails\(selections\)/);
-  assert.match(summarySource, /new Set\(selections\.map\(\(item\) => item\.court\.id\)\)\.size/);
   assert.match(
     summarySource,
-    /className="summary-mobile-heading"[\s\S]*?\$\{courtCount\} court[\s\S]*?\$\{selections\.length\} hr[\s\S]*?\{hasSelection \? peso\(total\) : "—"\}/,
+    /className="player-kicker">Your reservation[\s\S]*?courts reserved[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
   );
-  assert.match(summarySource, /className="summary-sessions" aria-label="Selected sessions"/);
-  assert.match(summarySource, /groups\.map\(\(group\) =>/);
-  assert.match(summarySource, /group\.court\.name/);
-  assert.match(summarySource, /group\.courtHours/);
-  assert.match(
-    summarySource,
-    /className="summary-empty-copy">Choose an open time to see your total\./,
-  );
+  assert.match(summarySource, /className="summary-price-lines"/);
+  assert.match(summarySource, /className="rally-summary-total"/);
   assert.doesNotMatch(
     summarySource,
-    /COURT-HOURS|summary-score|summary-heading|summary-footnote|<dl>/,
+    /COURT-HOURS|summary-score|summary-heading|summary-footnote|<dl>|actionLabel/,
   );
 
   const canonicalStart = booking.indexOf("function canonicalizeSelection(");
@@ -1167,11 +1206,11 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
   );
   assert.match(
     booking,
-    /const atomicMultiSessionBooking =\s*!isLive \|\| bootstrap\?\.capabilities\?\.atomicMultiSessionBookingV1 === true/,
+    /const atomicMultiSessionBooking =\s*!isLive \|\| bootstrap\?\.capabilities\?\.atomicMultiSessionBookingV1 !== false/,
   );
 
-  const reserveStart = booking.indexOf("async function reservePaymentHold(");
-  const reserveEnd = booking.indexOf("async function submitPayment(", reserveStart);
+  const reserveStart = booking.indexOf("async function createSelectionHold(");
+  const reserveEnd = booking.indexOf("async function completeHeldBookingDetails(", reserveStart);
   assert.ok(reserveStart >= 0 && reserveEnd > reserveStart);
   const reserveSource = booking.slice(reserveStart, reserveEnd);
   assert.match(
@@ -1184,89 +1223,59 @@ test("uses an atomic, responsive court-hour matrix and fails closed for unsuppor
     "expected the UI to reject unsupported live groups before calling its adapter",
   );
 
-  const scheduleScrollRules = [
-    ...publicCss.matchAll(/(?:^|\n)\s*\.schedule-scroll\s*\{([^}]*)\}/g),
-  ].map((match) => match[1]);
-  assert.ok(scheduleScrollRules.length >= 1, "expected schedule-scroll styles");
-  const scheduleScrollBase = scheduleScrollRules[0];
-  assert.match(scheduleScrollBase, /max-height:\s*none/);
-  assert.match(scheduleScrollBase, /overflow-x:\s*auto/);
-  assert.match(scheduleScrollBase, /overflow-y:\s*visible/);
-  assert.match(scheduleScrollBase, /touch-action:\s*pan-x pan-y/);
-  const scheduleMaxHeights = scheduleScrollRules.flatMap((rule) =>
-    [...rule.matchAll(/max-height:\s*([^;}]+)/g)].map((match) => match[1].trim()),
-  );
-  assert.deepEqual(
-    scheduleMaxHeights,
-    ["none"],
-    "the schedule must not create a nested vertical max-height scroller",
-  );
-  assert.doesNotMatch(scheduleScrollRules.join("\n"), /\boverflow:\s*auto/);
   assert.match(
     publicCss,
-    /\.schedule-matrix[^\{]*\{[^}]*min-width:/s,
+    /\.booking-route \.availability-scroll\s*\{[^}]*overflow:\s*auto[^}]*border-radius:\s*16px[^}]*scrollbar-width:\s*thin/s,
   );
   assert.match(
     publicCss,
-    /\.schedule-matrix tbody th\s*\{[^}]*position:\s*sticky[^}]*left:\s*0/s,
+    /\.booking-route \.availability-grid\s*\{[^}]*min-width:\s*1162px[^}]*grid-template-columns:\s*142px repeat\(var\(--slot-count\), minmax\(68px, 1fr\)\)/s,
+  );
+  assert.match(
+    publicCss,
+    /\.booking-route \.availability-court\s*\{[^}]*position:\s*sticky[^}]*left:\s*0/s,
   );
   assert.doesNotMatch(
     publicCss,
     /\.mobile-availability-picker|\.mobile-court-rail|\.mobile-time-grid|\.desktop-schedule-picker/,
   );
-
-  const scheduleCellRules = [
-    ...publicCss.matchAll(/(?:^|\n)\s*\.schedule-cell\s*\{([^}]*)\}/g),
-  ].map((match) => match[1]);
-  assert.ok(scheduleCellRules.length >= 1, "expected schedule-cell styles");
-  for (const rule of scheduleCellRules) {
-    const width = rule.match(/min-width:\s*([0-9.]+)px/);
-    const height = rule.match(/min-height:\s*([0-9.]+)px/);
-    assert.ok(width && Number(width[1]) >= 48, "expected 48px-wide schedule targets");
-    assert.ok(height && Number(height[1]) >= 48, "expected 48px-tall schedule targets");
-  }
-  const baseScheduleCell = scheduleCellRules[0];
-  assert.match(baseScheduleCell, /border:\s*1px solid var\(--line\)/);
-  assert.match(baseScheduleCell, /border-radius:\s*(?:[89]|[1-9][0-9]+)px/);
-  assert.match(baseScheduleCell, /background:\s*var\(--white\)/);
-  assert.match(baseScheduleCell, /touch-action:\s*manipulation/);
-  const selectedCellRule = publicCss.match(/\.schedule-cell\.is-selected\s*\{([^}]*)\}/s);
-  assert.ok(selectedCellRule, "expected a selected schedule tile state");
-  assert.match(selectedCellRule[1], /border-color:/);
-  assert.match(selectedCellRule[1], /background:\s*#e8ffd2/);
-  assert.match(selectedCellRule[1], /box-shadow:/);
   assert.match(
     publicCss,
-    /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*border-radius:\s*50%[^}]*background:\s*var\(--ink\)[^}]*color:\s*var\(--lime\)/s,
+    /\.booking-route \.availability-corner,[\s\S]*?\.booking-route \.availability-cell\s*\{[^}]*min-height:\s*52px/s,
   );
   assert.match(
     publicCss,
-    /\.schedule-selection-count button\.is-placeholder\s*\{[^}]*visibility:\s*hidden[^}]*pointer-events:\s*none/s,
+    /\.booking-route \.availability-cell\s*\{[^}]*background:\s*white[^}]*transition:\s*none/s,
+  );
+  assert.match(
+    publicCss,
+    /\.booking-route \.availability-cell\.busy\s*\{[^}]*repeating-linear-gradient[^}]*cursor:\s*not-allowed/s,
+  );
+  assert.match(
+    publicCss,
+    /\.booking-route \.availability-cell\.selected\s*\{[^}]*background:\s*var\(--violet\)[^}]*box-shadow:/s,
+  );
+  assert.match(
+    publicCss,
+    /\.booking-route \.mobile-availability-grid\s*\{[^}]*grid-template-columns:\s*80px repeat\(var\(--court-count\), minmax\(58px, 1fr\)\)/s,
   );
 
   assert.equal(
-    (booking.match(/className="booking-mobile-action"/g) ?? []).length,
+    (booking.match(/className="slot-step-footer stage-footer booking-selection-footer"/g) ?? []).length,
     1,
-    "expected one mobile selection dock",
+    "expected one responsive selection footer",
   );
   assert.match(
     booking,
-    /\{selectedSlots\.length > 0 && \([\s\S]*?className="booking-mobile-action"[\s\S]*?className="mobile-selection-clear"[\s\S]*?data-testid="booking-continue"/s,
+    /className="slot-step-footer stage-footer booking-selection-footer"[\s\S]*?className=\{`slot-clear-button\$\{selectedSlots\.length \? "" : " is-placeholder"\}`\}[\s\S]*?data-testid="booking-continue"/s,
   );
+  const responsiveBookingCss = publicCss.slice(publicCss.indexOf("/* RallyOS-inspired player booking workspace */"));
+  assert.match(responsiveBookingCss, /\.slot-step-footer\s*\{[^}]*display:\s*flex/s);
+  assert.match(responsiveBookingCss, /@media \(max-width: 779\.98px\)[\s\S]*?\.availability-legend-row\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s);
+  assert.match(responsiveBookingCss, /@media \(max-width: 779\.98px\)[\s\S]*?\.slot-step-footer\s*\{[^}]*position:\s*static/s);
   assert.match(
-    booking,
-    /className=\{`booking-summary\$\{actionLabel \? " booking-summary-selection" : ""\}`\}/,
-  );
-  const mobileDockRule = publicCss.match(/\.booking-mobile-action\s*\{([^}]*)\}/s);
-  assert.ok(mobileDockRule, "expected mobile dock styles");
-  assert.match(mobileDockRule[1], /position:\s*fixed/);
-  assert.match(mobileDockRule[1], /bottom:\s*max\(12px, env\(safe-area-inset-bottom\)\)/);
-  const mobileSummaryRule = publicCss.match(/\.booking-summary-selection\s*\{([^}]*)\}/s);
-  assert.ok(mobileSummaryRule, "expected mobile selection-summary styles");
-  assert.match(mobileSummaryRule[1], /display:\s*none/);
-  assert.match(
-    publicCss,
-    /@media \(min-width:\s*980px\)\s*\{[\s\S]*?\.booking-summary-selection\s*\{\s*display:\s*block;?\s*\}[\s\S]*?\.booking-mobile-action\s*\{\s*display:\s*none;?\s*\}/s,
+    responsiveBookingCss,
+    /@media \(min-width: 980px\)[\s\S]*?\.booking-slot-step\s*\{[^}]*grid-template-columns:\s*1fr/s,
   );
 
   for (const [selector, expectedDimensions, minimum] of [
@@ -1753,7 +1762,7 @@ test("uses the official transparent Dinktopia logo and extracted brand palette",
     assert.match(source, /#102a43/i);
     assert.match(source, /#254c84/i);
     assert.match(source, /#82f500/i);
-    assert.match(source, /#f4f7fa/i);
+    assert.match(source, /#f6f4ee/i);
   }
   assert.match(config, /primary:\s*"#102A43"/);
   assert.match(config, /electric:\s*"#254C84"/);
@@ -1829,7 +1838,6 @@ test("keeps the browser adapter public-only, origin-bound, and tenant UUID free"
     [
       "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY",
       "NEXT_PUBLIC_SUPABASE_URL",
-      "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
     ],
   );
   assert.doesNotMatch(
@@ -3592,7 +3600,7 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   );
   assert.match(
     calendarCss,
-    /\.calendar button,\s*\.calendar input,\s*\.calendar select\s*\{[^}]*min-height:\s*44px/s,
+    /\.calendar button,\s*\.calendar input,\s*\.calendar select\s*\{[^}]*min-height:\s*40px/s,
   );
   assert.match(
     calendarCss,
@@ -4116,7 +4124,7 @@ test("keeps live Add Court and shared hours simple, safe, and responsive", async
   assert.match(manage, /actionType:\s*"settings:schedule",[\s\S]*?payload:\s*schedulePayload/);
   assert.doesNotMatch(scheduleSource, /type="time"/);
 
-  assert.match(cssBlock(manageCss, ".button"), /min-height:\s*44px/);
+  assert.match(cssBlock(manageCss, ".button"), /min-height:\s*40px/);
   assert.match(
     cssBlock(manageCss, ".field input, .field select, .field textarea"),
     /min-height:\s*44px/,
@@ -4214,8 +4222,7 @@ test("fails closed when live platform setup or authorization is incomplete", asy
     /return validBrowserPlatformConfiguration\(\) \? "live" : "preview"/,
   );
   assert.match(client, /"TENANT_ORIGIN_NOT_REGISTERED"/);
-  assert.match(client, /if \(!input\.turnstileToken\)/);
-  assert.match(client, /"TURNSTILE_REQUIRED"/);
+  assert.doesNotMatch(client, /turnstile|TURNSTILE/i);
   assert.match(config, /status:\s*"setup_required"/);
   assert.match(config, /publicBookingEnabled:\s*false/);
   assert.match(
@@ -4224,10 +4231,7 @@ test("fails closed when live platform setup or authorization is incomplete", asy
   );
   assert.match(booking, /if \(isLive && !paymentMethod\)/);
   assert.match(booking, /if \(isLive && !policyVersion\)/);
-  assert.match(
-    booking,
-    /if \(isLive && \(!securitySiteKey \|\| !turnstileTokenValue\)\)/,
-  );
+  assert.doesNotMatch(booking, /turnstile|securitySiteKey/i);
   assert.match(managementAdapter, /if \(!session\) throw new Error\("MANAGER_SIGN_IN_REQUIRED"\)/);
   assert.match(managementAdapter, /assertDinktopiaContext\(context\)/);
   assert.match(
@@ -4270,9 +4274,10 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   assert.match(booking, /holdExpired/);
   assert.match(booking, /holdRemainingSeconds/);
   assert.match(booking, /Reserve the slot before sending payment\./);
-  assert.match(booking, /Preview hold only/);
-  assert.match(booking, /Do not send money\./);
-  assert.match(booking, /do not pay/i);
+  assert.match(booking, /paymentAccountReady/);
+  assert.match(booking, /bootstrap\?\.paymentMethods\.find\([\s\S]*?toLowerCase\(\) === "gcash"/);
+  assert.match(booking, /paymentMethod\?\.accountNumber \?\? paymentMethod\?\.accountReference/);
+  assert.doesNotMatch(booking, /Interactive payment demo|simulate an approved GCash payment/i);
   assert.match(booking, /Cancel unpaid hold/);
   assert.match(booking, /Choose a new time/);
 
@@ -4289,21 +4294,18 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   assert.match(adapterHoldSource, /policyAccepted: request\.policyAccepted/);
   assert.doesNotMatch(adapterHoldSource, /policyAccepted: true/);
 
-  const reserveStart = booking.indexOf("async function reservePaymentHold(");
-  const reserveEnd = booking.indexOf("async function submitPayment(", reserveStart);
+  const reserveStart = booking.indexOf("async function createSelectionHold(");
+  const reserveEnd = booking.indexOf("async function completeHeldBookingDetails(", reserveStart);
   assert.ok(reserveStart >= 0 && reserveEnd > reserveStart);
   const reserveSource = booking.slice(reserveStart, reserveEnd);
   const createHoldIndex = reserveSource.indexOf("adapter.createHold(");
-  assert.ok(createHoldIndex >= 0, "expected Step 2 to create the hold before payment");
+  assert.ok(createHoldIndex >= 0, "expected Step 1 to create the hold before details");
 
   for (const [label, guard] of [
-    ["customer details", /if \(!validateDetails\(\)\) return;/],
-    ["policy acceptance", /if \(!acceptedPolicy\)/],
     ["bootstrap failure", /if \(bootstrapState === "error"\)/],
     ["public-booking readiness", /if \(isLive && !bootstrap\?\.readiness\.publicBookingEnabled\)/],
     ["payment readiness", /if \(isLive && !paymentMethod\)/],
     ["published policy", /if \(isLive && !policyVersion\)/],
-    ["Turnstile security", /if \(isLive && \(!securitySiteKey \|\| !turnstileTokenValue\)\)/],
     ["non-empty selection", /if \(!selectedSlots\.length\)/],
     ["fail-closed live selection", /if \(isLive && !liveSelectionSupported\)/],
   ]) {
@@ -4317,15 +4319,24 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
 
   assert.match(
     reserveSource,
-    /const booking = await adapter\.createHold\(\{[\s\S]*?items: selectedSlots,[\s\S]*?customer,[\s\S]*?policyAccepted: acceptedPolicy,[\s\S]*?policyVersion:[\s\S]*?turnstileToken:/,
+    /const booking = await adapter\.createHold\(\{[\s\S]*?items: selectedSlots,[\s\S]*?customer,[\s\S]*?policyAccepted: true,[\s\S]*?policyVersion:[\s\S]*?detailsPending: true/,
   );
   assert.ok(
     reserveSource.indexOf("setPendingBooking(booking)") > createHoldIndex &&
-      reserveSource.indexOf("setStep(3)") >
+      reserveSource.indexOf("setStep(2)") >
         reserveSource.indexOf("setPendingBooking(booking)"),
-    "expected a successful hold to become the pending booking before opening payment",
+    "expected a successful hold to become the pending booking before opening details",
   );
   assert.doesNotMatch(reserveSource, /setStep\(4\)/);
+
+  const detailsStart = booking.indexOf("async function completeHeldBookingDetails(");
+  const detailsEnd = booking.indexOf("async function submitPayment(", detailsStart);
+  const detailsSource = booking.slice(detailsStart, detailsEnd);
+  assert.match(detailsSource, /if \(!validateDetails\(\)\) return;/);
+  assert.match(detailsSource, /if \(!acceptedPolicy\)/);
+  assert.match(detailsSource, /if \(!pendingBooking\)/);
+  assert.match(detailsSource, /adapter\.completeDetails\(/);
+  assert.match(detailsSource, /setStep\(3\)/);
 
   const customerPaymentStart = booking.indexOf(
     "async function submitPayment(",
@@ -4371,7 +4382,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   );
   assert.match(
     restoreSource,
-    /setConfirmedBooking\(null\);[\s\S]*?setPendingBooking\(restored\);[\s\S]*?setStep\(3\);/,
+    /setConfirmedBooking\(null\);[\s\S]*?setPendingBooking\(restored\);[\s\S]*?setStep\(restored\.detailsComplete === false \? 2 : 3\);/,
   );
   assert.match(
     booking,
@@ -4384,14 +4395,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
     "expected the sole availability-pruning dispatch to remain behind the booking ownership guard",
   );
 
-  assert.match(
-    booking,
-    /if \(!isBookingPage \|\| !isLive \|\| step !== 2 \|\| pendingBooking \|\| !securitySiteKey \|\| !turnstileContainerRef\.current\) return;/,
-  );
-  assert.match(
-    booking,
-    /window\.turnstile\.render\(container,[\s\S]*?action: "booking_create"[\s\S]*?callback: \(token\) => setTurnstileTokenValue\(token\)[\s\S]*?"expired-callback": \(\) => setTurnstileTokenValue\(""\)/,
-  );
+  assert.doesNotMatch(booking, /turnstile|challenges\.cloudflare\.com/i);
 });
 
 test("renders accessible labels, control states, and announcements", async () => {
@@ -4412,11 +4416,12 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(customerHtml, /aria-label="Booking actions"/i);
   assert.match(customerHtml, /aria-label="Booking progress"/i);
   assert.match(customerHtml, /aria-current="step"/i);
-  assert.match(customerHtml, /aria-label="Availability key"/i);
+  assert.match(customerHtml, /aria-label="Availability legend"/i);
   assert.match(customerHtml, /role="status"[^>]*aria-live="polite"/i);
   assert.match(customerHtml, /<fieldset\b/i);
-  assert.match(customerHtml, /<legend>Choose a date<\/legend>/i);
-  assert.match(customerHtml, /aria-pressed="true"/i);
+  assert.match(customerHtml, /<legend class="sr-only">Select a date<\/legend>/i);
+  assert.match(customerHtml, /<div class="booking-field-label field-group-label"><strong>Select a date<\/strong><span>Next 6 days<\/span><\/div>/i);
+  assert.match(customerHtml, /role="radio"[^>]*aria-checked="true"/i);
 
   assert.match(managerHtml, /aria-label="Management navigation"/i);
   assert.match(managerHtml, /aria-label="Mobile management navigation"/i);
@@ -4449,9 +4454,12 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     readFile(files.publicCss, "utf8"),
   ]);
 
-  const stepStarts = [1, 2, 3, 4].map((step) =>
-    booking.indexOf(`{step === ${step} &&`),
-  );
+  const stepStarts = [
+    booking.indexOf('{step === 1 && (\n                  <div className="booking-layout booking-slot-step">'),
+    booking.indexOf('{step === 2 && (\n                  <div className="checkout-layout booking-details-view">'),
+    booking.indexOf('{step === 3 && checkoutSlot && pendingBooking && ('),
+    booking.indexOf('{step === 4 && confirmedBooking && ('),
+  ];
   assert.ok(
     stepStarts.every((start) => start >= 0) &&
       stepStarts.every((start, index) => index === 0 || start > stepStarts[index - 1]),
@@ -4462,28 +4470,38 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   const stepOne = booking.slice(stepOneStart, stepTwoStart);
   const stepTwo = booking.slice(stepTwoStart, stepThreeStart);
   const stepThree = booking.slice(stepThreeStart, stepFourStart);
-  const bookingSummaryStart = booking.indexOf("function BookingSummary(", stepFourStart);
-  assert.ok(bookingSummaryStart > stepFourStart);
-  const stepFour = booking.slice(stepFourStart, bookingSummaryStart);
+  const rallySummaryStart = booking.indexOf("function RallyBookingSummary(", stepFourStart);
+  const rallySummaryEnd = booking.indexOf("type ManageBookingProps", rallySummaryStart);
+  assert.ok(rallySummaryStart > stepFourStart && rallySummaryEnd > rallySummaryStart);
+  const stepFour = booking.slice(stepFourStart, rallySummaryStart);
 
   assert.match(
     booking,
-    /const stepLabels = \["Choose date & time", "Your details", "Payment"\]/,
+    /const stepLabels = \["Courts", "Details", "Payment"\]/,
   );
   assert.match(
     booking,
     /<p className="booking-step-summary">[\s\S]*?<span>\{step\} of \{stepLabels\.length\} ·<\/span>[\s\S]*?<strong>\{stepLabels\[step - 1\]\}<\/strong>/,
   );
-  assert.match(stepOne, /STEP 01[\s\S]*?<h3>Choose date and time<\/h3>[\s\S]*?Philippine Standard Time/);
+  assert.match(stepOne, /<span className="step-chip">01<\/span>[\s\S]*?Court booking[\s\S]*?<h3>Choose your slots<\/h3>/);
   assert.doesNotMatch(stepOne, /When are you playing\?|schedule-kicker|schedule-scroll-hint/);
-  assert.match(stepTwo, /STEP 02[\s\S]*?<h3>Your details<\/h3>[\s\S]*?No account needed/);
+  assert.match(booking, /className="booking-compact-title"[\s\S]*?className="back-link"[\s\S]*?Almost yours[\s\S]*?<h2>Who&apos;s playing\?<\/h2>/);
+  assert.match(stepTwo, /<span className="step-chip">02<\/span>[\s\S]*?Player details[\s\S]*?<h3>Tell us who to expect<\/h3>/);
   assert.doesNotMatch(stepTwo, /Who&apos;s rallying\?|className="guest-note"/);
   assert.match(
     stepThree,
-    /STEP 03[\s\S]*?<h3 ref=\{paymentHeadingRef\} tabIndex=\{-1\}>[\s\S]*?Pay with \$\{paymentLabel\}[\s\S]*?GCash payment preview/,
+    /className="checkout-layout booking-payment-view"[\s\S]*?className="booking-stage surface-card gcash-payment-card"[\s\S]*?className="gcash-heading"[\s\S]*?<span>G<\/span>Cash[\s\S]*?Secure/,
   );
-  assert.match(stepFour, /className="confirmation-card" role="status"/);
-  assert.match(stepFour, /confirmedBooking\.status === "confirmed"/);
+  assert.match(
+    booking,
+    /\{step === 3 && \([\s\S]*?className="booking-compact-title"[\s\S]*?Secure checkout[\s\S]*?<h2>Pay with \{paymentLabel\}<\/h2>/,
+  );
+  assert.match(stepFour, /className="rally-confirmation-view" role="status" aria-live="polite"/);
+  assert.match(stepFour, /className=\{`rally-confirmation-card \$\{confirmationTone\}`\}/);
+  assert.match(stepFour, /Your court is ready\./);
+  assert.match(stepFour, /Dinktopia is reviewing your receipt\./);
+  assert.match(stepFour, /Payment needs attention/);
+  assert.match(stepFour, /Add to calendar[\s\S]*?Share booking/);
   assert.match(
     stepOne,
     /\{selectedSlots\.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours\.<\/p>\}/,
@@ -4492,49 +4510,51 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
 
   assert.match(
     stepTwo,
-    /className="booking-layout compact-step booking-details-step"/,
+    /className="checkout-layout booking-details-view"/,
   );
-  const stepTwoSummary = stepTwo.indexOf("<BookingSummary");
+  const stepTwoSummary = stepTwo.indexOf("<RallyBookingSummary");
   const stepTwoForm = stepTwo.indexOf(
-    '<form className="booking-main-card booking-details-form"',
+    '<form className="booking-main-card booking-details-form booking-stage surface-card guest-form"',
   );
-  const stepTwoHeading = stepTwo.indexOf("Your details");
+  const stepTwoHeading = stepTwo.indexOf("Tell us who to expect");
   assert.ok(
     stepTwoSummary >= 0 &&
-      stepTwoForm > stepTwoSummary &&
+      stepTwoForm >= 0 &&
+      stepTwoSummary > stepTwoForm &&
       stepTwoHeading > stepTwoForm,
-    "expected the concise Step 2 summary before the customer details form",
+    "expected the RallyOS form followed by its mobile-first reservation summary",
   );
 
-  const summarySource = booking.slice(bookingSummaryStart);
+  const summarySource = booking.slice(rallySummaryStart, rallySummaryEnd);
   assert.match(summarySource, /aria-label="Booking summary"/);
   assert.match(
     summarySource,
-    /className="summary-mobile-heading"[\s\S]*?\$\{courtCount\} court[\s\S]*?\$\{selections\.length\} hr[\s\S]*?\{hasSelection \? dateLabel : "Select a court and time"\}[\s\S]*?\{hasSelection \? peso\(total\) : "—"\}/,
+    /className="player-kicker">Your reservation[\s\S]*?courts reserved[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
   );
-  assert.match(summarySource, /className="summary-sessions" aria-label="Selected sessions"/);
-  assert.match(summarySource, /className="price-breakdown"/);
-  assert.match(summarySource, /Court booking[\s\S]*Booking fee[\s\S]*summary-total[\s\S]*Total/);
+  assert.match(summarySource, /className="summary-detail"[\s\S]*?Dinktopia Court Hub/);
+  assert.match(summarySource, /className="summary-price-lines"/);
+  assert.match(summarySource, /Court reservation[\s\S]*Booking fee[\s\S]*rally-summary-total[\s\S]*Total/);
+  assert.match(summarySource, /Free cancellation up to 12 hours before your booking/);
   assert.match(stepTwo, /aria-invalid=\{Boolean\(detailErrors\./);
   assert.match(stepTwo, /className="field-error"/);
   assert.match(stepTwo, /aria-busy=\{isSubmitting\}/);
   assert.match(stepTwo, /className="details-hold-gate"/);
+  assert.match(stepTwo, /Slots held/);
   assert.match(stepTwo, /className="policy-grid policy-grid-single"/);
   assert.match(stepTwo, /className=\{`check-row policy-check/);
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
+  assert.doesNotMatch(stepOne, /turnstile|Security check/i);
+  assert.doesNotMatch(stepTwo, /details-security-boundary|Verification required|Required before we hold the court/);
   assert.match(
     stepTwo,
-    /\{isLive && \([\s\S]*?className="security-boundary details-security-boundary"[\s\S]*?ref=\{turnstileContainerRef\}/,
+    /\{paymentError && \([\s\S]*?className="payment-error" role="alert"[\s\S]*?We couldn&apos;t save your details/,
   );
   assert.match(
     stepTwo,
-    /\{paymentError && \([\s\S]*?className="payment-error" role="alert"[\s\S]*?We couldn&apos;t hold your slot/,
+    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| holdExpired \|\| !acceptedPolicy \|\| !liveSelectionSupported\}[\s\S]*?Saving details[\s\S]*?Review payment/,
   );
-  assert.match(
-    stepTwo,
-    /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| !acceptedPolicy \|\| !liveSelectionSupported \|\| \(isLive && !turnstileTokenValue\)\}[\s\S]*?Holding your slot[\s\S]*?Hold slot &amp; proceed to payment/,
-  );
-  assert.match(stepTwo, /className="hold-helper">No charge yet\.<\/p>/);
+  assert.match(stepOne, /data-testid="booking-continue"[\s\S]*?createSelectionHold\(\)[\s\S]*?Hold &amp; continue/);
+  assert.match(stepTwo, /className="stage-footer form-footer">[\s\S]*?By continuing, you agree to the venue booking policy/);
 
   const policyDisclosures =
     stepTwo.match(/<details className="policy-disclosure">[\s\S]*?<\/details>/g) ?? [];
@@ -4560,28 +4580,35 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     stepThree,
-    /\{step === 3 && checkoutSlot && pendingBooking && \([\s\S]*?className="booking-layout compact-step booking-payment-step"/,
+    /\{step === 3 && checkoutSlot && pendingBooking && \([\s\S]*?className="checkout-layout booking-payment-view"/,
   );
   assert.match(
     stepThree,
-    /className="checkout-snapshot" aria-label="Checkout booking summary"[\s\S]*?\{selectedSlots\.length\} court-hour[\s\S]*?\{selectedCourtCount\} court[\s\S]*?\{selectedDateDetails\?\.long\}[\s\S]*?\{peso\(checkoutTotal\)\}/,
+    /className="payment-amount"[\s\S]*?Amount to pay[\s\S]*?\{peso\(checkoutTotal\)\}[\s\S]*?Send the exact booking total/,
   );
-  assert.match(stepThree, /className=\{`payment-panel\$\{isLive \? "" : " payment-panel-preview"\}`\}/);
-  assert.match(stepThree, /Submit GCash receipt/);
+  assert.match(stepThree, /Pay the court owner directly[\s\S]*?System Setup/);
+  assert.match(
+    stepThree,
+    /className="gcash-account-number"[\s\S]*?paymentAccountDisplay[\s\S]*?className="payment-recipient"[\s\S]*?paymentAccountName[\s\S]*?account from System Setup/,
+  );
+  assert.match(stepThree, /data-testid="submit-receipt"[\s\S]*?Submit receipt · \{peso\(checkoutTotal\)\}/);
   assert.match(stepThree, /className="payment-error" role="alert"/);
   assert.match(stepThree, /aria-busy=\{isSubmitting\}/);
-  assert.equal((stepThree.match(/<BookingSummary\b/g) ?? []).length, 1);
+  assert.equal((stepThree.match(/<RallyBookingSummary\b/g) ?? []).length, 1);
   assert.equal((stepFour.match(/<BookingSummary\b/g) ?? []).length, 0);
+  assert.doesNotMatch(stepThree, /Interactive payment demo|GCash payment preview|payment-panel-preview/);
   assert.doesNotMatch(stepTwo, /payment-panel|Submit GCash receipt|payment-reference/);
   assert.doesNotMatch(
     booking,
     /booking-review-step|review-to-payment|Review booking|One last look|data-testid="reserve-slot"/,
   );
 
-  const mobileDetailsLayout = cssBlock(publicCss, ".booking-details-step");
-  assert.match(mobileDetailsLayout, /grid-template-areas:\s*"summary"\s*"form"/s);
-  assert.match(cssBlock(publicCss, ".summary-mobile-heading"), /display:\s*flex/);
-  assert.match(cssBlock(publicCss, ".checkout-snapshot"), /display:\s*none/);
+  const mobileDetailsLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-details-view");
+  assert.match(mobileDetailsLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
+  assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-details-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
+  const paymentLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-payment-view");
+  assert.match(paymentLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
+  assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-payment-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
 
   const desktopCss = cssBlock(publicCss, "@media (min-width: 980px)");
   assert.match(
@@ -4644,11 +4671,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     mobileCss,
     /\.step-actions \.button\s*\{[^}]*min-height:\s*48px/s,
   );
-  assert.match(
-    mobileCss,
-    /\.booking-payment-step > \.booking-summary\s*\{\s*display:\s*none/s,
-  );
-  assert.match(mobileCss, /\.checkout-snapshot\s*\{\s*display:\s*flex/s);
+  assert.match(publicCss, /\.booking-route \.payment-evidence-fields\s*\{[^}]*grid-template-columns:\s*1fr 1fr/s);
   assert.match(
     mobileCss,
     /\.schedule-selection-count\s*\{\s*display:\s*none/s,
@@ -4676,11 +4699,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     globalsCss,
     /body\s*\{[^}]*overflow-x:\s*(?:hidden|clip)/s,
   );
-  assert.match(globalsCss, /--text-micro:\s*0\.75rem/);
+  assert.match(globalsCss, /--text-micro:\s*0\.6875rem/);
   assert.match(globalsCss, /--text-caption:\s*0\.75rem/);
   assert.match(globalsCss, /--text-small:\s*0\.875rem/);
-  assert.match(globalsCss, /--text-nav:\s*0\.9375rem/);
-  assert.match(globalsCss, /--text-body:\s*1rem/);
+  assert.match(globalsCss, /--text-nav:\s*0\.8125rem/);
+  assert.match(globalsCss, /--text-body:\s*0\.9375rem/);
   assert.match(globalsCss, /--text-title:\s*clamp\(/);
   assert.match(globalsCss, /img\s*\{[^}]*max-width:\s*100%/s);
   assert.match(globalsCss, /:focus-visible\s*\{[^}]*outline:/s);
@@ -4703,11 +4726,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
     publicCss.slice(0, publicCss.indexOf("@media (min-width: 1180px)")),
     /\.site-container\s*\{[^}]*1440px/s,
   );
-  assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*48px/s);
-  assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*44px/s);
+  assert.match(publicCss, /\.button\s*\{[^}]*min-height:\s*42px/s);
+  assert.match(publicCss, /\.button-small\s*\{[^}]*min-height:\s*40px/s);
   assert.match(publicCss, /\.text-link\s*\{[^}]*min-height:\s*44px/s);
   assert.match(publicCss, /\.mode-switch a\s*\{[^}]*min-height:\s*44px/s);
-  assert.match(publicCss, /\.header-inner\s*\{[^}]*min-height:\s*60px/s);
+  assert.match(publicCss, /\.header-inner\s*\{[^}]*min-height:\s*58px/s);
   assert.match(publicCss, /\.hero-grid\s*\{[^}]*padding-top:\s*102px/s);
   assert.match(
     publicCss,
@@ -4781,7 +4804,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-body\)[^}]*font-weight:\s*var\(--weight-medium\)/s,
+    /\.primary-nav\s*>\s*a,\s*\.primary-nav\s*>\s*button\s*\{[^}]*font-size:\s*var\(--text-nav\)[^}]*font-weight:\s*var\(--weight-medium\)/s,
   );
   assert.match(
     publicCss,
@@ -4801,7 +4824,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*64px[^}]*\}[\s\S]*?\.header-inner\s*>\s*\.wordmark\s*\{[^}]*width:\s*164px[^}]*\}[\s\S]*?\.hero-grid\s*\{[^}]*padding-top:\s*120px[^}]*\}[\s\S]*?\.ticker-track\s*\{\s*animation-duration:\s*20s/s,
+    /@media\s*\(min-width:\s*780px\)[\s\S]*?\.header-inner\s*\{[^}]*min-height:\s*62px[^}]*\}[\s\S]*?\.header-inner\s*>\s*\.wordmark\s*\{[^}]*width:\s*164px[^}]*\}[\s\S]*?\.hero-grid\s*\{[^}]*padding-top:\s*120px[^}]*\}[\s\S]*?\.ticker-track\s*\{\s*animation-duration:\s*20s/s,
   );
   assert.match(
     publicCss,
@@ -4817,7 +4840,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     publicCss,
-    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.hero-grid\s*\{[^}]*grid-template-columns:[^}]*min-height:\s*720px[^}]*padding-top:\s*84px[^}]*\}[\s\S]*?\.hero-visual\s*\{[^}]*min-height:\s*560px/s,
+    /@media\s*\(min-width:\s*980px\)[\s\S]*?\.hero-grid\s*\{[^}]*grid-template-columns:[^}]*min-height:\s*620px[^}]*padding-top:\s*82px[^}]*\}[\s\S]*?\.hero-visual\s*\{[^}]*min-height:\s*480px/s,
   );
   assert.match(
     publicCss,
@@ -4907,7 +4930,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
 
   assert.match(
     booking,
-    /className="schedule-cell-mark" aria-hidden="true"/,
+    /className=\{`availability-cell mobile-availability-cell\$\{busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
   );
   const publicTextCss = publicCss.replace(
     /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*\}/gs,

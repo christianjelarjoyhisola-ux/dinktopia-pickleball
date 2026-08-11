@@ -2,8 +2,18 @@
 
 import Image from "next/image";
 import {
-  Fragment,
+  CalendarDays,
+  Check,
+  Clock3,
+  Grid2X2,
+  Share2,
+  TriangleAlert,
+  WalletCards,
+} from "lucide-react";
+import {
+  CSSProperties,
   FormEvent,
+  Fragment,
   useEffect,
   useId,
   useMemo,
@@ -23,18 +33,19 @@ import {
 import {
   bookingStatus,
   cancelUnpaidBooking,
+  completeBookingDetails as completePlatformBookingDetails,
   createBooking as createPlatformBooking,
   getAvailability as getPlatformAvailability,
   getTenantBootstrap,
   platformMode,
   submitPaymentReceipt,
-  turnstileSiteKey,
 } from "./lib/platform/client";
 import type {
   BookingConfirmation,
   BookingSessionInput,
   PaymentMethod,
   PublicCourt,
+  PublicPromotion,
   TenantBootstrap,
 } from "./lib/platform/types";
 
@@ -62,6 +73,9 @@ export type AvailabilitySlot = {
   startsAt: string;
   endsAt: string;
   price: number;
+  originalPrice?: number;
+  promotionId?: string;
+  promotionName?: string;
   status: SlotStatus;
 };
 
@@ -108,6 +122,8 @@ export type BookingRecord = {
   serviceFeeAmount?: number;
   items?: BookingSelection[];
   customer: CustomerDetails;
+  detailsComplete?: boolean;
+  paymentReviewState?: "auto_approved" | "manual_review" | "pending" | "short_payment" | "rejected";
 };
 
 export type BookingHoldRequest = {
@@ -121,9 +137,14 @@ export type BookingHoldRequest = {
   customer: CustomerDetails;
   policyAccepted: boolean;
   policyVersion: string | null;
-  turnstileToken?: string;
   clientRequestId: string;
   atomicMultiSessionBooking?: boolean;
+  detailsPending?: boolean;
+};
+
+export type BookingDetailsRequest = {
+  booking: BookingRecord;
+  customer: CustomerDetails;
 };
 
 export type BookingPaymentRequest = {
@@ -140,6 +161,7 @@ export type BookingAdapter = {
     request: AvailabilityRequest,
   ) => Promise<CourtSchedule[]>;
   createHold: (request: BookingHoldRequest) => Promise<BookingRecord>;
+  completeDetails: (request: BookingDetailsRequest) => Promise<BookingRecord>;
   submitPayment: (request: BookingPaymentRequest) => Promise<BookingRecord>;
   findBooking: (reference: string, email: string) => Promise<BookingRecord | null>;
   cancelBooking: (reference: string, reason: string) => Promise<BookingRecord>;
@@ -174,6 +196,14 @@ function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
     mood: court.description || "Configured for Dinktopia play",
     color: index % 2 === 0 ? "blue" : "coral",
   }));
+}
+
+function compactCourtSurface(court: Court) {
+  const descriptor = court.descriptor.toLowerCase();
+  if (descriptor.includes("covered")) return "Covered";
+  if (descriptor.includes("outdoor")) return "Outdoor";
+  if (descriptor.includes("indoor")) return "Indoor";
+  return "Court";
 }
 
 function trustedGallerySource(value: unknown) {
@@ -278,15 +308,6 @@ function longDateLabel(date: string) {
     month: "long",
     day: "numeric",
     year: "numeric",
-    timeZone: "UTC",
-  }).format(new Date(`${date}T12:00:00Z`));
-}
-
-function shortDateLabel(date: string) {
-  return new Intl.DateTimeFormat("en-PH", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
     timeZone: "UTC",
   }).format(new Date(`${date}T12:00:00Z`));
 }
@@ -599,6 +620,56 @@ function getConfiguredPrice(
   );
 }
 
+function promotionClockMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})/.exec(value);
+  if (!match) return null;
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return Number.isInteger(hours) && hours >= 0 && hours <= 23 &&
+      Number.isInteger(minutes) && minutes >= 0 && minutes <= 59
+    ? hours * 60 + minutes
+    : null;
+}
+
+function promotedHourlyPrice(
+  promotions: PublicPromotion[] | undefined,
+  courtId: string,
+  date: string,
+  logicalHour: number,
+  basePrice: number,
+) {
+  const day = new Date(`${date}T00:00:00Z`);
+  const weekday = (day.getUTCDay() + 6) % 7;
+  const minute = (((logicalHour % 24) + 24) % 24) * 60;
+  const matches = (promotions ?? []).filter((promotion) => {
+    const startsAt = promotionClockMinutes(promotion.startsAt);
+    const endsAt = promotionClockMinutes(promotion.endsAt);
+    const inWindow = startsAt !== null && endsAt !== null && (
+      endsAt > startsAt
+        ? minute >= startsAt && minute < endsAt
+        : minute >= startsAt || minute < endsAt
+    );
+    return promotion.courtIds.includes(courtId) &&
+      promotion.weekdays.includes(weekday) &&
+      date >= promotion.validFrom && date <= promotion.validUntil &&
+      inWindow;
+  });
+  const ranked = matches.map((promotion) => {
+    const discount = promotion.discountType === "percentage"
+      ? basePrice * promotion.discountValue / 100
+      : promotion.discountValue;
+    return { promotion, discount: Math.min(basePrice, Math.max(0, discount)) };
+  }).sort((left, right) => right.discount - left.discount);
+  const winner = ranked[0];
+  if (!winner || winner.discount <= 0) return { price: basePrice };
+  return {
+    price: Math.round((basePrice - winner.discount) * 100) / 100,
+    originalPrice: basePrice,
+    promotionId: winner.promotion.id,
+    promotionName: winner.promotion.name,
+  };
+}
+
 function getMinimumConfiguredHourlyRate(courts: PublicCourt[]) {
   const rates = courts.flatMap((court) => {
     const pricingConfig = court.pricingConfig as
@@ -796,6 +867,8 @@ function isStoredBookingRecord(value: unknown): value is BookingRecord {
             Number.isFinite(item.amount) &&
             item.amount >= 0,
         ))) &&
+    (record.detailsComplete === undefined ||
+      typeof record.detailsComplete === "boolean") &&
     (!record.expiresAt ||
       (typeof record.expiresAt === "string" &&
         Number.isFinite(Date.parse(record.expiresAt)))) &&
@@ -918,11 +991,19 @@ const platformAdapter: BookingAdapter = {
         ).getTime();
         const tooSoon =
           candidateStartsAt < Date.now() + minimumLeadMinutes * 60 * 1000;
+        const basePrice = getConfiguredPrice(publicCourt, hour, 1);
+        const promoted = promotedHourlyPrice(
+          tenantBootstrap.promotions,
+          publicCourt.id,
+          slotDate,
+          hour,
+          basePrice,
+        );
         return {
           hour,
           startsAt: formatClockLabel(hour),
           endsAt: formatClockLabel(hour + 1),
-          price: getConfiguredPrice(publicCourt, hour, 1),
+          ...promoted,
           status: tooSoon || overlapsBlock || overlapsBooking ? "unavailable" : "available",
         };
       });
@@ -972,11 +1053,17 @@ const platformAdapter: BookingAdapter = {
 
     // The server owns idempotency. Replaying this UUID is safer than trusting a
     // cached browser response after an ambiguous network failure.
-    const bookingCustomer = {
-      name: request.customer.fullName,
-      email: request.customer.email,
-      phone: request.customer.phone,
-    };
+    const bookingCustomer = request.detailsPending
+      ? {
+          name: "Booking details pending",
+          email: `booking-${request.clientRequestId}@pending.dinktopia.invalid`,
+          phone: "0000000000",
+        }
+      : {
+          name: request.customer.fullName,
+          email: request.customer.email,
+          phone: request.customer.phone,
+        };
     const confirmation: BookingConfirmation = request.atomicMultiSessionBooking
       ? await createPlatformBooking({
           sessions: groupSessions!,
@@ -985,7 +1072,7 @@ const platformAdapter: BookingAdapter = {
           policyAccepted: request.policyAccepted,
           policyVersion: request.policyVersion,
           clientRequestId: request.clientRequestId,
-          turnstileToken: request.turnstileToken,
+          notes: request.detailsPending ? "__details_pending_v1__" : null,
         })
       : await createPlatformBooking({
           courtId: canonical.courtId,
@@ -997,7 +1084,7 @@ const platformAdapter: BookingAdapter = {
           policyAccepted: request.policyAccepted,
           policyVersion: request.policyVersion,
           clientRequestId: request.clientRequestId,
-          turnstileToken: request.turnstileToken,
+          notes: request.detailsPending ? "__details_pending_v1__" : null,
         });
 
     if (
@@ -1063,6 +1150,7 @@ const platformAdapter: BookingAdapter = {
         : confirmation.serviceFeeAmount,
       items: request.items,
       customer: request.customer,
+      detailsComplete: !request.detailsPending,
     };
 
     const bookingKey = `dinktopia:booking:${record.reference}`;
@@ -1095,6 +1183,44 @@ const platformAdapter: BookingAdapter = {
       throw new Error(
         "The hold could not be saved safely and payment remains disabled. Refresh before trying again.",
       );
+    }
+    return record;
+  },
+  async completeDetails(request) {
+    const parsed = readStoredBooking(request.booking.reference);
+    if (!parsed) {
+      throw new Error("This court hold is no longer available. Choose your slots again.");
+    }
+    if (parsed.record.status !== "pending_payment") {
+      throw new Error("This booking is no longer awaiting player details.");
+    }
+    const result = await completePlatformBookingDetails({
+      reference: parsed.record.reference,
+      token: parsed.token,
+      customer: {
+        name: request.customer.fullName.trim(),
+        email: request.customer.email.trim().toLowerCase(),
+        phone: request.customer.phone.trim(),
+      },
+    });
+    const status = mappedBookingStatus(result.status, parsed.record.status);
+    if (platformMode() === "live" && status !== "pending_payment") {
+      throw new Error("This court hold is no longer active.");
+    }
+    const record: BookingRecord = {
+      ...parsed.record,
+      status,
+      expiresAt: result.expiresAt ?? parsed.record.expiresAt,
+      customer: request.customer,
+      detailsComplete: true,
+    };
+    try {
+      sessionStorage.setItem(
+        `dinktopia:booking:${record.reference}`,
+        JSON.stringify({ ...parsed, record }),
+      );
+    } catch {
+      throw new Error("Your player details were saved, but booking recovery is unavailable in this browser.");
     }
     return record;
   },
@@ -1145,11 +1271,15 @@ const platformAdapter: BookingAdapter = {
       : typeof receipt.outcome === "string"
         ? receipt.outcome
         : "manual_review";
+    const paymentReviewState = (
+      ["auto_approved", "manual_review", "pending", "short_payment", "rejected"] as const
+    ).find((status) => status === verificationStatus) ?? "manual_review";
     const record = {
       ...parsed.record,
       status: verificationStatus === "auto_approved"
         ? "confirmed" as const
         : mappedBookingStatus(receiptBooking?.status, "payment_review"),
+      paymentReviewState,
     };
     try {
       sessionStorage.setItem(storageKey, JSON.stringify({ ...parsed, record }));
@@ -1321,28 +1451,6 @@ function calculateBookingFee(
 
 const fieldErrorId = (id: string, field: string) => `${id}-${field}-error`;
 
-type TurnstileApi = {
-  render: (
-    container: HTMLElement,
-    options: {
-      sitekey: string;
-      action: "booking_create";
-      theme: "light";
-      callback: (token: string) => void;
-      "expired-callback": () => void;
-      "error-callback": () => void;
-    },
-  ) => string;
-  remove: (widgetId: string) => void;
-  reset: (widgetId: string) => void;
-};
-
-declare global {
-  interface Window {
-    turnstile?: TurnstileApi;
-  }
-}
-
 export function BookingExperience({
   adapter = platformAdapter,
   surface = "home",
@@ -1357,8 +1465,6 @@ export function BookingExperience({
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
-  const turnstileContainerRef = useRef<HTMLDivElement>(null);
-  const turnstileWidgetRef = useRef<string | null>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
@@ -1366,7 +1472,7 @@ export function BookingExperience({
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
-  const [selectedCourtId, setSelectedCourtId] = useState(() => {
+  const [, setSelectedCourtId] = useState(() => {
     if (isLive) return previewCourts[0].id;
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
   });
@@ -1400,7 +1506,6 @@ export function BookingExperience({
   const [liveMessage, setLiveMessage] = useState("");
   const [bootstrap, setBootstrap] = useState<TenantBootstrap | null>(null);
   const [bootstrapState, setBootstrapState] = useState<"loading" | "ready" | "error">("loading");
-  const [turnstileTokenValue, setTurnstileTokenValue] = useState("");
 
   const [lookupReference, setLookupReference] = useState("");
   const [lookupEmail, setLookupEmail] = useState("");
@@ -1467,7 +1572,7 @@ export function BookingExperience({
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
   const atomicMultiSessionBooking =
-    !isLive || bootstrap?.capabilities?.atomicMultiSessionBookingV1 === true;
+    !isLive || bootstrap?.capabilities?.atomicMultiSessionBookingV1 !== false;
   const canonicalCourt = bootstrap?.courts.find(
     (court) => court.id === canonicalSelection?.courtId,
   );
@@ -1495,11 +1600,28 @@ export function BookingExperience({
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
-  const securitySiteKey = turnstileSiteKey();
-  const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods[0] ?? null;
+  const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods.find(
+    (method) => (method.methodCode ?? method.code ?? "").toLowerCase() === "gcash",
+  ) ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
   const paymentLabel = paymentMethod?.displayName ?? "GCash";
-  const paymentQrUrl = paymentMethod?.qrImageUrl ?? paymentMethod?.qrUrl ?? null;
+  const paymentAccountName = paymentMethod?.accountName?.trim() ?? "";
+  const paymentAccountNumber = (
+    paymentMethod?.accountNumber ?? paymentMethod?.accountReference ?? ""
+  ).trim();
+  const paymentAccountDigits = paymentAccountNumber.replace(/\D/g, "");
+  const isGcashPayment = paymentMethodCode.toLowerCase() === "gcash";
+  const gcashLocalDigits = isGcashPayment
+    ? paymentAccountDigits.startsWith("63")
+      ? paymentAccountDigits.slice(2)
+      : paymentAccountDigits.startsWith("0")
+        ? paymentAccountDigits.slice(1)
+        : paymentAccountDigits
+    : paymentAccountDigits;
+  const paymentAccountDisplay = isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits)
+    ? gcashLocalDigits.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3")
+    : paymentAccountNumber;
+  const paymentAccountReady = Boolean(paymentAccountName && paymentAccountNumber);
   const rawPolicy = (bootstrap?.settings?.refund_reschedule_policy ??
     bootstrap?.refundReschedulePolicy ??
     null) as Record<string, unknown> | null;
@@ -1554,9 +1676,8 @@ export function BookingExperience({
     !isLive ||
     (bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
-      Boolean(paymentMethod) &&
+      paymentAccountReady &&
       Boolean(policyVersion) &&
-      Boolean(securitySiteKey) &&
       bookingFee !== null);
   const availabilityBootstrapState = isLive ? bootstrapState : "ready";
   const visibleAvailabilityState =
@@ -1565,7 +1686,7 @@ export function BookingExperience({
     !isLive ||
     (bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
-      Boolean(paymentMethod));
+      paymentAccountReady);
 
   useEffect(() => {
     let active = true;
@@ -1722,7 +1843,7 @@ export function BookingExperience({
             })),
       });
       setCustomer(restored.customer);
-      setAcceptedPolicy(true);
+      setAcceptedPolicy(restored.detailsComplete !== false);
       setPaymentError("");
       setMode("book");
       setHoldNow(Date.now());
@@ -1747,10 +1868,12 @@ export function BookingExperience({
 
       setConfirmedBooking(null);
       setPendingBooking(restored);
-      setStep(3);
+      setStep(restored.detailsComplete === false ? 2 : 3);
       setLiveMessage(
         restored.status === "pending_payment"
-          ? `Saved hold ${restored.reference} was verified and restored.`
+          ? restored.detailsComplete === false
+            ? `Saved hold ${restored.reference} was restored. Add player details before it expires.`
+            : `Saved hold ${restored.reference} was verified and restored.`
           : `Saved hold ${restored.reference} is no longer available.`,
       );
     };
@@ -1774,46 +1897,12 @@ export function BookingExperience({
   }, [pendingBooking, step]);
 
   useEffect(() => {
-    if (!isBookingPage || !isLive || step !== 2 || pendingBooking || !securitySiteKey || !turnstileContainerRef.current) return;
-    let disposed = false;
-    const container = turnstileContainerRef.current;
-    const renderWidget = () => {
-      if (disposed || !window.turnstile || turnstileWidgetRef.current) return;
-      turnstileWidgetRef.current = window.turnstile.render(container, {
-        sitekey: securitySiteKey,
-        action: "booking_create",
-        theme: "light",
-        callback: (token) => setTurnstileTokenValue(token),
-        "expired-callback": () => setTurnstileTokenValue(""),
-        "error-callback": () => setTurnstileTokenValue(""),
-      });
-    };
-    const scriptId = "dinktopia-turnstile-script";
-    let script = document.getElementById(scriptId) as HTMLScriptElement | null;
-    if (window.turnstile) {
-      renderWidget();
-    } else {
-      if (!script) {
-        script = document.createElement("script");
-        script.id = scriptId;
-        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-        script.async = true;
-        script.defer = true;
-        document.head.appendChild(script);
-      }
-      script.addEventListener("load", renderWidget);
-    }
-
-    return () => {
-      disposed = true;
-      script?.removeEventListener("load", renderWidget);
-      if (turnstileWidgetRef.current && window.turnstile) {
-        window.turnstile.remove(turnstileWidgetRef.current);
-        turnstileWidgetRef.current = null;
-      }
-      setTurnstileTokenValue("");
-    };
-  }, [isBookingPage, isLive, pendingBooking, securitySiteKey, step]);
+    if (!isBookingPage || step !== 2) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.querySelector<HTMLElement>(".booking-compact-title")?.scrollIntoView({ block: "start" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isBookingPage, step]);
 
   useEffect(() => {
     if (!isBookingPage) return;
@@ -1967,17 +2056,11 @@ export function BookingExperience({
 
   async function submitDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await reservePaymentHold();
+    await completeHeldBookingDetails();
   }
 
-  async function reservePaymentHold() {
+  async function createSelectionHold() {
     setPaymentError("");
-    if (!validateDetails()) return;
-    if (!acceptedPolicy) {
-      setPaymentError("Accept the booking and cancellation rules before we hold your slot.");
-      window.requestAnimationFrame(() => document.getElementById(`${formId}-policy`)?.focus());
-      return;
-    }
     if (bootstrapState === "error") {
       setPaymentError("Booking setup could not be loaded. Refresh the page before trying again.");
       return;
@@ -1992,10 +2075,6 @@ export function BookingExperience({
     }
     if (isLive && !policyVersion) {
       setPaymentError("The current booking policy has not been published yet.");
-      return;
-    }
-    if (isLive && (!securitySiteKey || !turnstileTokenValue)) {
-      setPaymentError("Complete the security check before submitting your booking.");
       return;
     }
     if (!selectedSlots.length) {
@@ -2029,32 +2108,67 @@ export function BookingExperience({
         amount: total,
         items: selectedSlots,
         customer,
-        policyAccepted: acceptedPolicy,
+        policyAccepted: true,
         policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
-        turnstileToken: turnstileTokenValue || undefined,
         clientRequestId,
         atomicMultiSessionBooking,
+        detailsPending: true,
       });
       bookingOwnsSelectionRef.current = true;
       setPendingBooking(booking);
       setHoldNow(Date.now());
-      setStep(3);
+      setStep(2);
       setLiveMessage(
         isLive
-          ? `Booking ${booking.reference} is held while payment is submitted.`
+          ? `Booking ${booking.reference} is held. Add player details before the timer expires.`
           : `Preview hold ${booking.reference} was created. No real court is reserved.`,
       );
     } catch (error) {
-      if (isLive) {
-        setTurnstileTokenValue("");
-        if (turnstileWidgetRef.current && window.turnstile) {
-          window.turnstile.reset(turnstileWidgetRef.current);
-        }
-      }
       setPaymentError(
         error instanceof Error
           ? error.message
           : "The slot could not be reserved. Refresh availability and try again.",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  async function completeHeldBookingDetails() {
+    setPaymentError("");
+    if (!validateDetails()) return;
+    if (!acceptedPolicy) {
+      setPaymentError("Accept the booking and cancellation rules before continuing to payment.");
+      window.requestAnimationFrame(() => document.getElementById(`${formId}-policy`)?.focus());
+      return;
+    }
+    if (!pendingBooking) {
+      setPaymentError("This court is not held yet. Return to the schedule and choose Hold & continue.");
+      return;
+    }
+    if (holdExpired) {
+      setPaymentError("This hold has expired or been released. Choose a new time.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const booking = await adapter.completeDetails({
+        booking: pendingBooking,
+        customer,
+      });
+      setPendingBooking(booking);
+      setStep(3);
+      setLiveMessage(
+        isLive
+          ? `Player details saved for held booking ${booking.reference}.`
+          : `Preview player details saved for ${booking.reference}.`,
+      );
+    } catch (error) {
+      setPaymentError(
+        error instanceof Error
+          ? error.message
+          : "Player details could not be saved. Try again before the hold expires.",
       );
     } finally {
       setIsSubmitting(false);
@@ -2135,6 +2249,58 @@ export function BookingExperience({
     }
   }
 
+  function addConfirmationToCalendar() {
+    if (!confirmedBooking || confirmedBooking.status !== "confirmed") return;
+    const sessions = confirmedBooking.items?.length ? confirmedBooking.items : selectedSlots;
+    const earliestHour = sessions.length
+      ? Math.min(...sessions.map((item) => item.startHour))
+      : confirmedBooking.startHour;
+    const latestHour = sessions.length
+      ? Math.max(...sessions.map((item) => item.startHour + item.durationHours))
+      : confirmedBooking.startHour + confirmedBooking.durationHours;
+    const calendarDate = confirmedBooking.date.replaceAll("-", "");
+    const courtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || "Dinktopia court";
+    const escapeCalendar = (value: string) => value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll(";", "\\;").replaceAll("\n", "\\n");
+    const calendar = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Dinktopia//Court Booking//EN",
+      "BEGIN:VEVENT",
+      `UID:${escapeCalendar(confirmedBooking.reference)}@dinktopia.pages.dev`,
+      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`,
+      `DTSTART;TZID=Asia/Manila:${calendarDate}T${String(earliestHour).padStart(2, "0")}0000`,
+      `DTEND;TZID=Asia/Manila:${calendarDate}T${String(latestHour).padStart(2, "0")}0000`,
+      `SUMMARY:${escapeCalendar(`Pickleball at Dinktopia · ${courtNames}`)}`,
+      `DESCRIPTION:${escapeCalendar(`Booking reference: ${confirmedBooking.reference}`)}`,
+      `LOCATION:${escapeCalendar(bootstrap?.tenant.locationLabel || "Dinktopia Court Hub")}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].join("\r\n");
+    const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `dinktopia-${confirmedBooking.reference.toLowerCase()}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function shareConfirmation() {
+    if (!confirmedBooking) return;
+    const shareText = `Dinktopia booking ${confirmedBooking.reference} · ${selectedBookingDateLabel || confirmedBooking.date} · ${selectedCourtCount} court${selectedCourtCount === 1 ? "" : "s"}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "Dinktopia court booking", text: shareText, url: window.location.origin + "/book" });
+      } else {
+        await navigator.clipboard?.writeText(`${shareText}\n${window.location.origin}/book`);
+        setLiveMessage("Booking details copied. Share them with your players.");
+      }
+    } catch {
+      // Closing the native share sheet should leave the confirmation unchanged.
+    }
+  }
+
   function clearHoldForReselection(message: string) {
     try {
       sessionStorage.removeItem("dinktopia:active-hold");
@@ -2155,7 +2321,6 @@ export function BookingExperience({
     setReceiptFile(null);
     setPaymentError("");
     setAcceptedPolicy(false);
-    setTurnstileTokenValue("");
     bookingAttemptIdRef.current = "";
     setStep(1);
     scrollToBooking();
@@ -2216,7 +2381,6 @@ export function BookingExperience({
     setPendingBooking(null);
     setConfirmedBooking(null);
     setAcceptedPolicy(false);
-    setTurnstileTokenValue("");
     bookingAttemptIdRef.current = "";
     scrollToBooking();
   }
@@ -2256,7 +2420,20 @@ export function BookingExperience({
     }
   }
 
-  const stepLabels = ["Choose date & time", "Your details", "Payment"];
+  const stepLabels = ["Courts", "Details", "Payment"];
+  const confirmationApproved = confirmedBooking?.status === "confirmed";
+  const confirmationNeedsAttention = confirmedBooking?.paymentReviewState === "short_payment" || confirmedBooking?.paymentReviewState === "rejected";
+  const confirmationTone = !isLive
+    ? "is-preview"
+    : confirmationApproved
+      ? "is-approved"
+      : confirmationNeedsAttention
+        ? "is-attention"
+        : "is-pending";
+  const confirmationCourtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || "Court details pending";
+  const confirmationEarliestHour = selectedSlots.length ? Math.min(...selectedSlots.map((item) => item.startHour)) : confirmedBooking?.startHour ?? 0;
+  const confirmationLatestHour = selectedSlots.length ? Math.max(...selectedSlots.map((item) => item.startHour + item.durationHours)) : (confirmedBooking?.startHour ?? 0) + (confirmedBooking?.durationHours ?? 1);
+  const confirmationTimeLabel = selectedSlots.length ? formatHourRange(confirmationEarliestHour, confirmationLatestHour) : "Time in booking record";
   const gallerySection = (
     <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
       <div className="site-container">
@@ -2307,13 +2484,59 @@ export function BookingExperience({
   );
 
   return (
-    <div className="dinktopia-site">
-      {!isLive && (
+    <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}>
+      {isBookingPage ? (
+        <div className="preview-ribbon" role="status">
+          <strong>{isLive ? "Live booking" : "Setup preview"}</strong>
+          <span>{isLive ? "Court availability and payments are connected." : "No live reservations or payments are created."}</span>
+        </div>
+      ) : !isLive && (
         <div className="preview-ribbon" role="status">
           <strong>Setup preview</strong><span>No live reservations or payments are created.</span>
         </div>
       )}
-      <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
+      {isBookingPage && (
+        <header className={`booking-app-header ${!isLive ? "has-preview-ribbon" : ""}`}>
+          <div className="booking-app-mobile-bar">
+            <button
+              className="booking-app-menu-button"
+              type="button"
+              aria-expanded={mobileNavOpen}
+              aria-controls="primary-navigation"
+              aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
+              onClick={() => setMobileNavOpen((open) => !open)}
+            >
+              <span className="menu-lines" aria-hidden="true" />
+            </button>
+            <strong>Book a court</strong>
+          </div>
+          <div className="booking-app-desktop-bar">
+            <div className="booking-app-title">
+              <small>Dinktopia Court Hub</small>
+              <strong>Book a court</strong>
+            </div>
+            <div className="booking-app-actions">
+              <label className="booking-app-search">
+                <span aria-hidden="true">⌕</span>
+                <input type="search" placeholder="Search bookings and players" aria-label="Search bookings and players" />
+                <kbd>⌘ K</kbd>
+              </label>
+              <Link className="booking-app-notification" href="/book?mode=manage" aria-label="Manage booking notifications">♧<b>2</b></Link>
+            </div>
+          </div>
+          <nav
+            id="primary-navigation"
+            className={`primary-nav booking-app-navigation ${mobileNavOpen ? "is-open" : ""}`}
+            aria-label="Primary navigation"
+          >
+            <Link href="/" onClick={() => setMobileNavOpen(false)}>Home</Link>
+            <Link href="/courts" onClick={() => setMobileNavOpen(false)}>Courts</Link>
+            <Link href="/book" aria-current={mode === "book" ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>New booking</Link>
+            <Link href="/book?mode=manage" aria-current={mode === "manage" ? "page" : undefined} onClick={() => setMobileNavOpen(false)}>Manage booking</Link>
+          </nav>
+        </header>
+      )}
+      {!isBookingPage && <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
         <div className="site-container header-inner">
           <Link className="wordmark" href="/" aria-label="Dinktopia home">
             <Image
@@ -2370,9 +2593,9 @@ export function BookingExperience({
             </Link>
           </nav>
         </div>
-      </header>
+      </header>}
 
-      <main id="main-content" className={isHome ? undefined : "route-main"}>
+      <main id="main-content" className={isHome ? undefined : isBookingPage && mode === "book" ? "route-main rallyos-main-content" : "route-main"}>
         {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
@@ -2580,6 +2803,23 @@ export function BookingExperience({
               </nav>
             </div>
 
+            {mode === "book" && step === 1 && (
+              <div className="booking-venue-hero player-hero player-hero-image" aria-label="Dinktopia Court Hub booking">
+                <div className="booking-venue-hero-copy">
+                  <span className="booking-venue-mark" aria-hidden="true">DT</span>
+                  <div>
+                    <p>Book direct</p>
+                    <h2>Book court time in seconds.</h2>
+                    <span>Tap any open slot. Choose as many courts and times as you need, then check out once.</span>
+                  </div>
+                </div>
+                <span className="booking-venue-location">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+                  Dinktopia Court Hub
+                </span>
+              </div>
+            )}
+
             {mode === "book" && isLive && !liveBookingReady ? (
               <div className="setup-unavailable-card" role={bootstrapState === "loading" ? "status" : "alert"}>
                 <span className={bootstrapState === "loading" ? "spinner" : "setup-unavailable-symbol"} aria-hidden="true">{bootstrapState === "loading" ? "" : "!"}</span>
@@ -2592,6 +2832,30 @@ export function BookingExperience({
               </div>
             ) : mode === "book" ? (
               <div className="booking-shell">
+                {step === 2 && (
+                  <div className="booking-compact-title">
+                    <button className="back-link" type="button" disabled={isSubmitting} onClick={() => void cancelCurrentHold()}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                      Back
+                    </button>
+                    <div>
+                      <p className="player-kicker">Almost yours</p>
+                      <h2>Who&apos;s playing?</h2>
+                    </div>
+                  </div>
+                )}
+                {step === 3 && (
+                  <div className="booking-compact-title">
+                    <button className="back-link" type="button" disabled={isSubmitting} onClick={() => setStep(2)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                      Back
+                    </button>
+                    <div>
+                      <p className="player-kicker">Secure checkout</p>
+                      <h2>Pay with {paymentLabel}</h2>
+                    </div>
+                  </div>
+                )}
                 {step < 4 && (
                   <>
                     <p className="booking-step-summary">
@@ -2603,8 +2867,8 @@ export function BookingExperience({
                         const number = index + 1;
                         const state = number === step ? "current" : number < step ? "complete" : "upcoming";
                         return (
-                          <li key={label} className={`is-${state}`} aria-current={number === step ? "step" : undefined}>
-                            <span>{number < step ? "✓" : String(number).padStart(2, "0")}</span>
+                          <li key={label} className={`is-${state}${state === "current" ? " active" : state === "complete" ? " complete" : ""}`} aria-current={number === step ? "step" : undefined}>
+                            <span>{number < step ? "✓" : number}</span>
                             <small>{label}</small>
                           </li>
                         );
@@ -2614,26 +2878,28 @@ export function BookingExperience({
                 )}
 
                 {step === 1 && (
-                  <div className="booking-layout">
-                    <div className={`booking-main-card booking-selection-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
-                      <div className="booking-card-heading booking-choice-heading">
-                        <span className="step-chip">STEP 01</span>
-                        <div><h3>Choose date and time</h3><p>Philippine Standard Time</p></div>
+                  <div className="booking-layout booking-slot-step">
+                    <div className={`booking-main-card booking-selection-card booking-stage surface-card${selectedSlots.length ? " has-mobile-selection" : ""}`}>
+                      <div className="booking-card-heading booking-choice-heading stage-heading">
+                        <span className="step-chip">01</span>
+                        <div><p className="booking-card-kicker">Court booking</p><h3>Choose your slots</h3></div>
                       </div>
 
-                      <fieldset className="booking-fieldset">
-                        <legend>Choose a date</legend>
-                        <div className="date-rail">
-                          {dates.map((date) => (
+                      <fieldset className="booking-fieldset field-group">
+                        <legend className="sr-only">Select a date</legend>
+                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Next 6 days</span></div>
+                        <div className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
+                          {dates.slice(1, 7).map((date, index) => (
                             <button
                               type="button"
                               key={date.iso}
-                              className={`date-option ${selectedDate === date.iso ? "is-selected" : ""}`}
-                              aria-pressed={selectedDate === date.iso}
+                              className={`date-option ${selectedDate === date.iso ? "is-selected selected" : ""}`}
+                              role="radio"
+                              aria-checked={selectedDate === date.iso}
                               aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
                             >
-                              <span>{date.isToday ? "Today" : date.day}</span>
+                              <span>{index === 0 ? "Tomorrow" : date.day}</span>
                               <strong>{date.date}</strong>
                               <small>{date.month}</small>
                             </button>
@@ -2642,29 +2908,31 @@ export function BookingExperience({
                         {selectedSlots.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours.</p>}
                       </fieldset>
 
-                      <fieldset className="booking-fieldset availability-fieldset">
+                      <fieldset className={`booking-fieldset availability-fieldset field-group availability-section${selectedSlots.length ? "" : " waiting"}`}>
                         <legend className="sr-only">Choose court-hours</legend>
-                        <div className="schedule-heading-row">
+                        <div className="schedule-heading-row field-group-label availability-heading">
                           <div className="schedule-title-group">
-                            <h4>{visibleAvailabilityState === "loading" ? "Refreshing times" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : `${availableCount} court-hours open`}</h4>
+                            <h4>{visibleAvailabilityState === "loading" ? "Refreshing times" : visibleAvailabilityState === "error" ? "Schedule needs a retry" : "Court schedule"}</h4>
                             <p className="schedule-help">
-                              {isLive && !atomicMultiSessionBooking
-                                ? "Select consecutive hours on one court."
-                                : "Select any open times across one or more courts."}
+                              Tap an open slot to select it. Tap again to remove.
                             </p>
                           </div>
-                          <div className="schedule-selection-count" aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}>
-                            <span className="schedule-count-number">{selectedSlots.length}</span>
-                            <span>selected</span>
-                            <small>court-hours</small>
-                            <button className={selectedSlots.length ? undefined : "is-placeholder"} type="button" disabled={!selectedSlots.length} aria-hidden={!selectedSlots.length} tabIndex={selectedSlots.length ? 0 : -1} onClick={clearSelection}>Clear</button>
+                          <div
+                            className="schedule-selection-count"
+                            role="status"
+                            aria-live="polite"
+                            aria-label={`${selectedSlots.length} court-hour${selectedSlots.length === 1 ? "" : "s"} selected`}
+                          >
+                            {selectedSlots.length
+                              ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} · ${peso(courtSubtotal)}`
+                              : "No slots selected"}
                           </div>
                         </div>
                         <div className="availability-legend-row">
-                          <div className="slot-legend" aria-label="Availability key">
+                          <div className="slot-legend availability-legend" aria-label="Availability legend">
                             <span><i className="legend-open" />Open</span>
-                            <span><i className="legend-selected" />Selected</span>
                             <span><i className="legend-booked" />Booked</span>
+                            <span><i className="legend-selected" />Your selection</span>
                           </div>
                         </div>
 
@@ -2708,75 +2976,93 @@ export function BookingExperience({
                         )}
 
                         {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="schedule-scroll" role="region" aria-label={`Availability for ${displayCourts.length} courts on ${selectedBaseDateLabel}${scheduleHours.some((hour) => hour >= 24) ? " and the next day" : ""}`} tabIndex={0}>
-                            <table className="schedule-matrix">
-                              <thead>
-                                <tr>
-                                  <th scope="col">Time</th>
-                                  {displayCourts.map((court) => (
-                                    <th scope="col" key={court.id} title={court.name} className={initialCourtSlug && court.id === selectedCourtId ? "is-requested-court" : undefined}>
-                                      <strong>C{Number(court.number)}</strong>
-                                      <span>{court.name}</span>
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
+                          <div className="rally-availability-board">
+                            <div
+                              className="availability-scroll"
+                              role="region"
+                              aria-label={`All courts hourly availability for ${selectedBaseDateLabel}. Scroll horizontally to see later times.`}
+                              tabIndex={0}
+                            >
+                              <div className="availability-grid" style={{ "--slot-count": scheduleHours.length } as CSSProperties}>
+                                <div className="availability-corner"><strong>All courts</strong><small>Hourly view</small></div>
                                 {scheduleHours.map((hour) => (
-                                  <Fragment key={hour}>
-                                  {hour === 24 && selectedFollowingDate && (
-                                    <tr className="schedule-next-day-divider">
-                                      <td colSpan={displayCourts.length + 1}>
-                                        <div
-                                          className="schedule-next-day-marker"
-                                          role="separator"
-                                          aria-label={`Next day, ${longDateLabel(selectedFollowingDate)}`}
-                                        >
-                                          <span>NEXT DAY</span>
-                                          <strong>{shortDateLabel(selectedFollowingDate)}</strong>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  )}
-                                  <tr>
-                                    <th scope="row"><strong>{formatHour(hour).replace(":00", "")}</strong><span>–{formatHour(hour + 1).replace(":00", "")}</span></th>
-                                    {displayCourts.map((court) => {
-                                      const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
-                                      const key = selectionKey(court.id, hour);
-                                      const isSelected = selectedKeys.has(key);
-                                      const isClosed = !slot;
-                                      const isBooked = slot?.status === "unavailable";
-                                      const isUnavailable = isClosed || isBooked;
-                                      const isDisabled = isUnavailable;
-                                      const stateLabel = isClosed
-                                        ? "closed"
-                                        : isBooked
-                                          ? "booked"
-                                          : isSelected
-                                            ? "selected"
-                                            : "available";
-                                      return (
-                                        <td key={court.id}>
+                                  <div
+                                    className={`availability-time${hour === 24 ? " schedule-next-day-divider" : ""}`}
+                                    key={`time-${hour}`}
+                                    aria-label={hour === 24 && selectedFollowingDate ? `Next day, ${longDateLabel(selectedFollowingDate)}` : undefined}
+                                  >
+                                    <strong>{formatHour(hour).replace(":00", "")}</strong>
+                                    <small>{hour === 24 ? "NEXT DAY · " : "to "}{formatHour(hour + 1).replace(":00", "")}</small>
+                                  </div>
+                                ))}
+                                {displayCourts.map((court) => {
+                                  const courtSchedule = schedule.find((item) => item.courtId === court.id);
+                                  const courtSelectionCount = selectedSlots.filter((item) => item.courtId === court.id).length;
+                                  return (
+                                    <Fragment key={court.id}>
+                                      <div className="availability-court">
+                                        <span className="court-number">{Number(court.number)}</span>
+                                        <span><strong>{court.name}</strong><small>{compactCourtSurface(court)}</small></span>
+                                        <em>{courtSelectionCount ? `${courtSelectionCount} selected` : ""}</em>
+                                      </div>
+                                      {scheduleHours.map((hour) => {
+                                        const slot = courtSchedule?.slots.find((item) => item.hour === hour);
+                                        const isSelected = selectedKeys.has(selectionKey(court.id, hour));
+                                        const busy = !slot || slot.status === "unavailable";
+                                        return (
                                           <button
                                             type="button"
-                                            className={`schedule-cell${isSelected ? " is-selected" : ""}${isUnavailable ? " is-unavailable" : ""}${isClosed ? " is-closed" : ""}${isBooked ? " is-booked" : ""}`}
+                                            key={`${court.id}-${hour}`}
+                                            className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
-                                            disabled={isDisabled}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${isUnavailable ? stateLabel : `${peso(slot.price)}, ${stateLabel}`}`}
-                                            onClick={() => slot && !isUnavailable && chooseSlot(court, slot)}
-                                          >
-                                            <span className="schedule-cell-mark" aria-hidden="true">{isSelected ? "✓" : isUnavailable ? "—" : "+"}</span>
-                                            <strong>{isClosed ? "Closed" : isBooked ? "Booked" : peso(slot.price)}</strong>
-                                            <span className="schedule-cell-state">{isSelected ? "Added" : isUnavailable ? stateLabel : "Open"}</span>
-                                          </button>
-                                        </td>
+                                            disabled={busy}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                            onClick={() => slot && !busy && chooseSlot(court, slot)}
+                                          ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
+                                        );
+                                      })}
+                                    </Fragment>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div className="availability-mobile" role="region" aria-label="Mobile all-court availability">
+                              <div
+                                className="mobile-availability-grid"
+                                style={{
+                                  "--court-count": displayCourts.length,
+                                  "--mobile-grid-min": `${80 + displayCourts.length * 58}px`,
+                                } as CSSProperties}
+                              >
+                                <div className="mobile-availability-corner"><strong>Time</strong><small>Hourly</small></div>
+                                {displayCourts.map((court) => (
+                                  <div className="mobile-court-head" key={`head-${court.id}`} title={court.name}>
+                                    <span>C{Number(court.number)}</span><small>{compactCourtSurface(court)}</small>
+                                  </div>
+                                ))}
+                                {scheduleHours.map((hour) => (
+                                  <Fragment key={`mobile-${hour}`}>
+                                    <div className={`mobile-time-label${hour === 24 ? " schedule-next-day-divider" : ""}`}><strong>{formatHour(hour).replace(":00", "")}</strong><small>{hour === 24 ? "NEXT DAY · " : "to "}{formatHour(hour + 1).replace(":00", "")}</small></div>
+                                    {displayCourts.map((court) => {
+                                      const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
+                                      const isSelected = selectedKeys.has(selectionKey(court.id, hour));
+                                      const busy = !slot || slot.status === "unavailable";
+                                      return (
+                                        <button
+                                          type="button"
+                                          key={`${court.id}-${hour}`}
+                                          className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
+                                          aria-pressed={isSelected}
+                                          disabled={busy}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                          onClick={() => slot && !busy && chooseSlot(court, slot)}
+                                        ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
                                       );
                                     })}
-                                  </tr>
                                   </Fragment>
                                 ))}
-                              </tbody>
-                            </table>
+                              </div>
+                            </div>
                           </div>
                         )}
                         {isLive && selectedSlots.length > 0 && !liveSelectionSupported && (
@@ -2789,38 +3075,48 @@ export function BookingExperience({
                         )}
                       </fieldset>
 
-                      {selectedSlots.length > 0 && (
-                        <div className="booking-mobile-action" role="region" aria-label="Selected court-hours">
-                          <div><small>{selectedSlots.length} hr{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</small><strong>{peso(total)}</strong></div>
-                          <button className="mobile-selection-clear" type="button" onClick={clearSelection}>Clear</button>
-                          <button data-testid="booking-continue" className="button button-blue" type="button" disabled={!liveSelectionSupported} onClick={() => setStep(2)}>Continue <span aria-hidden="true">→</span></button>
+                      {step === 1 && paymentError && (
+                        <div className="payment-error booking-selection-error" role="alert">
+                          <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slots</strong><p>{paymentError}</p></div>
                         </div>
                       )}
+                      <div className="slot-step-footer stage-footer booking-selection-footer" role="region" aria-label="Selected court-hours">
+                        <div>
+                          <strong><i aria-hidden="true">✓</i>{selectedSlots.length ? `${selectedSlots.length} slot${selectedSlots.length === 1 ? "" : "s"} selected` : "Select one or more open slots"}</strong>
+                          {selectedSlots.length > 0 && <span>{selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"} · {peso(total)}</span>}
+                        </div>
+                        <button
+                          className={`slot-clear-button${selectedSlots.length ? "" : " is-placeholder"}`}
+                          type="button"
+                          disabled={!selectedSlots.length}
+                          aria-hidden={!selectedSlots.length}
+                          tabIndex={selectedSlots.length ? 0 : -1}
+                          onClick={clearSelection}
+                        >Clear</button>
+                        <button data-testid="booking-continue" className="button button-blue" type="button" disabled={isSubmitting || !selectedSlots.length || !liveSelectionSupported} onClick={() => void createSelectionHold()}>{isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding…</> : <>Hold &amp; continue{selectedSlots.length ? ` · ${peso(total)}` : ""} <span aria-hidden="true">→</span></>}</button>
+                      </div>
                     </div>
-                    <BookingSummary
-                      selections={selectedSlotDetails}
-                      dateLabel={selectedBookingDateLabel}
-                      subtotal={courtSubtotal}
-                      bookingFee={bookingFee ?? 0}
-                      total={total}
-                      actionLabel="Continue"
-                      actionDisabled={!selectedSlots.length || !liveSelectionSupported}
-                      onAction={() => setStep(2)}
-                    />
                   </div>
                 )}
 
                 {step === 2 && (
-                  <div className="booking-layout compact-step booking-details-step">
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
-                    <form className="booking-main-card booking-details-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
-                      <div className="booking-card-heading">
-                        <span className="step-chip">STEP 02</span>
-                        <div><h3>Your details</h3><p>No account needed. We&apos;ll send booking updates here.</p></div>
+                  <div className="checkout-layout booking-details-view">
+                    <form className="booking-main-card booking-details-form booking-stage surface-card guest-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
+                      <div className="booking-card-heading stage-heading">
+                        <span className="step-chip">02</span>
+                        <div><p className="player-kicker">Player details</p><h3>Tell us who to expect</h3></div>
                       </div>
-                      <div className="form-grid">
-                        <div className="form-field form-field-wide">
-                          <label htmlFor={`${formId}-name`}>Full name</label>
+                      {pendingBooking && (
+                        <div className={`notice-banner ${holdExpired ? "" : "notice-success"}`} role={holdExpired ? "alert" : "status"}>
+                          <div>
+                            <strong>{holdExpired ? "Hold expired or released" : `Slots held · ${pendingBooking.reference}`}</strong>
+                            <span>{holdExpired ? "Return to the schedule and choose another time." : holdRemainingSeconds == null ? "The server controls this hold window." : `Complete these details within ${formatHoldCountdown(holdRemainingSeconds)}.`}</span>
+                          </div>
+                        </div>
+                      )}
+                      <div className="form-grid player-form-grid">
+                        <label className="player-field full">
+                          <span>Full name</span>
                           <input
                             id={`${formId}-name`}
                             autoComplete="name"
@@ -2828,12 +3124,30 @@ export function BookingExperience({
                             aria-invalid={Boolean(detailErrors.fullName)}
                             aria-describedby={detailErrors.fullName ? fieldErrorId(formId, "name") : undefined}
                             onChange={(event) => setCustomer({ ...customer, fullName: event.target.value })}
-                            placeholder="Juan Dela Cruz"
+                            placeholder="e.g. Gabriela Ramos"
                           />
                           {detailErrors.fullName && <span className="field-error" id={fieldErrorId(formId, "name")}>{detailErrors.fullName}</span>}
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`${formId}-email`}>Email address</label>
+                        </label>
+                        <label className="player-field">
+                          <span>Mobile number</span>
+                          <div className="phone-field">
+                            <b>+63</b>
+                            <input
+                              id={`${formId}-phone`}
+                              type="tel"
+                              inputMode="tel"
+                              autoComplete="tel"
+                              value={customer.phone.replace(/^\+63\s?/, "").replace(/^0/, "")}
+                              aria-invalid={Boolean(detailErrors.phone)}
+                              aria-describedby={detailErrors.phone ? fieldErrorId(formId, "phone") : undefined}
+                              onChange={(event) => setCustomer({ ...customer, phone: `+63 ${event.target.value}` })}
+                              placeholder="917 123 4567"
+                            />
+                          </div>
+                          {detailErrors.phone && <span className="field-error" id={fieldErrorId(formId, "phone")}>{detailErrors.phone}</span>}
+                        </label>
+                        <label className="player-field">
+                          <span>Email address</span>
                           <input
                             id={`${formId}-email`}
                             type="email"
@@ -2842,24 +3156,14 @@ export function BookingExperience({
                             aria-invalid={Boolean(detailErrors.email)}
                             aria-describedby={detailErrors.email ? fieldErrorId(formId, "email") : undefined}
                             onChange={(event) => setCustomer({ ...customer, email: event.target.value })}
-                            placeholder="juan@example.com"
+                            placeholder="you@example.com"
                           />
                           {detailErrors.email && <span className="field-error" id={fieldErrorId(formId, "email")}>{detailErrors.email}</span>}
-                        </div>
-                        <div className="form-field">
-                          <label htmlFor={`${formId}-phone`}>Mobile number</label>
-                          <input
-                            id={`${formId}-phone`}
-                            type="tel"
-                            autoComplete="tel"
-                            value={customer.phone}
-                            aria-invalid={Boolean(detailErrors.phone)}
-                            aria-describedby={detailErrors.phone ? fieldErrorId(formId, "phone") : undefined}
-                            onChange={(event) => setCustomer({ ...customer, phone: event.target.value })}
-                            placeholder="0917 123 4567"
-                          />
-                          {detailErrors.phone && <span className="field-error" id={fieldErrorId(formId, "phone")}>{detailErrors.phone}</span>}
-                        </div>
+                        </label>
+                        <label className="player-field full">
+                          <span>Booking note <small>Optional</small></span>
+                          <input name="note" placeholder="Celebration, coaching session, accessibility request…" />
+                        </label>
                       </div>
                       <label className="check-row booking-updates-choice">
                         <input type="checkbox" checked={customer.updates} onChange={(event) => setCustomer({ ...customer, updates: event.target.checked })} />
@@ -2880,185 +3184,182 @@ export function BookingExperience({
                         )}
                         <label className={`check-row policy-check ${!acceptedPolicy ? "needs-check" : ""}`}>
                           <input id={`${formId}-policy`} type="checkbox" checked={acceptedPolicy} disabled={isLive && !policyVersion} onChange={(event) => setAcceptedPolicy(event.target.checked)} />
-                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required to hold this time.</small></span>
+                          <span><strong>I agree to the booking and cancellation rules</strong><small>Required before payment.</small></span>
                         </label>
-                        {isLive && (
-                          <div className="security-boundary details-security-boundary">
-                            <div><strong>Verification</strong><p>Required before we hold the court.</p></div>
-                            {securitySiteKey ? (
-                              <><div ref={turnstileContainerRef} className="turnstile-container" /><span className={turnstileTokenValue ? "security-ready" : "security-waiting"}>{turnstileTokenValue ? "Verified" : "Verification required"}</span></>
-                            ) : (
-                              <div className="payment-error" role="alert"><span aria-hidden="true">!</span><div><strong>Live booking is paused</strong><p>The venue security check has not been configured.</p></div></div>
-                            )}
-                          </div>
-                        )}
                         {paymentError && (
                           <div className="payment-error" role="alert">
-                            <span aria-hidden="true">!</span><div><strong>We couldn&apos;t hold your slot</strong><p>{paymentError}</p></div>
+                            <span aria-hidden="true">!</span><div><strong>We couldn&apos;t save your details</strong><p>{paymentError}</p></div>
                           </div>
                         )}
                       </div>
-                      <div className="step-actions">
-                        <button className="button button-ghost" type="button" onClick={() => setStep(1)}><span aria-hidden="true">←</span> Back</button>
+                      <div className="stage-footer form-footer">
+                        <span>By continuing, you agree to the venue booking policy.</span>
                         <button
                           data-testid="hold-and-pay"
                           className="button button-blue"
                           type="submit"
-                          disabled={isSubmitting || !acceptedPolicy || !liveSelectionSupported || (isLive && !turnstileTokenValue)}
+                          disabled={isSubmitting || holdExpired || !acceptedPolicy || !liveSelectionSupported}
                         >
-                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Holding your slot…</> : <>Hold slot &amp; proceed to payment <span aria-hidden="true">→</span></>}
+                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Saving details…</> : <>Review payment <span aria-hidden="true">→</span></>}
                         </button>
                       </div>
-                      <p className="hold-helper">No charge yet.</p>
                     </form>
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
                   </div>
                 )}
 
                 {step === 3 && checkoutSlot && pendingBooking && (
-                  <div className="booking-layout compact-step booking-payment-step">
-                    <form className="booking-main-card" onSubmit={submitPayment} aria-busy={isSubmitting} noValidate>
-                      <div className="booking-card-heading">
-                        <span className="step-chip">STEP 03</span>
-                        <div>
-                          <h3 ref={paymentHeadingRef} tabIndex={-1}>{holdExpired ? "Hold unavailable" : !heldPaymentReady ? "Payment temporarily unavailable" : isLive ? `Pay with ${paymentLabel}` : "GCash payment preview"}</h3>
-                          <p>{holdExpired ? "Choose another time to continue." : !heldPaymentReady ? "Payment is paused until setup is verified." : isLive ? "Upload your GCash receipt before the hold expires." : "Use sample GCash details to inspect the receipt flow."}</p>
+                  <div className="checkout-layout booking-payment-view">
+                    <form className="booking-stage surface-card gcash-payment-card" onSubmit={submitPayment} aria-busy={isSubmitting} noValidate>
+                      <div className="gcash-heading">
+                        <h3 ref={paymentHeadingRef} tabIndex={-1}><span>G</span>Cash</h3>
+                        <span className="gcash-secure-pill"><i aria-hidden="true" /> Secure</span>
+                      </div>
+                      <div className="payment-amount">
+                        <span>Amount to pay</span>
+                        <strong>{peso(checkoutTotal)}</strong>
+                        <small>Send the exact booking total</small>
+                      </div>
+
+                      {holdExpired ? (
+                        <div className="payment-error" role="alert">
+                          <span aria-hidden="true">!</span><div><strong>Hold expired or released</strong><p>Payment is disabled. Choose another court time to continue.</p></div>
                         </div>
-                      </div>
-                      <div className="checkout-snapshot" aria-label="Checkout booking summary">
-                        <span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</strong><small>{selectedDateDetails?.long}{!selectedDateDetails ? selectedDate : ""}{selectedNextDayDateSuffix}</small></span>
-                        <b>{peso(checkoutTotal)}</b>
-                      </div>
-                      {pendingBooking && (
+                      ) : !heldPaymentReady ? (
+                        <div className="payment-error" role="alert">
+                          <span aria-hidden="true">!</span><div><strong>GCash setup is incomplete</strong><p>The court owner must publish a GCash account in System Setup before payment can continue.</p></div>
+                        </div>
+                      ) : (
                         <>
-                          <div className={`notice-banner ${holdExpired ? "" : "notice-success"}`} role={holdExpired ? "alert" : undefined}>
-                            <div>
-                              <strong>{holdExpired ? "Hold expired or released" : isLive ? `Slot held · ${pendingBooking.reference}` : `Preview hold only · ${pendingBooking.reference}`}</strong>
-                              <span>
-                                {holdExpired
-                                  ? "Payment is disabled. Clear this hold and choose an available time."
-                                  : isLive
-                                    ? !heldPaymentReady
-                                      ? `${holdRemainingSeconds == null ? "The server controls this hold window." : `Hold expires in ${formatHoldCountdown(holdRemainingSeconds)}.`} Payment controls remain disabled until live setup is verified.`
-                                      : `${holdRemainingSeconds == null ? "The server controls this hold window." : `Hold expires in ${formatHoldCountdown(holdRemainingSeconds)}.`} Send payment only while this verified hold is active.`
-                                    : "No real court is reserved. Do not send money."}
-                              </span>
+                          <div className="owner-payment-note">
+                            <span aria-hidden="true">✦</span>
+                            <div><strong>Pay the court owner directly</strong><small>Use the verified GCash details saved by the venue in System Setup.</small></div>
+                          </div>
+                          <div className="gcash-account-field">
+                            <span>{paymentLabel} mobile number</span>
+                            <div className="gcash-account-number">
+                              {isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) && <b>+63</b>}
+                              <output aria-label={`${paymentLabel} account number`}>{isLive ? paymentAccountDisplay : "Available on the live booking site"}</output>
                             </div>
                           </div>
-                          {!holdExpired && heldPaymentReady && (
-                            <>
-                              <div className={`payment-panel${isLive ? "" : " payment-panel-preview"}`}>
-                                {isLive && paymentQrUrl ? (
-                                  <div className="payment-qr payment-qr-live">
-                                    {/* The URL is tenant-owned public payment configuration. */}
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={paymentQrUrl} alt={`${paymentLabel} payment QR code`} />
-                                  </div>
-                                ) : isLive ? (
-                                  <div className="payment-qr" aria-label={`${paymentLabel} QR code placeholder pending venue setup`}>
-                                    <div className="qr-pattern" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
-                                    <span>{paymentLabel.toUpperCase()}</span>
-                                  </div>
-                                ) : (
-                                  <div className="payment-preview-mark" aria-hidden="true"><span>LOCAL</span><strong>PREVIEW</strong></div>
-                                )}
-                                <div className="payment-instructions">
-                                  <span className="setup-badge">{isLive ? "SECURE PAYMENT" : "PREVIEW · DO NOT PAY"}</span>
-                                  <h4>{isLive ? <>Send exactly <strong>{peso(pendingBooking.amount)}</strong></> : <>Sample total <strong>{peso(pendingBooking.amount)}</strong></>}</h4>
-                                  <p>{isLive ? paymentMethod?.instructions ?? "The live QR and account name will appear here when the clubhouse payment profile is activated." : "Use sample details below. Nothing is sent."}</p>
-                                  {isLive && paymentMethod?.accountName && <p className="payment-account"><strong>Account:</strong> {paymentMethod.accountName}{paymentMethod.accountReference ? ` · ${paymentMethod.accountReference}` : paymentMethod.accountNumber ? ` · ${paymentMethod.accountNumber}` : ""}</p>}
-                                  {isLive && <ol><li>Open {paymentLabel} and scan the club QR.</li><li>Send the exact held total.</li><li>Save your receipt and add it below.</li></ol>}
-                                </div>
-                              </div>
-                              <div className="form-grid payment-fields">
-                                <div className="form-field">
-                                  <label htmlFor={`${formId}-payment-reference`}>{isLive ? paymentLabel : "Sample payment"} reference number</label>
-                                  <input id={`${formId}-payment-reference`} inputMode="numeric" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="e.g. 1234 5678 9012" />
-                                </div>
-                                <div className="form-field">
-                                  <label htmlFor={`${formId}-receipt`}>{isLive ? "Payment receipt" : "Sample receipt image"}</label>
-                                  <label className={`upload-control ${receiptFileName ? "has-file" : ""}`} htmlFor={`${formId}-receipt`}>
-                                    <span aria-hidden="true">＋</span>
-                                    <span><strong>{receiptFileName || "Choose a file"}</strong><small>{receiptFileName ? "Ready to submit" : "JPG, PNG, or WebP · max 2 MB"}</small></span>
-                                  </label>
-                                  <input
-                                    className="visually-hidden-file"
-                                    id={`${formId}-receipt`}
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    onChange={(event) => {
-                                      const file = event.target.files?.[0] ?? null;
-                                      if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
-                                        setReceiptFile(null);
-                                        setReceiptFileName("");
-                                        setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
-                                        event.target.value = "";
-                                        return;
-                                      }
-                                      setPaymentError("");
-                                      setReceiptFile(file);
-                                      setReceiptFileName(file?.name ?? "");
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            </>
-                          )}
+                          <div className="payment-recipient">
+                            <span>Paying</span>
+                            <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
+                            <small>{paymentLabel} account from System Setup</small>
+                          </div>
+                          {isLive && paymentMethod?.instructions && <p className="payment-owner-instructions">{paymentMethod.instructions}</p>}
+                          <div className="gcash-hold-status" role="status">
+                            <span><i aria-hidden="true" /> Slot held · {pendingBooking.reference}</span>
+                            <small>{holdRemainingSeconds == null ? "Complete payment while this hold is active." : `Expires in ${formatHoldCountdown(holdRemainingSeconds)}.`}</small>
+                          </div>
+                          <div className="form-grid payment-evidence-fields">
+                            <div className="form-field">
+                              <label htmlFor={`${formId}-payment-reference`}>{paymentLabel} reference number</label>
+                              <input id={`${formId}-payment-reference`} inputMode="numeric" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="e.g. 1234 5678 9012" />
+                            </div>
+                            <div className="form-field">
+                              <label htmlFor={`${formId}-receipt`}>Payment receipt</label>
+                              <label className={`upload-control ${receiptFileName ? "has-file" : ""}`} htmlFor={`${formId}-receipt`}>
+                                <span aria-hidden="true">＋</span>
+                                <span><strong>{receiptFileName || "Choose a file"}</strong><small>{receiptFileName ? "Ready to submit" : "JPG, PNG, or WebP · max 2 MB"}</small></span>
+                              </label>
+                              <input
+                                className="visually-hidden-file"
+                                id={`${formId}-receipt`}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0] ?? null;
+                                  if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
+                                    setReceiptFile(null);
+                                    setReceiptFileName("");
+                                    setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
+                                    event.target.value = "";
+                                    return;
+                                  }
+                                  setPaymentError("");
+                                  setReceiptFile(file);
+                                  setReceiptFileName(file?.name ?? "");
+                                }}
+                              />
+                            </div>
+                          </div>
                         </>
-                      )}
-                      {pendingBooking && !holdExpired && !heldPaymentReady && (
-                        <div className="payment-error" role="alert">
-                          <span aria-hidden="true">!</span><div><strong>Payment remains disabled</strong><p>Live payment setup could not be verified. Cancel this unpaid hold or refresh before its expiry.</p></div>
-                        </div>
                       )}
                       {paymentError && (
                         <div className="payment-error" role="alert">
                           <span aria-hidden="true">!</span><div><strong>Payment needs another look</strong><p>{paymentError}</p></div>
                         </div>
                       )}
-                      <p className="secure-note"><span aria-hidden="true">◇</span> {!isLive ? "No card details are collected in preview." : `${holdExpired ? "Payment is disabled for this unavailable hold." : !heldPaymentReady ? "Payment is disabled until live venue configuration is verified." : "Your slot is held and becomes confirmed only after payment review."} No card details are collected here.`}</p>
-                      <div className="step-actions">
-                        <button className="button button-ghost" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
-                        {!holdExpired && heldPaymentReady && <button data-testid="submit-receipt" className="button button-blue" type="submit" disabled={isSubmitting}>
-                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>{isLive ? "Submit GCash receipt" : "Submit sample receipt"} <span aria-hidden="true">→</span></>}
-                        </button>}
-                      </div>
+                      {!holdExpired && heldPaymentReady && <button data-testid="submit-receipt" className="button gcash-button" type="submit" disabled={isSubmitting}>
+                        {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>Submit receipt · {peso(checkoutTotal)} <span aria-hidden="true">→</span></>}
+                      </button>}
+                      <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
+                      <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s GCash details come directly from System Setup.</p>
                     </form>
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
                   </div>
                 )}
 
                 {step === 4 && confirmedBooking && (
-                  <div className="confirmation-card" role="status">
-                    <div className="confirmation-burst" aria-hidden="true"><span>✓</span></div>
-                    <p className="eyebrow eyebrow-dark">{!isLive ? "Preview complete" : confirmedBooking.status === "confirmed" ? "Booking confirmed" : "Receipt received"}</p>
-                    <h3>{!isLive ? "You completed the preview." : confirmedBooking.status === "confirmed" ? "Your court is confirmed." : "Your rally is on the board."}</h3>
-                    <p className="confirmation-lede">{!isLive ? <>No real reservation or payment was created. This reference is for the current browser preview only.</> : confirmedBooking.status === "confirmed" ? <>Payment was accepted and booking <strong>{confirmedBooking.reference}</strong> is confirmed. Use <strong>{confirmedBooking.customer.email}</strong> to manage it.</> : <>The receipt for <strong>{confirmedBooking.reference}</strong> was received and is awaiting review. Use <strong>{confirmedBooking.customer.email}</strong> to check its status.</>}</p>
-                    <div className="confirmation-reference"><span>BOOKING REFERENCE</span><strong>{confirmedBooking.reference}</strong><button type="button" onClick={() => navigator.clipboard?.writeText(confirmedBooking.reference)}>Copy</button></div>
-                    <div className="confirmation-details">
-                      <div><span>Courts</span><strong>{selectedCourtCount}</strong></div>
-                      <div><span>Date</span><strong>{selectedBookingDateLabel || confirmedBooking.date}</strong></div>
-                      <div><span>Play</span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"}</strong></div>
-                      <div><span>Total</span><strong>{peso(confirmedBooking.amount)}</strong></div>
-                    </div>
-                    {groupedSelections.length > 0 && (
-                      <ul className="confirmation-sessions" aria-label="Confirmed court sessions">
-                        {groupedSelections.map((group) => (
-                          <li key={`${group.court.id}:${group.startHour}`}>
-                            <strong>{group.court.name}</strong>
-                            <span>{formatHourRange(group.startHour, group.endHour)} · {group.courtHours} hour{group.courtHours === 1 ? "" : "s"}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    <div className="confirmation-next"><span className="status-pulse" aria-hidden="true" /><div><strong>{!isLive ? "Preview reminder" : confirmedBooking.status === "confirmed" ? "You’re booked" : "What happens next?"}</strong><p>{!isLive ? "Do not travel to the venue or send money based on this preview." : confirmedBooking.status === "confirmed" ? "Keep this reference handy for status checks or owner-assisted changes." : "The club will review the submitted receipt. Keep this reference handy to check status."}</p></div></div>
-                    <div className="confirmation-actions">
-                      <button className="button button-blue" type="button" onClick={() => {
-                        setLookupReference(confirmedBooking.reference);
-                        setLookupEmail(confirmedBooking.customer.email);
-                        openManage();
-                      }}>{isLive ? "Manage this booking" : "Inspect preview status"}</button>
-                      <button className="button button-outline" type="button" onClick={resetBooking}>Book another court</button>
-                    </div>
+                  <div className="rally-confirmation-view" role="status" aria-live="polite">
+                    <article className={`rally-confirmation-card ${confirmationTone}`}>
+                      <div className="rally-confirmation-orbit" aria-hidden="true">
+                        <span>{confirmationNeedsAttention ? <TriangleAlert /> : confirmationApproved || !isLive ? <Check /> : <Clock3 />}</span>
+                      </div>
+                      <p className="rally-confirmation-kicker">
+                        {!isLive ? "Preview complete" : confirmationApproved ? "Payment received" : confirmationNeedsAttention ? "Payment needs attention" : "Receipt submitted"}
+                      </p>
+                      <h3>
+                        {!isLive
+                          ? "You completed the preview."
+                          : confirmationApproved
+                            ? selectedCourtCount === 1 ? "Your court is ready." : "Your courts are ready."
+                            : confirmationNeedsAttention
+                              ? "Please review your payment."
+                              : "Dinktopia is reviewing your receipt."}
+                      </h3>
+                      <p className="rally-confirmation-lead">
+                        {!isLive
+                          ? "No real reservation or payment was created. This reference is for this browser preview only."
+                          : confirmationApproved
+                            ? "Your payment is verified and your booking is confirmed. We’ll see you on court."
+                            : confirmationNeedsAttention
+                              ? "The submitted receipt could not be approved. Check your payment details and use your booking reference when contacting the Dinktopia team."
+                              : "Your receipt was submitted successfully. The Dinktopia team is reviewing it now, and your booking will remain pending until payment is approved."}
+                      </p>
+
+                      <div className="rally-confirmation-reference">
+                        <span>Booking reference</span>
+                        <strong>{confirmedBooking.reference}</strong>
+                        <button type="button" onClick={() => {
+                          void navigator.clipboard?.writeText(confirmedBooking.reference);
+                          setLiveMessage(`Booking reference ${confirmedBooking.reference} copied.`);
+                        }}>Copy</button>
+                      </div>
+
+                      <div className="rally-confirmation-details" aria-label="Booking summary">
+                        <div><CalendarDays aria-hidden="true" /><span>Date &amp; time</span><strong>{selectedBookingDateLabel || confirmedBooking.date} · {confirmationTimeLabel}</strong></div>
+                        <div><Grid2X2 aria-hidden="true" /><span>{selectedCourtCount === 1 ? "Court" : "Courts"}</span><strong>{confirmationCourtNames}</strong></div>
+                        <div><WalletCards aria-hidden="true" /><span>Paid with GCash</span><strong>{peso(confirmedBooking.amount)} · {confirmationApproved ? "Payment verified" : confirmationNeedsAttention ? "Needs attention" : "Review pending"}</strong></div>
+                      </div>
+
+                      <div className="rally-confirmation-actions">
+                        {confirmationApproved && isLive ? (
+                          <>
+                            <button className="button rally-confirmation-primary" type="button" onClick={addConfirmationToCalendar}><CalendarDays aria-hidden="true" /> Add to calendar</button>
+                            <button className="button button-outline" type="button" onClick={() => void shareConfirmation()}><Share2 aria-hidden="true" /> Share booking</button>
+                          </>
+                        ) : (
+                          <button className="button rally-confirmation-primary" type="button" onClick={() => {
+                            setLookupReference(confirmedBooking.reference);
+                            setLookupEmail(confirmedBooking.customer.email);
+                            openManage();
+                          }}>{isLive ? "Check booking status" : "Inspect preview status"}</button>
+                        )}
+                      </div>
+                      <button className="rally-confirmation-again" type="button" onClick={resetBooking}>Book another court</button>
+                    </article>
                   </div>
                 )}
               </div>
@@ -3118,55 +3419,52 @@ type BookingSummaryProps = {
   subtotal: number;
   bookingFee: number;
   total: number;
-  actionLabel?: string;
-  actionDisabled?: boolean;
-  onAction?: () => void;
 };
 
-function BookingSummary({
+function RallyBookingSummary({
   selections,
   dateLabel,
   subtotal,
   bookingFee,
   total,
-  actionLabel,
-  actionDisabled,
-  onAction,
 }: BookingSummaryProps) {
   const groups = groupSelectionDetails(selections);
-  const courtCount = new Set(selections.map((item) => item.court.id)).size;
-  const hasSelection = selections.length > 0;
+  const courts = Array.from(
+    new Map(selections.map((item) => [item.court.id, item.court])).values(),
+  );
+  const courtSchedule = courts
+    .map((court) => {
+      const times = groups
+        .filter((group) => group.court.id === court.id)
+        .map((group) => formatHourRange(group.startHour, group.endHour))
+        .join(", ");
+      return `${court.name}: ${times}`;
+    })
+    .join(" · ");
+  const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"} selected`;
+
   return (
-    <aside className={`booking-summary${actionLabel ? " booking-summary-selection" : ""}`} aria-label="Booking summary">
-      <div className="summary-mobile-heading">
-        <span>
-          <strong>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} · ${selections.length} hr${selections.length === 1 ? "" : "s"}` : "Booking summary"}</strong>
-          <small>{hasSelection ? dateLabel : "Select a court and time"}</small>
-        </span>
-        <b>{hasSelection ? peso(total) : "—"}</b>
+    <aside className="booking-summary rally-booking-summary surface-card" aria-label="Booking summary">
+      <p className="player-kicker">Your reservation</p>
+      <h3>{courts.length === 1 ? courts[0]?.name : `${courts.length} courts reserved`}</h3>
+      <div className="summary-detail">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
+        <span><strong>{dateLabel}</strong><small>{slotLabel}</small></span>
       </div>
-      {groups.length > 0 && (
-        <ul className="summary-sessions" aria-label="Selected sessions">
-          {groups.map((group) => (
-            <li key={`${group.court.id}:${group.startHour}`}>
-              <span><strong>{group.court.name}</strong><small>{formatHourRange(group.startHour, group.endHour)} · {group.courtHours} court-hour{group.courtHours === 1 ? "" : "s"}</small></span>
-              <b>{peso(group.subtotal)}</b>
-            </li>
-          ))}
-        </ul>
-      )}
-      {hasSelection ? (
-        <div className="price-breakdown">
-          <div><span>Court booking</span><span>{peso(subtotal)}</span></div>
-          <div><span>Booking fee</span><span>{peso(bookingFee)}</span></div>
-          <div className="summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
-        </div>
-      ) : (
-        <p className="summary-empty-copy">Choose an open time to see your total.</p>
-      )}
-      {actionLabel && onAction && (
-        <button className="button button-lime summary-button" type="button" disabled={actionDisabled} onClick={onAction}>{actionLabel} <span aria-hidden="true">→</span></button>
-      )}
+      <div className="summary-detail">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+        <span><strong>{courts.map((court) => court.name).join(", ")}</strong><small>{courtSchedule}</small></span>
+      </div>
+      <div className="summary-detail">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+        <span><strong>Dinktopia Court Hub</strong><small>{activeTenant.venue.locationLabel}</small></span>
+      </div>
+      <div className="summary-price-lines">
+        <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
+        {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
+      </div>
+      <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
+      <p className="summary-note">Free cancellation up to 12 hours before your booking.</p>
     </aside>
   );
 }

@@ -10,6 +10,7 @@ import type {
   CreateBookingInput,
   PlatformErrorBody,
   PlatformMode,
+  PublicPromotion,
   TenantBootstrap,
 } from "./types";
 
@@ -216,10 +217,6 @@ export function platformMode(): PlatformMode {
   return validBrowserPlatformConfiguration() ? "live" : "preview";
 }
 
-export function turnstileSiteKey(): string | null {
-  return process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || null;
-}
-
 function currentHostname(): string {
   if (typeof window === "undefined") return "localhost";
   return window.location.hostname.toLowerCase();
@@ -354,10 +351,19 @@ function previewBootstrap(): TenantBootstrap {
 
 export async function getTenantBootstrap(): Promise<TenantBootstrap> {
   if (platformMode() === "preview") return previewBootstrap();
-  const result = await rpc<TenantBootstrap | null>("get_public_tenant_bootstrap", {
-    p_tenant_slug: activeTenant.identity.slug,
-    p_hostname: currentHostname(),
-  });
+  const [result, promotions] = await Promise.all([
+    rpc<TenantBootstrap | null>("get_public_tenant_bootstrap", {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: currentHostname(),
+    }),
+    rpc<PublicPromotion[]>("get_public_active_promotions", {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: currentHostname(),
+    }).catch((error) => {
+      if (error instanceof PlatformRequestError && error.code === "PGRST202") return [];
+      throw error;
+    }),
+  ]);
   if (!result) {
     throw new PlatformRequestError(
       404,
@@ -365,7 +371,7 @@ export async function getTenantBootstrap(): Promise<TenantBootstrap> {
       "This Dinktopia hostname is not registered with the booking platform.",
     );
   }
-  return result;
+  return { ...result, promotions };
 }
 
 export async function getAvailability(date: string): Promise<AvailabilityResponse> {
@@ -439,13 +445,6 @@ export async function createBooking(
       preview: true,
     };
   }
-  if (!input.turnstileToken) {
-    throw new PlatformRequestError(
-      400,
-      "TURNSTILE_REQUIRED",
-      "Complete the security check before booking.",
-    );
-  }
   const response = await fetch(edgeUrl("create-booking"), {
     method: "POST",
     headers: publicHeaders(),
@@ -467,7 +466,6 @@ export async function createBooking(
       clientRequestId,
       policyAccepted: input.policyAccepted === true,
       policyVersion: input.policyVersion || null,
-      turnstileToken: input.turnstileToken,
     }),
   });
   const result = await responseJson<{ ok: true; booking: BookingConfirmation }>(response);
@@ -504,6 +502,35 @@ export async function cancelUnpaidBooking(reference: string, token: string) {
     }),
   });
   return responseJson<Record<string, unknown>>(response);
+}
+
+export async function completeBookingDetails(options: {
+  reference: string;
+  token: string;
+  customer: { name: string; email: string; phone: string };
+}) {
+  if (platformMode() === "preview") {
+    return {
+      reference: options.reference,
+      status: "preview_only",
+      expiresAt: null,
+      detailsComplete: true,
+    };
+  }
+  return rpc<{
+    reference: string;
+    status: string;
+    expiresAt?: string | null;
+    detailsComplete: true;
+  }>("complete_public_booking_details", {
+    p_tenant_slug: activeTenant.identity.slug,
+    p_hostname: currentHostname(),
+    p_booking_reference: options.reference,
+    p_booking_token: options.token,
+    p_customer_name: options.customer.name,
+    p_customer_email: options.customer.email,
+    p_customer_phone: options.customer.phone,
+  });
 }
 
 export async function submitPaymentReceipt(options: {
@@ -995,6 +1022,52 @@ export async function getManagerRegularBookingReport(
       p_date_from: input.dateFrom,
       p_date_to: input.dateTo,
       p_court_id: input.courtId || null,
+    },
+    accessToken,
+  );
+}
+
+export async function getManagerPromotions(accessToken: string): Promise<unknown> {
+  return rpc<unknown>(
+    "get_manager_promotions",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname(),
+    },
+    accessToken,
+  );
+}
+
+export async function createTenantPromotion(
+  accessToken: string,
+  input: {
+    name: string;
+    discountType: "percentage" | "fixed_amount";
+    discountValue: number;
+    weekdays: number[];
+    startsAt: string;
+    endsAt: string;
+    validFrom: string;
+    validUntil: string;
+    courtIds: string[];
+    maxRedemptions?: number | null;
+  },
+): Promise<unknown> {
+  return rpc<unknown>(
+    "create_tenant_promotion",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+      p_name: input.name,
+      p_discount_type: input.discountType,
+      p_discount_value: input.discountValue,
+      p_weekdays: input.weekdays,
+      p_starts_at: input.startsAt,
+      p_ends_at: input.endsAt,
+      p_valid_from: input.validFrom,
+      p_valid_until: input.validUntil,
+      p_court_ids: input.courtIds,
+      p_max_redemptions: input.maxRedemptions ?? null,
     },
     accessToken,
   );

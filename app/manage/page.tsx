@@ -2,6 +2,27 @@
 
 import Image from "next/image";
 import {
+  ArrowRight,
+  Bell,
+  CalendarDays,
+  ChartNoAxesColumnIncreasing,
+  CircleCheck,
+  CircleDollarSign,
+  Clock3,
+  LayoutDashboard,
+  Mail,
+  MapPin,
+  Phone,
+  Plus,
+  Search,
+  Settings2,
+  Sparkles,
+  SquareActivity,
+  Users,
+  WalletCards,
+  X,
+} from "lucide-react";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -29,6 +50,7 @@ import {
   type BusinessPaymentConfiguration,
   type ManagementCapability,
   type ManagementActionResult,
+  type ManagementBookingReschedulePreview,
   type ManagementContext,
   type ManagementInsights,
   type ManagementSnapshot,
@@ -96,17 +118,31 @@ type ToastState = {
 };
 
 const NAV_ITEMS: { id: View; label: string; short: string }[] = [
-  { id: "overview", label: "Overview", short: "OV" },
+  { id: "overview", label: "Today", short: "OV" },
+  { id: "schedule", label: "Schedule", short: "CA" },
   { id: "bookings", label: "Bookings", short: "BK" },
-  { id: "schedule", label: "Calendar", short: "CA" },
   { id: "blocks", label: "Court blocks", short: "BL" },
   { id: "customers", label: "Customers", short: "CU" },
-  { id: "reports", label: "Analytics", short: "AN" },
-  { id: "finance", label: "Finance", short: "FN" },
-  { id: "settings", label: "Venue settings", short: "ST" },
+  { id: "finance", label: "Money", short: "FN" },
+  { id: "reports", label: "Insights", short: "AN" },
+  { id: "settings", label: "Venue & settings", short: "ST" },
   { id: "launch", label: "Launch", short: "GO" },
   { id: "access", label: "Team & access", short: "AC" },
 ];
+
+function NavIcon({ view }: { view: View }) {
+  const Icon = view === "overview" ? LayoutDashboard
+    : view === "schedule" ? CalendarDays
+      : view === "bookings" ? SquareActivity
+        : view === "blocks" ? MapPin
+          : view === "customers" ? Users
+            : view === "finance" ? CircleDollarSign
+              : view === "reports" ? ChartNoAxesColumnIncreasing
+                : view === "launch" ? Sparkles
+                  : view === "access" ? Users
+                    : Settings2;
+  return <Icon aria-hidden="true" />;
+}
 
 const VIEW_CAPABILITY: Partial<Record<View, ManagementCapability>> = {
   customers: "customer:view",
@@ -548,6 +584,154 @@ function PermissionPanel({
   );
 }
 
+function RallyOverview({
+  snapshot,
+  can,
+  goTo,
+  openNeedsReview,
+}: {
+  snapshot: ManagementSnapshot;
+  can: (capability: ManagementCapability) => boolean;
+  goTo: (view: View) => void;
+  openNeedsReview: () => void;
+}) {
+  const today = manilaCalendarDate();
+  const nowParts = new Intl.DateTimeFormat("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: activeTenant.identity.timezone,
+  }).formatToParts(new Date());
+  const currentMinutes = Number(nowParts.find((part) => part.type === "hour")?.value ?? 0) * 60 +
+    Number(nowParts.find((part) => part.type === "minute")?.value ?? 0);
+  const clockMinutes = (value: string | null) => {
+    const match = /^(\d{1,2}):(\d{2})/.exec(value ?? "");
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const activeBookings = snapshot.bookings.filter(
+    (booking) => booking.status !== "cancelled" && booking.status !== "expired",
+  );
+  const todayBookings = activeBookings.filter((booking) => booking.bookingDate === today);
+  const paymentReviews = snapshot.bookings.filter(
+    (booking) => booking.paymentEvidence?.reviewable === true || booking.status === "payment_attention",
+  );
+  const paidSales = todayBookings
+    .filter((booking) => booking.payment === "paid")
+    .reduce((total, booking) => total + booking.amount, 0);
+  const bookedMinutes = snapshot.schedule.filter((slot) => slot.kind !== "block").reduce((total, slot) => {
+    const start = clockMinutes(slot.start);
+    const end = clockMinutes(slot.end);
+    return total + (start !== null && end !== null ? Math.max(0, end - start) : 0);
+  }, 0);
+  const availableMinutes = snapshot.courts.reduce((total, court) => {
+    const start = clockMinutes(court.opensAt) ?? 6 * 60;
+    const end = clockMinutes(court.closesAt) ?? 22 * 60;
+    return total + Math.max(60, end - start);
+  }, 0);
+  const occupancy = availableMinutes ? Math.min(100, Math.round(bookedMinutes / availableMinutes * 100)) : 0;
+  const upcoming = [...todayBookings]
+    .map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))
+    .filter((entry) => entry.minutes === null || entry.minutes + 60 >= currentMinutes)
+    .sort((left, right) => (left.minutes ?? 10_000) - (right.minutes ?? 10_000));
+  const arrivals = (upcoming.length ? upcoming : activeBookings.map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))).slice(0, 4);
+  const courtStatus = snapshot.courts.map((court) => {
+    const courtBookings = upcoming.filter((entry) => entry.booking.courtId === court.id);
+    const next = courtBookings[0]?.booking ?? null;
+    const inProgress = courtBookings.find((entry) => entry.minutes !== null && entry.minutes <= currentMinutes && entry.minutes + 60 > currentMinutes)?.booking ?? null;
+    const isUnavailable = court.status !== "active";
+    return {
+      court,
+      state: isUnavailable ? (court.status === "maintenance" ? "Maintenance" : "Closed") : inProgress ? "In play" : next ? "Ready" : "Available",
+      tone: isUnavailable ? "danger" : inProgress ? "warning" : next ? "info" : "success",
+      note: isUnavailable
+        ? court.description || "Court is unavailable"
+        : inProgress
+          ? `${inProgress.customer} is on court now`
+          : next
+            ? `Next: ${next.customer} at ${next.time.split(/[–-]/)[0].trim()}`
+            : "No upcoming reservation",
+      hours: courtBookings.length ? `${courtBookings.length} booking${courtBookings.length === 1 ? "" : "s"} today` : "Open inventory",
+    };
+  });
+  const dateLine = new Intl.DateTimeFormat("en-PH", {
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: activeTenant.identity.timezone,
+  }).format(new Date());
+  const checkedInCount = todayBookings.filter((booking) => booking.status === "checked_in").length;
+  const attentionCourts = snapshot.courts.filter((court) => court.status !== "active");
+
+  return (
+    <div className={styles.rallyToday}>
+      <section className={styles.rallyHero}>
+        <div>
+          <span>{dateLine} · {snapshot.tenant.venueLabel}</span>
+          <h2>The club is moving well.</h2>
+          <p>{paymentReviews.length || attentionCourts.length ? `${paymentReviews.length + attentionCourts.length} item${paymentReviews.length + attentionCourts.length === 1 ? "" : "s"} need a quick decision.` : "Today’s court operations are clear and up to date."}</p>
+        </div>
+        <div className={styles.rallyHeroActions}>
+          <button type="button" onClick={() => goTo("blocks")} disabled={!can("schedule:block")}><Settings2 /> Court issue</button>
+          <button type="button" className={styles.rallyPrimary} onClick={() => goTo("schedule")} disabled={!can("booking:create")}><Plus /> New booking</button>
+        </div>
+      </section>
+
+      <section className={styles.rallyMetrics} aria-label="Today's key metrics">
+        <article><div><span>Net sales</span><i className={styles.metricMint}><WalletCards /></i></div><strong>{formatPeso(paidSales)}</strong><p>Paid bookings recorded today</p></article>
+        <article><div><span>Occupancy</span><i className={styles.metricViolet}><ChartNoAxesColumnIncreasing /></i></div><strong>{occupancy}%</strong><p>{bookedMinutes ? `${Math.round(bookedMinutes / 60)} booked court hours` : "No booked hours today"}</p><b><span style={{ width: `${occupancy}%` }} /></b></article>
+        <article><div><span>Bookings</span><i className={styles.metricCoral}><CalendarDays /></i></div><strong>{todayBookings.length}</strong><p>{checkedInCount} arrival{checkedInCount === 1 ? "" : "s"} checked in</p></article>
+        <article><div><span>Payment review</span><i className={styles.metricAmber}><CircleCheck /></i></div><strong>{paymentReviews.length}</strong><p>{paymentReviews.length ? `${formatPeso(paymentReviews.reduce((sum, item) => sum + item.amount, 0))} awaiting approval` : "Everything is reconciled"}</p></article>
+      </section>
+
+      <div className={styles.rallyDashboardGrid}>
+        <section className={cx(styles.rallySurface, styles.rallyCourtsPanel)}>
+          <div className={styles.rallySectionHeading}><div><h2>Live court status</h2><p>A fast read on every playing surface</p></div><button type="button" onClick={() => goTo("schedule")}>Open full schedule <ArrowRight /></button></div>
+          <div className={styles.rallyCourtGrid}>
+            {courtStatus.map(({ court, state, tone, note, hours }, index) => (
+              <article className={cx(styles.rallyCourtCard, styles[`rallyTone_${tone}`])} key={court.id}>
+                <div className={styles.rallyCourtVisual}><span>{index + 1}</span><i /><i /></div>
+                <div className={styles.rallyCourtCopy}><span>{court.description || court.surface || "Court"}</span><h3>{court.name}</h3><p>{note}</p></div>
+                <div className={styles.rallyCourtState}><span>{state}</span><small>{hours}</small></div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <aside className={cx(styles.rallySurface, styles.rallyArrivalsPanel)}>
+          <div className={styles.rallySectionHeading}><div><h2>Next arrivals</h2><p>The next 150 minutes</p></div><span className={styles.rallyLive}><i /> Live</span></div>
+          <div className={styles.rallyArrivalList}>
+            {arrivals.length ? arrivals.map(({ booking }, index) => (
+              <div className={styles.rallyArrival} key={booking.bookingId}>
+                <div className={styles.rallyTimeRail}><strong>{booking.time.split(/[–-]/)[0].trim()}</strong><i className={index % 2 ? styles.railMint : styles.railBlue} />{index < arrivals.length - 1 && <span />}</div>
+                <div><strong>{booking.customer}</strong><p>{booking.court}</p></div>
+                <StatusPill status={booking.status} />
+              </div>
+            )) : <div className={styles.rallyEmpty}><Clock3 /><strong>No upcoming arrivals</strong><span>New bookings will appear here.</span></div>}
+          </div>
+          <button type="button" className={styles.rallyWideButton} onClick={() => goTo("schedule")}>Manage arrivals</button>
+        </aside>
+      </div>
+
+      <div className={styles.rallyLowerGrid}>
+        <section className={cx(styles.rallySurface, styles.rallyAttentionPanel)}>
+          <div className={styles.rallySectionHeading}><div><h2>Needs attention</h2><p>Clear these before the next rush</p></div></div>
+          <button type="button" onClick={() => paymentReviews.length ? openNeedsReview() : goTo("finance")}><i className={styles.attentionAmber}><WalletCards /></i><span><strong>{paymentReviews.length || "No"} payment{paymentReviews.length === 1 ? "" : "s"} to review</strong><small>{paymentReviews.length ? "Proof uploaded and ready for review" : "All uploaded proofs have been resolved"}</small></span><ArrowRight /></button>
+          <button type="button" onClick={() => goTo("blocks")}><i className={styles.attentionBlue}><Settings2 /></i><span><strong>{attentionCourts.length || "No"} court issue{attentionCourts.length === 1 ? "" : "s"}</strong><small>{attentionCourts.length ? attentionCourts.map((court) => court.name).join(", ") : "Every active court is available"}</small></span><ArrowRight /></button>
+        </section>
+
+        <section className={styles.rallyQuickCard}>
+          <div><span>Front desk shortcuts</span><h2>Keep the queue moving.</h2><p>Common actions stay synchronized across the team.</p></div>
+          <div className={styles.rallyQuickActions}>
+            <button type="button" onClick={() => goTo("schedule")} disabled={!can("booking:create")}><Plus /><span><strong>Add booking</strong><small>Walk-in or phone</small></span></button>
+            <button type="button" onClick={() => goTo("customers")} disabled={!can("customer:view")}><Users /><span><strong>Find player</strong><small>Visits and notes</small></span></button>
+            <button type="button" onClick={() => goTo("finance")} disabled={!can("finance:view")}><WalletCards /><span><strong>Review payments</strong><small>{paymentReviews.length} waiting</small></span></button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function OverviewView({
   snapshot,
   can,
@@ -563,6 +747,9 @@ function OverviewView({
   request: (action: ConfirmAction) => void;
   loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
 }) {
+  return <RallyOverview snapshot={snapshot} can={can} goTo={goTo} openNeedsReview={openNeedsReview} />;
+  /* Legacy dashboard markup is retained below temporarily while the remaining
+     management views continue to share its payment-review workspace. */
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const paymentInboxHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -1024,6 +1211,7 @@ function BookingsView({
   isPreview,
   initialStatus,
   loadPaymentReceipt,
+  loadReschedulePreview,
 }: {
   bookings: Booking[];
   courts: ManagementSnapshot["courts"];
@@ -1033,6 +1221,7 @@ function BookingsView({
   isPreview: boolean;
   initialStatus: BookingFilter;
   loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
+  loadReschedulePreview: (bookingReference: string, date: string) => Promise<ManagementBookingReschedulePreview>;
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<BookingFilter>(initialStatus);
@@ -1041,6 +1230,7 @@ function BookingsView({
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const bookingListHeadingRef = useRef<HTMLHeadingElement>(null);
+  const rescheduleDialogRef = useRef<HTMLFormElement>(null);
   const canReviewPayments = can("payment:review");
   const [manual, setManual] = useState({
     courtId: courts[0]?.id ?? "",
@@ -1055,12 +1245,14 @@ function BookingsView({
   });
   const [rescheduleDraft, setRescheduleDraft] = useState({
     newDate: manilaCalendarDate(),
-    newStartTime: "06:00",
+    newStartTime: "",
     reasonCode: "customer_request",
     publicReason: "Requested by the customer",
     internalNote: "",
     notifyCustomer: true,
   });
+  const [reschedulePreview, setReschedulePreview] = useState<ManagementBookingReschedulePreview | null>(null);
+  const [reschedulePreviewState, setReschedulePreviewState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const filterCounts = BOOKING_FILTERS.reduce<Record<BookingFilter, number>>(
     (counts, filter) => ({
       ...counts,
@@ -1080,6 +1272,10 @@ function BookingsView({
         booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
       ) ?? null
     : null;
+  const today = manilaCalendarDate();
+  const todayCount = bookings.filter((booking) => booking.bookingDate === today).length;
+  const activeCount = bookings.filter((booking) => !["cancelled", "expired", "completed"].includes(booking.status)).length;
+  const reviewCount = bookings.filter((booking) => booking.paymentEvidence?.reviewable === true).length;
 
   const closePaymentReview = () => {
     const returnTarget = reviewReturnRef.current;
@@ -1099,21 +1295,88 @@ function BookingsView({
     return () => window.clearTimeout(timer);
   }, [canReviewPayments, reviewing, reviewingBookingId]);
 
+  useEffect(() => {
+    if (!rescheduling || !rescheduleDraft.newDate || isPreview) return;
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      setReschedulePreviewState("loading");
+      setReschedulePreview(null);
+      try {
+        const preview = await loadReschedulePreview(rescheduling.reference, rescheduleDraft.newDate);
+        if (!active) return;
+        setReschedulePreview(preview);
+        setReschedulePreviewState("ready");
+        setRescheduleDraft((current) => preview.options.some((option) =>
+          option.startTime === current.newStartTime && option.available && !option.paymentRequired
+        ) ? current : { ...current, newStartTime: "" });
+      } catch {
+        if (!active) return;
+        setReschedulePreviewState("error");
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [isPreview, loadReschedulePreview, rescheduleDraft.newDate, rescheduling]);
+
+  const selectedRescheduleOption = reschedulePreview?.options.find((option) =>
+    option.startTime === rescheduleDraft.newStartTime
+  ) ?? null;
+  const groupedRescheduleOptions = useMemo(() => {
+    const groups = [
+      { label: "Morning", range: "Before 12 PM", options: [] as NonNullable<typeof reschedulePreview>["options"] },
+      { label: "Afternoon", range: "12 PM–5 PM", options: [] as NonNullable<typeof reschedulePreview>["options"] },
+      { label: "Evening", range: "After 5 PM", options: [] as NonNullable<typeof reschedulePreview>["options"] },
+    ];
+    for (const option of reschedulePreview?.options ?? []) {
+      const hour = Number(option.startTime.split(":")[0]);
+      groups[hour < 12 ? 0 : hour < 17 ? 1 : 2].options.push(option);
+    }
+    return groups.filter((group) => group.options.length);
+  }, [reschedulePreview]);
+
+  useEffect(() => {
+    if (!rescheduling) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => rescheduleDialogRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRescheduling(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [rescheduling]);
+
   const openPaymentReview = (booking: Booking, trigger: HTMLButtonElement) => {
     reviewReturnRef.current = trigger;
     setReviewingBookingId(booking.bookingId);
   };
 
   return (
-    <section className={cx(styles.panel, styles.bookingRegisterPanel)} aria-labelledby="booking-list-title">
-      <div className={styles.panelHeading}>
-        <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>All bookings</h2>
+    <section className={styles.bookingsWorkspace} aria-labelledby="booking-list-title">
+      <header className={styles.bookingsHero}>
+        <div>
+          <p className={styles.eyebrow}>Reservation desk</p>
+          <h2 id="booking-list-title" ref={bookingListHeadingRef} tabIndex={-1}>Keep every booking clear and moving.</h2>
+          <p>Search reservations, review payment state, and handle changes from one organized workspace.</p>
+        </div>
         <ActionButton
           disabled={!can("booking:create") || (!isPreview && !courts.length)}
           onClick={() => isPreview ? goTo("schedule") : setCreating((value) => !value)}
         >
           <span aria-hidden="true">＋</span> {creating ? "Close form" : "New booking"}
         </ActionButton>
+      </header>
+
+      <div className={styles.bookingOverview} aria-label="Booking overview">
+        <article><span>Total bookings</span><strong>{bookings.length}</strong><small>Loaded tenant reservations</small></article>
+        <article><span>Active queue</span><strong>{activeCount}</strong><small>Open booking workflows</small></article>
+        <article><span>Today</span><strong>{todayCount}</strong><small>{todayCount === 1 ? "Reservation today" : "Reservations today"}</small></article>
+        <article><span>Payment review</span><strong>{reviewCount}</strong><small>{reviewCount ? "Receipt action needed" : "Everything reconciled"}</small></article>
       </div>
       {!isPreview && creating && (
         <form className={styles.compactActionForm} onSubmit={(event) => {
@@ -1161,11 +1424,22 @@ function BookingsView({
         </form>
       )}
       {!isPreview && rescheduling && (
-        <form className={styles.compactActionForm} onSubmit={(event) => {
+        <div className={styles.rescheduleBackdrop} onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setRescheduling(null);
+        }}>
+        <form
+          ref={rescheduleDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reschedule-dialog-title"
+          tabIndex={-1}
+          className={styles.rescheduleWorkspace}
+          onSubmit={(event) => {
           event.preventDefault();
+          if (!selectedRescheduleOption || !selectedRescheduleOption.available || selectedRescheduleOption.paymentRequired) return;
           request({
             title: `Move ${rescheduling.reference}?`,
-            detail: `Move ${rescheduling.customer} to ${rescheduleDraft.newDate} at ${wholeHourLabel(rescheduleDraft.newStartTime)}. The server will reject any conflict.`,
+            detail: `Move ${rescheduling.customer} to ${rescheduleDraft.newDate}, ${wholeHourLabel(selectedRescheduleOption.startTime)}–${wholeHourLabel(selectedRescheduleOption.endTime)} on ${reschedulePreview?.booking.courtName ?? rescheduling.court}. Availability will be checked again before saving.`,
             confirmLabel: "Reschedule booking",
             actionType: "booking:update",
             resourceId: rescheduling.bookingId,
@@ -1179,17 +1453,92 @@ function BookingsView({
             onSuccess: () => setRescheduling(null),
           });
         }}>
-          <div className={styles.compactFormHeading}><div><p className={styles.eyebrow}>Reschedule {rescheduling.reference}</p><h3>{rescheduling.customer}</h3></div><button type="button" className={styles.textButton} onClick={() => setRescheduling(null)}>Close</button></div>
-          <div className={styles.compactFields}>
-            <label className={styles.field}><span>New date</span><input required type="date" min={manilaCalendarDate()} value={rescheduleDraft.newDate} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newDate: event.target.value })} /></label>
-            <label className={styles.field}><span>New start</span><select value={rescheduleDraft.newStartTime} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newStartTime: event.target.value })}>{wholeHourOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label className={styles.field}><span>Reason</span><select value={rescheduleDraft.reasonCode} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, reasonCode: event.target.value })}><option value="customer_request">Customer request</option><option value="weather">Weather</option><option value="court_maintenance">Court maintenance</option><option value="schedule_conflict">Schedule conflict</option><option value="admin_correction">Admin correction</option><option value="other">Other</option></select></label>
-            <label className={cx(styles.field, styles.fieldWide)}><span>Customer-facing reason</span><input required minLength={3} maxLength={500} value={rescheduleDraft.publicReason} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, publicReason: event.target.value })} /></label>
-            <label className={cx(styles.field, styles.fieldWide)}><span>Internal note <small>optional</small></span><input minLength={3} maxLength={1000} value={rescheduleDraft.internalNote} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, internalNote: event.target.value })} /></label>
-            <label className={styles.switchLabel}><input type="checkbox" checked={rescheduleDraft.notifyCustomer} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, notifyCustomer: event.target.checked })} /><span aria-hidden="true" />Email customer</label>
+          <header className={styles.rescheduleHeader}>
+            <div>
+              <p className={styles.eyebrow}>Reschedule · {rescheduling.reference}</p>
+              <h3 id="reschedule-dialog-title">Choose a better time</h3>
+              <span>{rescheduling.customer} · {rescheduling.date} · {rescheduling.time}</span>
+            </div>
+            <button type="button" className={styles.rescheduleClose} onClick={() => setRescheduling(null)} aria-label="Close reschedule"><X aria-hidden="true" size={18} /></button>
+          </header>
+
+          <div className={styles.rescheduleBody}>
+            <div className={styles.rescheduleStep}><span>1</span><div><strong>Choose a date</strong><small>We’ll show only valid times for this booking.</small></div></div>
+            <div className={styles.rescheduleControls}>
+              <label className={styles.field}><span>New date</span><input required type="date" min={manilaCalendarDate()} value={rescheduleDraft.newDate} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newDate: event.target.value, newStartTime: "" })} /></label>
+              <div><span>Court</span><strong>{reschedulePreview?.booking.courtName ?? rescheduling.court}</strong><small>Same court</small></div>
+              <div><span>Duration</span><strong>{reschedulePreview ? `${reschedulePreview.booking.durationHours} ${reschedulePreview.booking.durationHours === 1 ? "hour" : "hours"}` : rescheduling.duration}</strong><small>Duration preserved</small></div>
+            </div>
+
+            <section className={styles.rescheduleAvailability} aria-labelledby="available-slot-title" aria-busy={reschedulePreviewState === "loading"}>
+              <div className={styles.rescheduleAvailabilityHeader}>
+                <div className={styles.rescheduleStep}><span>2</span><div><strong id="available-slot-title">Choose an available time</strong><small>Availability is checked live for {rescheduleDraft.newDate}.</small></div></div>
+              </div>
+            {reschedulePreviewState === "loading" ? (
+              <div className={styles.rescheduleLoading} role="status"><span /><span /><span /><p>Checking available court-hours…</p></div>
+            ) : reschedulePreviewState === "error" ? (
+              <div className={styles.rescheduleError} role="alert"><strong>Availability could not be loaded.</strong><span>Choose the date again or refresh the workspace.</span></div>
+            ) : reschedulePreview?.options.length ? (
+              <div className={styles.rescheduleTimeGroups} role="listbox" aria-label={`Available times on ${rescheduleDraft.newDate}`}>
+                {groupedRescheduleOptions.map((group) => <section className={styles.rescheduleTimeGroup} key={group.label}>
+                  <header><strong>{group.label}</strong><span>{group.range} · {group.options.filter((option) => option.available && !option.paymentRequired).length} open</span></header>
+                  <div className={styles.rescheduleSlotGrid}>
+                  {group.options.map((option) => {
+                  const selected = option.startTime === rescheduleDraft.newStartTime;
+                  const disabled = !option.available || option.paymentRequired;
+                  const stateLabel = !option.available
+                    ? option.unavailableReason?.replaceAll("_", " ") || "Booked"
+                    : option.paymentRequired
+                      ? `Add ${formatPeso(option.additionalAmount)}`
+                      : "Available";
+                  return (
+                    <button
+                      type="button"
+                      role="option"
+                      aria-selected={selected}
+                      disabled={disabled}
+                      key={option.startTime}
+                      className={cx(styles.rescheduleSlot, selected && styles.rescheduleSlotSelected, disabled && styles.rescheduleSlotUnavailable, option.paymentRequired && styles.rescheduleSlotPayment)}
+                      onClick={() => setRescheduleDraft({ ...rescheduleDraft, newStartTime: option.startTime })}
+                    >
+                      <span className={styles.rescheduleSlotCheck} aria-hidden="true">{selected ? "✓" : ""}</span>
+                      <strong>{wholeHourLabel(option.startTime)}</strong>
+                      <span>{wholeHourLabel(option.startTime)}–{wholeHourLabel(option.endTime)}</span>
+                      <small>{selected ? "Selected" : stateLabel}</small>
+                    </button>
+                  );
+                  })}
+                  </div>
+                </section>)}
+              </div>
+            ) : reschedulePreviewState === "ready" ? (
+              <div className={styles.rescheduleError} role="status"><strong>No time slots were returned.</strong><span>Try another date.</span></div>
+            ) : null}
+            </section>
+
+            <details className={styles.rescheduleDetailsDisclosure}>
+              <summary>Change details <span>Reason, customer message, and notification</span></summary>
+              <div className={styles.rescheduleDetails}>
+                <label className={styles.field}><span>Reason</span><select value={rescheduleDraft.reasonCode} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, reasonCode: event.target.value })}><option value="customer_request">Customer request</option><option value="weather">Weather</option><option value="court_maintenance">Court maintenance</option><option value="schedule_conflict">Schedule conflict</option><option value="admin_correction">Admin correction</option><option value="other">Other</option></select></label>
+                <label className={styles.field}><span>Customer-facing reason</span><input required minLength={3} maxLength={500} value={rescheduleDraft.publicReason} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, publicReason: event.target.value })} /></label>
+                <label className={cx(styles.field, styles.fieldWide)}><span>Internal note <small>optional</small></span><input minLength={3} maxLength={1000} value={rescheduleDraft.internalNote} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, internalNote: event.target.value })} /></label>
+                <label className={styles.switchLabel}><input type="checkbox" checked={rescheduleDraft.notifyCustomer} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, notifyCustomer: event.target.checked })} /><span aria-hidden="true" />Email customer</label>
+              </div>
+            </details>
           </div>
-          <div className={styles.compactFormActions}><span>Availability and price are previewed first. Higher-priced moves require cancelling and creating a new paid booking.</span><ActionButton type="submit">Review change</ActionButton></div>
+
+          <footer className={styles.rescheduleFooter}>
+            {selectedRescheduleOption ? (
+              <div className={styles.rescheduleSelection} role="status">
+                <CircleCheck aria-hidden="true" size={20} />
+                <div><span>Selected move</span><strong>{reschedulePreview?.booking.courtName ?? rescheduling.court} · {wholeHourLabel(selectedRescheduleOption.startTime)}–{wholeHourLabel(selectedRescheduleOption.endTime)}</strong></div>
+                <div><span>New total</span><strong>{formatPeso(selectedRescheduleOption.newTotalAmount)}</strong></div>
+              </div>
+            ) : <div className={styles.rescheduleFooterHint}><span>Select an available time to continue</span><small>The slot is rechecked before it is moved.</small></div>}
+            <ActionButton type="submit" disabled={!selectedRescheduleOption || !selectedRescheduleOption.available || selectedRescheduleOption.paymentRequired}>Review change <ArrowRight aria-hidden="true" size={16} /></ActionButton>
+          </footer>
         </form>
+        </div>
       )}
       {!isPreview && canReviewPayments && reviewing?.paymentEvidence && (
         <PaymentReviewWorkspace
@@ -1201,21 +1550,24 @@ function BookingsView({
           onClose={closePaymentReview}
         />
       )}
-      <div className={styles.bookingToolbar}>
-        <label className={styles.searchField}>
-          <span className={styles.srOnly}>Search bookings</span>
-          <span aria-hidden="true">⌕</span>
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Search player, reference or court"
-          />
-        </label>
-        <span className={styles.bookingResultCount} aria-live="polite">
-          <strong>{filtered.length}</strong> of {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}
-        </span>
-      </div>
+      <section className={styles.bookingRegisterPanel} aria-label="Reservation register">
+        <div className={styles.bookingRegisterHeader}>
+          <div><p className={styles.eyebrow}>Live register</p><h3>All bookings</h3></div>
+          <span className={styles.bookingResultCount} aria-live="polite"><strong>{filtered.length}</strong> of {bookings.length} {bookings.length === 1 ? "booking" : "bookings"}</span>
+        </div>
+
+        <div className={styles.bookingToolbar}>
+          <label className={styles.searchField}>
+            <span className={styles.srOnly}>Search bookings</span>
+            <span aria-hidden="true">⌕</span>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search player, reference or court"
+            />
+          </label>
+        </div>
 
       <div className={styles.bookingFilterRail}>
         <div className={styles.bookingFilters} role="group" aria-label="Filter bookings by workflow status">
@@ -1232,6 +1584,10 @@ function BookingsView({
             </button>
           ))}
         </div>
+      </div>
+
+      <div className={styles.bookingColumnsHeader} aria-hidden="true">
+        <span>Player</span><span>Reservation</span><span>Payment</span><span>Status</span><span>Actions</span>
       </div>
 
       {filtered.length ? (
@@ -1251,7 +1607,6 @@ function BookingsView({
                       <h3 id={`booking-${booking.bookingId}`}>{booking.customer}</h3>
                       <span>{booking.reference}</span>
                     </div>
-                    <StatusPill status={booking.status} />
                   </header>
 
                   <div className={styles.bookingRecordSession}>
@@ -1271,8 +1626,9 @@ function BookingsView({
                     </span>
                   </div>
 
-                  <footer className={cx(styles.bookingRecordFooter, statusDetail && styles.bookingRecordNotice)}>
-                    {statusDetail && <p>{statusDetail}</p>}
+                  <div className={styles.bookingRecordStatus}><StatusPill status={booking.status} /></div>
+
+                  <footer className={styles.bookingRecordFooter}>
                     <div className={styles.bookingRecordActions}>
                       {booking.paymentEvidence?.reviewable && !terminal && (
                         <button
@@ -1324,6 +1680,7 @@ function BookingsView({
                       )}
                     </div>
                   </footer>
+                  {statusDetail && <p className={styles.bookingRecordNotice}>{statusDetail}</p>}
                 </article>
               </li>
             );
@@ -1339,6 +1696,7 @@ function BookingsView({
           </button>
         </div>
       )}
+      </section>
     </section>
   );
 }
@@ -1541,9 +1899,14 @@ function BlocksView({
   const [reason, setReason] = useState(isLive ? "" : "Court maintenance");
   const selectedCourt = snapshot.courts.find((item) => item.id === courtId);
   const courtLabel = scope === "all" ? "all courts" : selectedCourt?.name ?? "one court";
+  const fromHour = Number.parseInt(from.slice(0, 2), 10);
+  const toHour = Number.parseInt(to.slice(0, 2), 10);
+  const durationHours = Number.isFinite(fromHour) && Number.isFinite(toHour) && toHour > fromHour
+    ? toHour - fromHour
+    : 0;
   const formComplete = Boolean(
     scope && (scope === "all" || selectedCourt) && date && date >= minimumDate &&
-    from && to && publicLabel && to > from,
+    from && to && publicLabel && durationHours > 0,
   );
   const accessExpiry = snapshot.configuration.blockAccessExpiresAt
     ? new Date(snapshot.configuration.blockAccessExpiresAt)
@@ -1574,6 +1937,16 @@ function BlocksView({
     setPublicLabel("");
     setReason("");
   };
+  const blocksHero = (
+    <header className={styles.courtBlocksHero}>
+      <div>
+        <p className={styles.eyebrow}>Court operations</p>
+        <h2 id="court-blocks-title">Protect court availability with confidence.</h2>
+        <p>Create clean whole-hour closures for maintenance, private events, and operational downtime.</p>
+      </div>
+      <span className={styles.oneHourBadge}><Clock3 aria-hidden="true" /> Whole hours only</span>
+    </header>
+  );
 
   const blockList = (
     <>
@@ -1639,21 +2012,26 @@ function BlocksView({
 
   if (isLive && !canManage) {
     return (
-      <section className={styles.panel} aria-labelledby="loaded-blocks-title">
-        {blockList}
-        <div className={styles.noticeBox}>
-          <span aria-hidden="true">i</span>
-          <p>
-            <strong>Read-only for this load.</strong> Creating or removing a block requires a
-            server-issued block-management capability; viewing the loaded tenant result does not.
-          </p>
-        </div>
+      <section className={styles.courtBlocksWorkspace} aria-labelledby="court-blocks-title">
+        {blocksHero}
+        <section className={styles.panel} aria-labelledby="loaded-blocks-title">
+          {blockList}
+          <div className={styles.noticeBox}>
+            <span aria-hidden="true">i</span>
+            <p>
+              <strong>Read-only for this load.</strong> Creating or removing a block requires a
+              server-issued block-management capability; viewing the loaded tenant result does not.
+            </p>
+          </div>
+        </section>
       </section>
     );
   }
 
   return (
-    <section className={styles.splitLayout}>
+    <section className={styles.courtBlocksWorkspace} aria-labelledby="court-blocks-title">
+      {blocksHero}
+      <div className={styles.splitLayout}>
       <form
         className={cx(styles.panel, styles.blockForm)}
         onSubmit={(event) => {
@@ -1664,7 +2042,7 @@ function BlocksView({
           }
           request({
             title: `Block ${courtLabel}?`,
-            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". The server will recheck conflicts before saving.`,
+            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". This ${durationHours}-hour block will be checked for conflicts before saving.`,
             confirmLabel: "Create block",
             actionType: "schedule:block",
             payload: {
@@ -1683,9 +2061,9 @@ function BlocksView({
         <div className={styles.panelHeading}>
           <div>
             <p className={styles.eyebrow}>New availability block</p>
-            <h2>Take time offline</h2>
+            <h2>Create a court block</h2>
           </div>
-          <span className={styles.stepBadge}>Review first</span>
+          <span className={styles.stepBadge}>Conflict-safe</span>
         </div>
         <div className={cx(styles.formGrid, styles.blockScopeGrid)}>
           <label className={styles.field}>
@@ -1723,13 +2101,31 @@ function BlocksView({
             <input type="date" value={date} min={minimumDate} onChange={(event) => setDate(event.target.value)} required />
           </label>
           <label className={styles.field}>
-            <span>From</span>
-            <input type="time" step={3600} value={from} onChange={(event) => setFrom(event.target.value)} required />
+            <span>Start time</span>
+            <select value={from} onChange={(event) => {
+              const nextStart = event.target.value;
+              const nextStartHour = Number.parseInt(nextStart.slice(0, 2), 10);
+              setFrom(nextStart);
+              if (!to || Number.parseInt(to.slice(0, 2), 10) <= nextStartHour) {
+                setTo(`${String(nextStartHour + 1).padStart(2, "0")}:00`);
+              }
+            }} required>
+              <option value="" disabled>Choose an hour</option>
+              {wholeHourOptions.filter((option) => option.logicalHour < 23).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
           <label className={styles.field}>
-            <span>To</span>
-            <input type="time" step={3600} value={to} onChange={(event) => setTo(event.target.value)} required />
+            <span>End time</span>
+            <select value={to} onChange={(event) => setTo(event.target.value)} disabled={!from} required>
+              <option value="" disabled>{from ? "Choose an ending hour" : "Choose a start time first"}</option>
+              {wholeHourOptions.filter((option) => option.logicalHour > fromHour).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
+          <div className={styles.blockDurationField}>
+            <span>Duration</span>
+            <strong>{durationHours ? `${durationHours} ${durationHours === 1 ? "hour" : "hours"}` : "Select a time range"}</strong>
+            <small>{durationHours ? `${wholeHourLabel(from)} to ${wholeHourLabel(to)}` : "Start and end must use whole hours"}</small>
+          </div>
           <label className={cx(styles.field, styles.fieldWide)}>
             <span>Customer-facing label</span>
             <select value={publicLabel} onChange={(event) => setPublicLabel(event.target.value)} required>
@@ -1751,7 +2147,7 @@ function BlocksView({
           <p><strong>Conflict-safe.</strong> A final availability check runs before the block is created. Existing paid bookings are never silently displaced.</p>
         </div>
         {!formComplete && (
-          <p className={styles.inlineError}>Choose a scope, future date, time range, and public label before review.</p>
+          <p className={styles.inlineError}>Choose a scope, future date, valid whole-hour range, and public label before review.</p>
         )}
         <ActionButton type="submit" disabled={!canManage}>
           Review court block
@@ -1759,62 +2155,130 @@ function BlocksView({
       </form>
 
       <aside className={styles.panel} aria-labelledby="loaded-blocks-title">{blockList}</aside>
+      </div>
     </section>
   );
 }
 
-function CustomersView({ snapshot }: { snapshot: ManagementSnapshot }) {
+function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo: (view: View) => void }) {
   const [query, setQuery] = useState("");
+  const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const customers = snapshot.customers.filter((customer) =>
-    `${customer.name} ${customer.contact}`.toLowerCase().includes(query.toLowerCase()),
+    `${customer.name} ${customer.contact} ${customer.phone ?? ""} ${customer.email ?? ""}`
+      .toLowerCase()
+      .includes(query.trim().toLowerCase()),
   );
-  const averageVisits = snapshot.customers.length
-    ? snapshot.customers.reduce((total, customer) => total + customer.visits, 0) /
+  const selectedCustomer = selectedCustomerId
+    ? snapshot.customers.find((customer) => customer.id === selectedCustomerId) ?? null
+    : null;
+  const averageBookings = snapshot.customers.length
+    ? snapshot.customers.reduce((total, customer) => total + (customer.totalBookings ?? customer.visits), 0) /
       snapshot.customers.length
     : 0;
-  const returningPlayers = snapshot.customers.filter((customer) => customer.visits > 1).length;
+  const returningPlayers = snapshot.customers.filter((customer) => (customer.totalBookings ?? customer.visits) > 1).length;
   const returnRate = snapshot.customers.length
     ? Math.round((returningPlayers / snapshot.customers.length) * 100)
     : 0;
+  const needsDetails = snapshot.customers.filter((customer) => customer.identityStatus && customer.identityStatus !== "resolved").length;
+
+  useEffect(() => {
+    if (!selectedCustomer) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setSelectedCustomerId(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [selectedCustomer]);
+
   return (
     <>
       <section className={styles.customerMetrics} aria-label="Customer summary">
-        <div><span>Loaded players</span><strong>{snapshot.customers.length}</strong><small>Tenant-scoped result</small></div>
-        <div><span>Return rate</span><strong>{returnRate}%</strong><small>Within loaded bookings</small></div>
-        <div><span>Average visits</span><strong>{averageVisits.toFixed(1)}</strong><small>Per loaded player</small></div>
+        <div><span>Loaded players</span><strong>{snapshot.customers.length}</strong><small>Tenant-scoped identities</small></div>
+        <div><span>Return rate</span><strong>{returnRate}%</strong><small>{returningPlayers} returning {returningPlayers === 1 ? "player" : "players"}</small></div>
+        <div><span>Average bookings</span><strong>{averageBookings.toFixed(1)}</strong><small>{needsDetails ? `${needsDetails} ${needsDetails === 1 ? "profile needs" : "profiles need"} details` : "Every profile is linked"}</small></div>
       </section>
-      <section className={styles.panel} aria-labelledby="customer-title">
+      <section className={`${styles.panel} ${styles.customerDirectory}`} aria-labelledby="customer-title">
         <div className={styles.panelHeading}>
-          <div><p className={styles.eyebrow}>Tenant directory</p><h2 id="customer-title">Players</h2></div>
+          <div><p className={styles.eyebrow}>Tenant directory</p><h2 id="customer-title">Players</h2><span className={styles.customerDirectoryNote}>Matched by mobile number first, then email.</span></div>
           <label className={styles.searchField}>
             <span className={styles.srOnly}>Search customers</span>
             <span aria-hidden="true">⌕</span>
-            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search players" />
+            <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, mobile or email" />
           </label>
         </div>
         {customers.length ? (
           <div className={styles.customerList}>
             <div className={styles.customerTableHeader} aria-hidden="true">
-              <span /><span>Player</span><span>Bookings</span><span>Paid value</span><span>Last visit</span><span />
+              <span /><span>Player</span><span>Bookings</span><span>Upcoming</span><span>Paid value</span><span>Last visit</span><span />
             </div>
             {customers.map((customer, index) => (
-              <article className={styles.customerRow} key={customer.id}>
+              <article className={`${styles.customerRow} ${customer.identityStatus && customer.identityStatus !== "resolved" ? styles.customerNeedsDetails : ""}`} key={customer.id}>
                 <Avatar initials={customer.initials} tone={index} />
                 <div className={styles.customerName}>
                   <strong>{customer.name}</strong>
                   <span>{customer.contact}</span>
+                  {customer.identityStatus && customer.identityStatus !== "resolved" ? <small>{customer.identityStatus === "review" ? "Identity review needed" : "Contact details needed"}</small> : null}
                 </div>
-                <div><span className={styles.mobileLabel}>Bookings</span><strong>{customer.visits}</strong></div>
+                <div><span className={styles.mobileLabel}>Bookings</span><strong>{customer.totalBookings ?? customer.visits}</strong><small>{customer.completedVisits ?? 0} completed</small></div>
+                <div><span className={styles.mobileLabel}>Upcoming</span><strong>{customer.upcomingBookings ?? 0}</strong><small>{customer.cancelledBookings ?? 0} cancelled</small></div>
                 <div><span className={styles.mobileLabel}>Paid value</span><strong>{formatPeso(customer.lifetimeValue)}</strong></div>
                 <div><span className={styles.mobileLabel}>Last visit</span><strong>{customer.lastVisit}</strong>{customer.note && <small>{customer.note}</small>}</div>
-                <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`}>→</button>
+                <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`} onClick={() => setSelectedCustomerId(customer.id)}>→</button>
               </article>
             ))}
           </div>
         ) : (
-          <div className={styles.inlineEmpty}><span aria-hidden="true">00</span><h3>No players found</h3><p>Try a name or mobile number.</p></div>
+          <div className={styles.inlineEmpty}><span aria-hidden="true">00</span><h3>No players found</h3><p>Try a name, mobile number, or email.</p></div>
         )}
       </section>
+      {selectedCustomer ? (
+        <div className={styles.customerDrawerBackdrop} role="presentation" onMouseDown={() => setSelectedCustomerId(null)}>
+          <aside className={styles.customerDrawer} role="dialog" aria-modal="true" aria-labelledby="customer-profile-title" onMouseDown={(event) => event.stopPropagation()}>
+            <header className={styles.customerProfileHeader}>
+              <div className={styles.customerProfileIdentity}>
+                <Avatar initials={selectedCustomer.initials} tone={0} />
+                <div>
+                  <span className={styles.customerProfileEyebrow}>{selectedCustomer.identityStatus === "resolved" || !selectedCustomer.identityStatus ? "Linked player profile" : "Profile needs attention"}</span>
+                  <h2 id="customer-profile-title">{selectedCustomer.name}</h2>
+                  <p>{selectedCustomer.identityStatus === "review" ? "The contact identifiers conflict and were not merged automatically." : selectedCustomer.note}</p>
+                </div>
+              </div>
+              <button type="button" className={styles.customerDrawerClose} onClick={() => setSelectedCustomerId(null)} aria-label="Close customer profile"><X aria-hidden="true" size={18} /></button>
+            </header>
+            <section className={styles.customerContactCard} aria-label="Customer contact details">
+              <div><Phone aria-hidden="true" size={16} /><span>Mobile</span><strong>{selectedCustomer.phone ?? "Not provided"}</strong></div>
+              <div><Mail aria-hidden="true" size={16} /><span>Email</span><strong>{selectedCustomer.email ?? "Not provided"}</strong></div>
+            </section>
+            <section className={styles.customerProfileMetrics} aria-label="Customer activity summary">
+              <div><span>Bookings</span><strong>{selectedCustomer.totalBookings ?? selectedCustomer.visits}</strong></div>
+              <div><span>Completed</span><strong>{selectedCustomer.completedVisits ?? 0}</strong></div>
+              <div><span>Upcoming</span><strong>{selectedCustomer.upcomingBookings ?? 0}</strong></div>
+              <div><span>Paid value</span><strong>{formatPeso(selectedCustomer.lifetimeValue)}</strong></div>
+            </section>
+            <section className={styles.customerNextBooking}>
+              <div><CalendarDays aria-hidden="true" size={18} /><span>Next reservation</span></div>
+              <strong>{selectedCustomer.nextBooking ?? "No upcoming reservation"}</strong>
+            </section>
+            <section className={styles.customerHistory} aria-labelledby="customer-history-title">
+              <div className={styles.customerHistoryHeading}><div><p className={styles.eyebrow}>Booking timeline</p><h3 id="customer-history-title">Recent activity</h3></div><span>{selectedCustomer.bookingHistory?.length ?? 0} loaded</span></div>
+              {selectedCustomer.bookingHistory?.length ? (
+                <ol>
+                  {selectedCustomer.bookingHistory.map((booking) => (
+                    <li key={booking.bookingId}>
+                      <div><strong>{booking.date}</strong><span>{booking.time} · {booking.court}</span></div>
+                      <div><StatusPill status={booking.status} /><strong>{formatPeso(booking.amount)}</strong><span>{booking.reference}</span></div>
+                    </li>
+                  ))}
+                </ol>
+              ) : <p className={styles.customerHistoryEmpty}>No booking activity was returned for this player.</p>}
+            </section>
+            <footer className={styles.customerProfileFooter}>
+              <span>Only bookings from {snapshot.tenant.name} are included.</span>
+              <button type="button" onClick={() => { setSelectedCustomerId(null); goTo("bookings"); }}>Create booking <ArrowRight aria-hidden="true" size={15} /></button>
+            </footer>
+          </aside>
+        </div>
+      ) : null}
     </>
   );
 }
@@ -3093,7 +3557,7 @@ export default function ManagePage() {
   const runtimeMode = platformMode();
   const isPreview = runtimeMode === "preview";
   const [view, setView] = useState<View>("overview");
-  const [role, setRole] = useState<TenantRole>("owner");
+  const [role] = useState<TenantRole>("owner");
   const [previewState, setPreviewState] = useState<PreviewState>("ready");
   const [snapshot, setSnapshot] = useState<ManagementSnapshot | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -3106,7 +3570,7 @@ export default function ManagePage() {
   const [toast, setToast] = useState<ToastState | null>(null);
   const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("30d");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
   const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
   const [insights, setInsights] = useState<ManagementInsights | null>(null);
   const [insightsPending, setInsightsPending] = useState(false);
@@ -3145,6 +3609,11 @@ export default function ManagePage() {
     (verificationId: string) => managementAdapter.loadPaymentReceipt(context, verificationId),
     [context],
   );
+  const loadReschedulePreview = useCallback(
+    (bookingReference: string, date: string) =>
+      managementAdapter.loadReschedulePreview(context, bookingReference, date),
+    [context],
+  );
   const loadCalendarDay = useCallback(
     (date: string) => {
       if (!snapshot) return Promise.reject(new Error("CALENDAR_SNAPSHOT_UNAVAILABLE"));
@@ -3181,6 +3650,14 @@ export default function ManagePage() {
   const retryInsights = useCallback(() => {
     setInsightsRevision((revision) => revision + 1);
   }, []);
+
+  const publishRecommendedOffer = useCallback(async (
+    input: Parameters<typeof managementAdapter.createPromotion>[1],
+  ) => {
+    const promotion = await managementAdapter.createPromotion(context, input);
+    setToast({ message: `${promotion.name} is live for matching future slots.`, tone: "success" });
+    setInsightsRevision((revision) => revision + 1);
+  }, [context]);
 
   useEffect(() => {
     if (!snapshot || (view !== "reports" && view !== "finance")) return;
@@ -3418,6 +3895,9 @@ export default function ManagePage() {
   const requiredCapability = VIEW_CAPABILITY[view];
   const viewPermitted = !requiredCapability || can(requiredCapability);
   const completedSetup = snapshot?.setup.filter((item) => item.complete).length ?? 0;
+  const paymentReviewCount = snapshot?.bookings.filter((booking) =>
+    booking.paymentEvidence?.reviewable === true || booking.status === "payment_attention"
+  ).length ?? 0;
   const visibleNavItems = NAV_ITEMS.filter((item) =>
     item.id !== "launch" || snapshot?.session.isSystemOwner === true
   );
@@ -3431,7 +3911,7 @@ export default function ManagePage() {
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     switch (view) {
       case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
-      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} />;
+      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
       case "schedule": return snapshot.tenant.mode === "live" ? (
         <CalendarView
           courts={snapshot.courts}
@@ -3445,7 +3925,7 @@ export default function ManagePage() {
         />
       ) : <ScheduleView snapshot={snapshot} can={can} goTo={setView} />;
       case "blocks": return <BlocksView snapshot={snapshot} can={can} request={request} />;
-      case "customers": return <CustomersView snapshot={snapshot} />;
+      case "customers": return <CustomersView snapshot={snapshot} goTo={setView} />;
       case "reports": return <AnalyticsView
         report={insights?.report ?? null}
         period={analyticsPeriod}
@@ -3453,6 +3933,9 @@ export default function ManagePage() {
         courts={snapshot.courts.map((court) => ({ id: court.id, name: court.name }))}
         courtId={analyticsCourtId}
         onCourtChange={setAnalyticsCourtId}
+        promotions={insights?.promotions ?? null}
+        onCreatePromotion={publishRecommendedOffer}
+        bookings={snapshot.bookings}
         loading={insightsPending}
         error={insightsError}
         onRetry={retryInsights}
@@ -3509,17 +3992,24 @@ export default function ManagePage() {
           {isPreview && <b aria-hidden="true">⌄</b>}
         </div>
         <nav className={styles.desktopNav} aria-label="Management navigation">
-          <p>Workspace</p>
-          {visibleNavItems.slice(0, 7).map((item) => (
+          <p>Operations</p>
+          {visibleNavItems.slice(0, 5).map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true">{item.short}</span>{item.label}
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
-          <p>Manage</p>
-          {visibleNavItems.slice(7).map((item) => (
+          <p>Business</p>
+          {visibleNavItems.slice(5, 8).map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true">{item.short}</span>{item.label}
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
+              {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
+            </button>
+          ))}
+          {visibleNavItems.length > 8 && <p>Platform</p>}
+          {visibleNavItems.slice(8).map((item) => (
+            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
@@ -3584,41 +4074,39 @@ export default function ManagePage() {
         <nav className={styles.mobileNav} aria-label="Mobile management navigation">
           {visibleNavItems.map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true">{item.short}</span>{item.label}
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
             </button>
           ))}
         </nav>
 
         <div className={styles.topbar}>
-          <div className={styles.statusLine}>
-            <span className={styles.previewMode}><i aria-hidden="true" /> {isPreview ? "Preview" : "Live"}</span>
-            <span>{isPreview ? "Bookings are not public" : snapshot ? "Tenant data" : "Connecting"}</span>
-            <span className={styles.syncText}>{snapshot ? `Synced ${snapshot.tenant.lastSynced}` : "Sync pending"}</span>
+          <div className={styles.topbarTitle}>
+            <span>{view === "overview" ? "Today’s operations" : view === "reports" ? "Venue performance" : "Dinktopia operations"}</span>
+            <h1>{view === "overview" ? "Today" : selectedCopy.title}</h1>
           </div>
-          {isPreview ? (
-            <div className={styles.previewControls} aria-label="Non-authoritative preview controls">
-              <span className={styles.previewControlsLabel}>UI preview only</span>
-              <label><span>Role</span><select value={role} onChange={(event) => setRole(event.target.value as TenantRole)}>{(Object.keys(ROLE_LABEL) as TenantRole[]).map((item) => <option value={item} key={item}>{ROLE_LABEL[item]}</option>)}</select></label>
-              <label><span>State</span><select value={previewState} onChange={(event) => setPreviewState(event.target.value as PreviewState)}><option value="ready">Ready</option><option value="loading">Loading</option><option value="empty">Empty</option><option value="error">Error</option><option value="restricted">Restricted</option></select></label>
-            </div>
-          ) : (
-            <div className={styles.liveSyncControls}>
+          <div className={styles.rallyTopActions}>
+            <button type="button" className={styles.rallySearch} onClick={() => navigateTo("bookings")} aria-label="Search bookings and players"><Search /><span>Search anything</span><kbd>⌘ K</kbd></button>
+            <button type="button" className={styles.rallyTopIcon} onClick={() => paymentReviewCount ? openNeedsReview() : navigateTo("bookings")} aria-label="Notifications"><Bell />{paymentReviewCount > 0 && <span>{paymentReviewCount}</span>}</button>
+            {!isPreview && (
               <button
                 type="button"
-                className={styles.syncButton}
+                className={styles.rallyTopIcon}
                 aria-label="Refresh live tenant data"
                 disabled={syncPending}
                 onClick={() => void refreshWorkspace(true)}
               >
                 <span aria-hidden="true">↻</span>
-                {syncPending ? "Refreshing…" : "Refresh"}
               </button>
+            )}
+            <div className={styles.rallyRoleCard}>
+              <span>{snapshot?.session.isSystemOwner ? "SO" : "CO"}</span>
+              <div><small>Viewing as</small><strong>{snapshot?.session.isSystemOwner ? "System owner" : "Court owner"}</strong></div>
             </div>
-          )}
+          </div>
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
-          <header className={styles.pageHeader}>
+          {view !== "overview" && view !== "reports" && view !== "bookings" && view !== "blocks" && <header className={styles.pageHeader}>
             <div>
               <h1>{selectedCopy.title}</h1>
               <p>{selectedCopy.description}</p>
@@ -3636,7 +4124,7 @@ export default function ManagePage() {
                 </ActionButton>
               )}
             </div>
-          </header>
+          </header>}
 
           {renderView()}
         </main>

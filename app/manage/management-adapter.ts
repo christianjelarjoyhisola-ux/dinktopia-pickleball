@@ -6,6 +6,7 @@ import {
   applySharedCourtSchedule,
   cancelTenantBooking,
   checkInTenantBooking,
+  createTenantPromotion,
   createManualBooking,
   currentOwnerSession,
   deleteTenantPaymentQr,
@@ -14,6 +15,7 @@ import {
   getBookingFeeRemittanceDashboard,
   getBookingFeeRemittanceHistory,
   getManagerCourts,
+  getManagerPromotions,
   getManagerRegularBookingReport,
   getManagerSession,
   getPaymentReceiptView,
@@ -32,6 +34,7 @@ import {
   updateActivationSettings,
   updateBusinessSettings,
   uploadTenantPaymentQr,
+  type BookingReschedulePreview,
 } from "../lib/platform/client";
 
 export type TenantRole = "owner" | "admin" | "staff" | "host";
@@ -324,7 +327,43 @@ export type ManagementInsights = {
     dashboard: RemittanceDashboard;
     history: RemittanceSummary[];
   } | null;
+  promotions: TenantPromotionState;
   loadedAt: string;
+};
+
+export type TenantPromotion = {
+  id: string;
+  name: string;
+  status: "active" | "paused" | "ended";
+  discountType: "percentage" | "fixed_amount";
+  discountValue: number;
+  weekdays: number[];
+  startsAt: string;
+  endsAt: string;
+  validFrom: string;
+  validUntil: string;
+  courtIds: string[];
+  maxRedemptions: number | null;
+  redemptionCount: number;
+};
+
+export type TenantPromotionState = {
+  available: boolean;
+  canCreate: boolean;
+  items: TenantPromotion[];
+};
+
+export type PromotionCreateInput = {
+  name: string;
+  discountType: "percentage" | "fixed_amount";
+  discountValue: number;
+  weekdays: number[];
+  startsAt: string;
+  endsAt: string;
+  validFrom: string;
+  validUntil: string;
+  courtIds: string[];
+  maxRedemptions?: number | null;
 };
 
 export type ManagementInsightFilters = {
@@ -342,6 +381,24 @@ export type Customer = {
   lifetimeValue: number;
   lastVisit: string;
   note?: string;
+  phone?: string | null;
+  email?: string | null;
+  totalBookings?: number;
+  completedVisits?: number;
+  upcomingBookings?: number;
+  cancelledBookings?: number;
+  nextBooking?: string | null;
+  identityStatus?: "resolved" | "needs_details" | "review";
+  bookingHistory?: Array<{
+    bookingId: string;
+    reference: string;
+    date: string;
+    time: string;
+    court: string;
+    amount: number;
+    status: BookingStatus;
+    payment: BookingPaymentStatus;
+  }>;
 };
 
 export type Court = {
@@ -491,6 +548,8 @@ export type ManagementActionResult = {
   tenantRevision?: string;
 };
 
+export type ManagementBookingReschedulePreview = BookingReschedulePreview;
+
 /**
  * The management route consumes this interface only. The production adapter can
  * map the shared tenant/auth/API response to this shape without changing the UI.
@@ -504,6 +563,11 @@ export interface ManagementAdapter {
     current: ManagementSnapshot,
     date: string,
   ): Promise<CalendarDaySnapshot>;
+  loadReschedulePreview(
+    context: ManagementContext,
+    bookingReference: string,
+    date: string,
+  ): Promise<ManagementBookingReschedulePreview>;
   loadInsights(
     context: ManagementContext,
     filters: ManagementInsightFilters,
@@ -516,6 +580,10 @@ export interface ManagementAdapter {
     context: ManagementContext,
     verificationId: string,
   ): Promise<PaymentReceiptView>;
+  createPromotion(
+    context: ManagementContext,
+    input: PromotionCreateInput,
+  ): Promise<TenantPromotion>;
   uploadPaymentQr(
     context: ManagementContext,
     methodCode: string,
@@ -936,7 +1004,7 @@ export const managementAdapter: ManagementAdapter = {
       policyResult,
       remittanceResult,
     ] = await Promise.all([
-      listManagerBookings(session.access_token, { activeOnly: false, limit: 100 }),
+      listManagerBookings(session.access_token, { activeOnly: false, limit: 500 }),
       listManagerBlocks(session.access_token, { limit: 100 }),
       canReadManagerSettings
         ? getActivationSettings(session.access_token).catch(() => null)
@@ -996,7 +1064,7 @@ export const managementAdapter: ManagementAdapter = {
         lastSynced: formatManilaDateTime(new Date()),
       },
       bookings,
-      customers: deriveLiveCustomers(bookingRows),
+      customers: deriveLiveCustomers(bookingRows, courtNames),
       courts,
       schedule: deriveLiveSchedule(bookingRows, blockRows, courtNames),
       blocks,
@@ -1081,12 +1149,37 @@ export const managementAdapter: ManagementAdapter = {
       blocks: blockResult.blockedDates.map((row) => mapLiveBlock(row, courtNames)),
     };
   },
+  async loadReschedulePreview(context, bookingReference, date) {
+    if (platformMode() === "preview") throw new Error("PREVIEW_RESCHEDULE_UNAVAILABLE");
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(
+      await getManagerSession(session.access_token),
+    );
+    assertBookingManager(authority, "reschedule");
+    const reference = safeActionText(
+      bookingReference,
+      6,
+      40,
+      "BOOKING_REFERENCE_INVALID",
+    ).toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9-]{5,39}$/.test(reference)) {
+      throw new Error("BOOKING_REFERENCE_INVALID");
+    }
+    return previewBookingReschedule(
+      session.access_token,
+      reference,
+      validDate(date, "RESCHEDULE_DATE_INVALID"),
+    );
+  },
   async loadInsights(context, filters) {
     if (platformMode() === "preview") {
       return {
         mode: "preview",
         report: null,
         finance: null,
+        promotions: { available: false, canCreate: false, items: [] },
         loadedAt: formatManilaDateTime(new Date()),
       };
     }
@@ -1100,10 +1193,16 @@ export const managementAdapter: ManagementAdapter = {
     );
     assertInsightsViewer(authority);
 
-    const [reportResult, remittanceResult, historyResult] = await Promise.all([
+    const [reportResult, remittanceResult, historyResult, promotionResult] = await Promise.all([
       getManagerRegularBookingReport(session.access_token, normalizedFilters),
       getBookingFeeRemittanceDashboard(session.access_token),
       getBookingFeeRemittanceHistory(session.access_token, { limit: 50 }),
+      getManagerPromotions(session.access_token).catch((error) => {
+        if (error instanceof PlatformRequestError && error.code === "PGRST202") {
+          return null;
+        }
+        throw error;
+      }),
     ]);
 
     return {
@@ -1113,6 +1212,9 @@ export const managementAdapter: ManagementAdapter = {
         dashboard: remittanceDashboard(remittanceResult),
         history: remittanceHistory(historyResult),
       },
+      promotions: promotionResult === null
+        ? { available: false, canCreate: false, items: [] }
+        : tenantPromotionState(promotionResult),
       loadedAt: formatManilaDateTime(new Date()),
     };
   },
@@ -1130,7 +1232,7 @@ export const managementAdapter: ManagementAdapter = {
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const [serverSessionResult, bookingResult] = await Promise.all([
       getManagerSession(session.access_token),
-      listManagerBookings(session.access_token, { activeOnly: false, limit: 100 }),
+      listManagerBookings(session.access_token, { activeOnly: false, limit: 500 }),
     ]);
     const serverSession = normalizeManagerSession(serverSessionResult);
     const bookingRows = bookingResult.bookings;
@@ -1144,7 +1246,7 @@ export const managementAdapter: ManagementAdapter = {
         lastSynced: formatManilaDateTime(new Date()),
       },
       bookings,
-      customers: deriveLiveCustomers(bookingRows),
+      customers: deriveLiveCustomers(bookingRows, courtNames),
       session: {
         ...serverSession,
         capabilities: authorityCapabilities(serverSession),
@@ -1178,6 +1280,18 @@ export const managementAdapter: ManagementAdapter = {
       verificationId: id,
       status,
     };
+  },
+  async createPromotion(context, input) {
+    if (platformMode() === "preview") throw new Error("PREVIEW_PROMOTION_UNAVAILABLE");
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    if (!authority.isSystemOwner && authority.membershipRole !== "owner") {
+      throw new Error("PROMOTION_PUBLISH_ACCESS_DENIED");
+    }
+    const result = await createTenantPromotion(session.access_token, input);
+    return tenantPromotion(result);
   },
   async uploadPaymentQr(context, methodCode, file) {
     if (platformMode() === "preview") {
@@ -3098,6 +3212,62 @@ function record(candidate: unknown): JsonObject | null {
     : null;
 }
 
+function tenantPromotion(candidate: unknown): TenantPromotion {
+  const row = record(candidate);
+  if (!row) throw new Error("PROMOTION_RESPONSE_INVALID");
+  const status = value(row, ["status"]);
+  const discountType = value(row, ["discountType", "discount_type"]);
+  const weekdays = Array.isArray(row.weekdays)
+    ? row.weekdays.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
+    : [];
+  const courtIds = Array.isArray(row.courtIds ?? row.court_ids)
+    ? (row.courtIds ?? row.court_ids as unknown[]).filter(
+        (id): id is string => typeof id === "string" && UUID_PATTERN.test(id),
+      )
+    : [];
+  const maxRedemptions = numberValue(row, ["maxRedemptions", "max_redemptions"]);
+  const redemptionCount = numberValue(row, ["redemptionCount", "redemption_count"]);
+  const id = value(row, ["id"]);
+  const name = value(row, ["name"]);
+  const discountValue = numberValue(row, ["discountValue", "discount_value"]);
+  const startsAt = value(row, ["startsAt", "starts_at"]);
+  const endsAt = value(row, ["endsAt", "ends_at"]);
+  const validFrom = value(row, ["validFrom", "valid_from"]);
+  const validUntil = value(row, ["validUntil", "valid_until"]);
+  if (
+    !UUID_PATTERN.test(id) || !name ||
+    !["active", "paused", "ended"].includes(status) ||
+    !["percentage", "fixed_amount"].includes(discountType) ||
+    discountValue === null || discountValue <= 0 || !weekdays.length ||
+    !/^\d{2}:\d{2}/.test(startsAt) || !/^\d{2}:\d{2}/.test(endsAt) ||
+    !DATE_PATTERN.test(validFrom) || !DATE_PATTERN.test(validUntil) ||
+    !courtIds.length || redemptionCount === null
+  ) throw new Error("PROMOTION_RESPONSE_INVALID");
+  return {
+    id,
+    name,
+    status: status as TenantPromotion["status"],
+    discountType: discountType as TenantPromotion["discountType"],
+    discountValue,
+    weekdays,
+    startsAt: startsAt.slice(0, 5),
+    endsAt: endsAt.slice(0, 5),
+    validFrom,
+    validUntil,
+    courtIds,
+    maxRedemptions: maxRedemptions === null ? null : Math.trunc(maxRedemptions),
+    redemptionCount: Math.trunc(redemptionCount),
+  };
+}
+
+function tenantPromotionState(candidate: unknown): TenantPromotionState {
+  const row = record(candidate);
+  if (!row || typeof row.canCreate !== "boolean" || !Array.isArray(row.items)) {
+    throw new Error("PROMOTION_RESPONSE_INVALID");
+  }
+  return { available: true, canCreate: row.canCreate, items: row.items.map(tenantPromotion) };
+}
+
 function value(row: Record<string, unknown>, keys: string[], fallback = ""): string {
   for (const key of keys) {
     const candidate = row[key];
@@ -3626,9 +3796,27 @@ function deriveLiveSchedule(
   return [...bookingSlots, ...blockSlots];
 }
 
-type CustomerAccumulator = Customer & {
+type CustomerAccumulator = {
   key: string;
+  id: string;
+  name: string;
+  initials: string;
+  contact: string;
+  phone: string | null;
+  email: string | null;
+  totalBookings: number;
+  completedVisits: number;
+  upcomingBookings: number;
+  cancelledBookings: number;
+  lifetimeValue: number;
+  lastVisit: string;
+  nextBooking: string | null;
+  note: string;
+  identityStatus: "resolved" | "needs_details" | "review";
+  bookingHistory: NonNullable<Customer["bookingHistory"]>;
   latestCompletedAt: number | null;
+  nextBookingAt: number | null;
+  latestNameAt: number;
 };
 
 function stableCustomerId(key: string): string {
@@ -3640,31 +3828,91 @@ function stableCustomerId(key: string): string {
   return `customer-${(hash >>> 0).toString(16).padStart(8, "0")}`;
 }
 
-function deriveLiveCustomers(bookingRows: JsonObject[]): Customer[] {
+function normalizedCustomerPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10 && digits.startsWith("9")) return `63${digits}`;
+  if (digits.length === 11 && digits.startsWith("0")) return `63${digits.slice(1)}`;
+  if (digits.length >= 7) return digits;
+  return "";
+}
+
+function normalizedCustomerEmail(raw: string): string {
+  const email = raw.trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ? email : "";
+}
+
+function isPendingCustomerName(name: string): boolean {
+  return /^(booking details pending|details pending|customer details pending)$/i.test(name.trim());
+}
+
+function deriveLiveCustomers(
+  bookingRows: JsonObject[],
+  courtNames: ReadonlyMap<string, string>,
+): Customer[] {
   const customers = new Map<string, CustomerAccumulator>();
+  const phoneIndex = new Map<string, CustomerAccumulator>();
+  const emailIndex = new Map<string, CustomerAccumulator>();
+  const now = Date.now();
+
   for (const row of bookingRows) {
-    const name = value(row, ["customer_name", "customerName"]);
-    if (!name) continue;
-    const email = value(row, ["customer_email", "customerEmail"]).toLowerCase();
-    const phone = value(row, ["customer_phone", "phone", "mobile"]);
-    const key = email || phone.replace(/\D/g, "") || name.toLowerCase();
-    const existing = customers.get(key) ?? {
+    const booking = mapLiveBooking(row, courtNames);
+    const rawName = value(row, ["customer_name", "customerName"]);
+    const phone = normalizedCustomerPhone(value(row, ["customer_phone", "phone", "mobile"]));
+    const email = normalizedCustomerEmail(value(row, ["customer_email", "customerEmail"]));
+    const phoneMatch = phone ? phoneIndex.get(phone) : undefined;
+    const emailMatch = email ? emailIndex.get(email) : undefined;
+    const identityConflict = Boolean(phoneMatch && emailMatch && phoneMatch !== emailMatch);
+    const existingMatch = identityConflict ? undefined : phoneMatch ?? emailMatch;
+    const key = existingMatch?.key ?? (identityConflict
+      ? `review:${booking.bookingId}`
+      : phone
+        ? `phone:${phone}`
+        : email
+          ? `email:${email}`
+          : `unresolved:${booking.bookingId}`);
+    const startsAt = parsedInstant(row, ["starts_at"]);
+    const endsAt = parsedInstant(row, ["ends_at"]);
+    const name = !rawName || isPendingCustomerName(rawName) ? "Customer details needed" : rawName;
+    const nameTimestamp = startsAt?.getTime() ?? 0;
+    const existing = existingMatch ?? customers.get(key) ?? {
       key,
       id: stableCustomerId(key),
       name,
       initials: initialsFor(name),
-      contact: phone || email || "Contact unavailable",
-      visits: 0,
+      contact: phone ? `+${phone}` : email || "Contact unavailable",
+      phone: phone ? `+${phone}` : null,
+      email: email || null,
+      totalBookings: 0,
+      completedVisits: 0,
+      upcomingBookings: 0,
+      cancelledBookings: 0,
       lifetimeValue: 0,
       lastVisit: "No completed visit",
-      note: "Derived from the loaded booking result",
+      nextBooking: null,
+      note: phone || email ? "Identity linked from tenant bookings" : "Add a mobile number or email to link future bookings",
+      identityStatus: identityConflict ? "review" : phone || email ? "resolved" : "needs_details",
+      bookingHistory: [],
       latestCompletedAt: null,
+      nextBookingAt: null,
+      latestNameAt: nameTimestamp,
     };
     const status = value(row, ["status"]);
     const paymentStatus = value(row, ["payment_status"]);
-    const endsAt = parsedInstant(row, ["ends_at"]);
+    const terminalCancelled = status === "cancelled" || status === "expired";
+
+    if (!isPendingCustomerName(rawName) && nameTimestamp >= existing.latestNameAt) {
+      existing.name = rawName;
+      existing.initials = initialsFor(rawName);
+      existing.latestNameAt = nameTimestamp;
+    }
+    if (!existing.phone && phone) existing.phone = `+${phone}`;
+    if (!existing.email && email) existing.email = email;
+    existing.contact = existing.phone || existing.email || "Contact unavailable";
+    if (identityConflict) existing.identityStatus = "review";
+    if (!terminalCancelled) existing.totalBookings += 1;
+    else existing.cancelledBookings += 1;
     if (status === "completed") {
-      existing.visits += 1;
+      existing.completedVisits += 1;
       if (
         endsAt &&
         (existing.latestCompletedAt === null || endsAt.getTime() > existing.latestCompletedAt)
@@ -3673,23 +3921,60 @@ function deriveLiveCustomers(bookingRows: JsonObject[]): Customer[] {
         existing.lastVisit = formatManilaDate(endsAt);
       }
     }
-    if (paymentStatus === "paid") {
+    if (paymentStatus === "paid" && !terminalCancelled) {
       existing.lifetimeValue += bookingAmount(row);
     }
+    if (!terminalCancelled && startsAt && startsAt.getTime() > now) {
+      existing.upcomingBookings += 1;
+      if (existing.nextBookingAt === null || startsAt.getTime() < existing.nextBookingAt) {
+        existing.nextBookingAt = startsAt.getTime();
+        existing.nextBooking = `${booking.date} · ${booking.time} · ${booking.court}`;
+      }
+    }
+    existing.bookingHistory.push({
+      bookingId: booking.bookingId,
+      reference: booking.reference,
+      date: booking.date,
+      time: booking.time,
+      court: booking.court,
+      amount: booking.amount,
+      status: booking.status,
+      payment: booking.payment,
+    });
     customers.set(key, existing);
+    if (!identityConflict) {
+      if (phone) phoneIndex.set(phone, existing);
+      if (email) emailIndex.set(email, existing);
+    }
   }
 
   return [...customers.values()]
-    .sort((left, right) => left.name.localeCompare(right.name, "en-PH"))
+    .sort((left, right) => {
+      if (left.identityStatus !== right.identityStatus) {
+        return left.identityStatus === "resolved" ? 1 : -1;
+      }
+      return left.name.localeCompare(right.name, "en-PH");
+    })
     .map((customer) => ({
       id: customer.id,
       name: customer.name,
       initials: customer.initials,
       contact: customer.contact,
-      visits: customer.visits,
+      visits: customer.totalBookings,
+      totalBookings: customer.totalBookings,
+      completedVisits: customer.completedVisits,
+      upcomingBookings: customer.upcomingBookings,
+      cancelledBookings: customer.cancelledBookings,
       lifetimeValue: customer.lifetimeValue,
       lastVisit: customer.lastVisit,
       note: customer.note,
+      phone: customer.phone,
+      email: customer.email,
+      nextBooking: customer.nextBooking,
+      identityStatus: customer.identityStatus,
+      bookingHistory: customer.bookingHistory.sort((left, right) =>
+        `${right.date} ${right.time}`.localeCompare(`${left.date} ${left.time}`, "en-PH")
+      ),
     }));
 }
 
