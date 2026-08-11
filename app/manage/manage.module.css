@@ -1938,6 +1938,51 @@
 .compactFormActions > span { color: var(--muted); font-size: var(--text-caption); }
 .compactFields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .compactFormActions { margin-top: 15px; border-top: 1px solid var(--line); padding-top: 14px; }
+.rescheduleWorkspace { border-color: #d5d0ff; background: linear-gradient(145deg, #fffefa 0%, #faf9f4 100%); box-shadow: 0 14px 34px rgba(27, 39, 34, .055); }
+.rescheduleWorkspace .compactFormHeading { align-items: flex-start; }
+.rescheduleWorkspace .compactFormHeading h3 { font-size: 1.08rem; letter-spacing: -.035em; }
+.rescheduleWorkspace .compactFormHeading > div > span { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-caption); }
+.rescheduleControls { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.rescheduleControls > div { display: grid; align-content: center; border: 1px solid var(--line); border-radius: 11px; background: #fffefa; padding: 10px 12px; }
+.rescheduleControls > div span { color: var(--muted); font-size: var(--text-micro); font-weight: 750; text-transform: uppercase; letter-spacing: var(--tracking-label); }
+.rescheduleControls > div strong { margin-top: 5px; font-size: var(--text-meta); }
+.rescheduleControls > div small { margin-top: 3px; color: var(--muted); font-size: var(--text-micro); }
+.rescheduleAvailability { margin-top: 14px; border: 1px solid var(--line); border-radius: 14px; background: #fffefa; padding: 15px; }
+.rescheduleAvailabilityHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.rescheduleAvailabilityHeader h4 { margin: 3px 0 0; font-size: var(--text-subheading); letter-spacing: -.035em; }
+.rescheduleLegend { display: flex; flex-wrap: wrap; gap: 11px; color: var(--muted); font-size: var(--text-micro); }
+.rescheduleLegend span { display: flex; align-items: center; gap: 5px; }
+.rescheduleLegend i { width: 8px; height: 8px; border-radius: 3px; }
+.slotOpenDot { border: 1px solid #89c6b0; background: #e9f7f2; }
+.slotBookedDot { background: #d9d9d5; }
+.slotSelectedDot { background: #6558e8; }
+.rescheduleSlotGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 8px; margin-top: 13px; }
+.rescheduleSlot { min-width: 0; min-height: 78px; border: 1px solid #b9d9cd; border-radius: 11px; background: #f5fbf8; padding: 10px; color: #173d31; text-align: left; cursor: pointer; transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease, transform 140ms ease; }
+.rescheduleSlot:hover:not(:disabled) { border-color: #16845b; background: #edf9f4; transform: translateY(-1px); box-shadow: 0 7px 16px rgba(22,132,91,.09); }
+.rescheduleSlot strong, .rescheduleSlot span, .rescheduleSlot small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rescheduleSlot strong { font-size: var(--text-meta); }
+.rescheduleSlot span { margin-top: 3px; color: var(--muted); font-size: var(--text-micro); }
+.rescheduleSlot small { margin-top: 8px; color: #16845b; font-size: var(--text-micro); font-weight: 750; text-transform: capitalize; }
+.rescheduleSlotSelected { border-color: #6558e8; background: #eeebff; color: #4539bb; box-shadow: 0 0 0 3px rgba(101,88,232,.12); }
+.rescheduleSlotSelected small { color: #5546d7; }
+.rescheduleSlotUnavailable { border-color: #dedfd9; background: repeating-linear-gradient(-45deg, #f6f6f3, #f6f6f3 6px, #f0f0ec 6px, #f0f0ec 12px); color: #8e9692; cursor: not-allowed; opacity: .78; }
+.rescheduleSlotUnavailable small { color: #8e9692; }
+.rescheduleSlotPayment { border-color: #ead59b; background: #fff8e7; color: #8d6515; opacity: 1; }
+.rescheduleSlotPayment small { color: #8d6515; }
+.rescheduleLoading { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 13px; }
+.rescheduleLoading span { height: 76px; border-radius: 11px; background: linear-gradient(90deg, #f1f1ed, #fafaf7, #f1f1ed); background-size: 200% 100%; animation: rescheduleShimmer 1.2s infinite; }
+.rescheduleLoading p { grid-column: 1 / -1; margin: 2px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.rescheduleError { display: grid; gap: 4px; margin-top: 13px; border: 1px solid #efc5bd; border-radius: 11px; background: #fff3f0; padding: 12px; }
+.rescheduleError strong { color: #8c3326; font-size: var(--text-caption); }
+.rescheduleError span { color: #9a6259; font-size: var(--text-micro); }
+.rescheduleSelection { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 11px; margin-top: 10px; border: 1px solid #c7e6da; border-radius: 12px; background: #eaf7f2; padding: 11px 13px; color: #126948; }
+.rescheduleSelection > div { display: grid; }
+.rescheduleSelection > div:last-child { justify-items: end; }
+.rescheduleSelection span { color: #53776a; font-size: var(--text-micro); }
+.rescheduleSelection strong { margin-top: 3px; color: #143c30; font-size: var(--text-caption); }
+.rescheduleDetails { display: grid; grid-template-columns: 1fr 2fr; gap: 12px; margin-top: 14px; }
+.rescheduleDetails .fieldWide { grid-column: 1 / -1; }
+@keyframes rescheduleShimmer { to { background-position: -200% 0; } }
 .inlineActions { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; }
 .policyStatusLine { display: grid; grid-template-columns: auto 1fr auto 1fr; gap: 8px 12px; margin-bottom: 18px; border-radius: 12px; background: var(--paper-deep); padding: 12px 14px; font-size: var(--text-caption); }
 .policyStatusLine span { color: var(--muted); }
@@ -2158,6 +2203,10 @@
   .reportNotes { grid-template-columns: 1fr; }
   .rateGrid, .ruleList { grid-template-columns: 1fr; }
   .compactFields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rescheduleControls { grid-template-columns: 1fr 1fr; }
+  .rescheduleControls > .field { grid-column: 1 / -1; }
+  .rescheduleDetails { grid-template-columns: 1fr; }
+  .rescheduleDetails .fieldWide { grid-column: auto; }
   .compactFormActions { align-items: stretch; flex-direction: column; }
   .compactFormActions .button { width: 100%; }
   .policyStatusLine { grid-template-columns: 1fr; }
@@ -2241,6 +2290,15 @@
   .compactFormHeading { align-items: flex-start; flex-direction: column; }
   .compactFields,
   .launchEditorGrid .compactFields { grid-template-columns: minmax(0, 1fr); }
+  .rescheduleControls { grid-template-columns: minmax(0, 1fr); }
+  .rescheduleControls > .field { grid-column: auto; }
+  .rescheduleAvailability { margin-inline: -4px; padding: 12px; }
+  .rescheduleAvailabilityHeader { align-items: flex-start; flex-direction: column; }
+  .rescheduleSlotGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rescheduleLoading { grid-template-columns: 1fr 1fr; }
+  .rescheduleLoading span:last-of-type { display: none; }
+  .rescheduleSelection { grid-template-columns: auto minmax(0, 1fr); }
+  .rescheduleSelection > div:last-child { grid-column: 2; justify-items: start; }
   .launchChecklist article { grid-template-columns: 28px minmax(0, 1fr); }
   .launchChecklist article .textButton { grid-column: 2; justify-self: start; }
   .inlineActions { width: 100%; }

@@ -34,6 +34,7 @@ import {
   updateActivationSettings,
   updateBusinessSettings,
   uploadTenantPaymentQr,
+  type BookingReschedulePreview,
 } from "../lib/platform/client";
 
 export type TenantRole = "owner" | "admin" | "staff" | "host";
@@ -547,6 +548,8 @@ export type ManagementActionResult = {
   tenantRevision?: string;
 };
 
+export type ManagementBookingReschedulePreview = BookingReschedulePreview;
+
 /**
  * The management route consumes this interface only. The production adapter can
  * map the shared tenant/auth/API response to this shape without changing the UI.
@@ -560,6 +563,11 @@ export interface ManagementAdapter {
     current: ManagementSnapshot,
     date: string,
   ): Promise<CalendarDaySnapshot>;
+  loadReschedulePreview(
+    context: ManagementContext,
+    bookingReference: string,
+    date: string,
+  ): Promise<ManagementBookingReschedulePreview>;
   loadInsights(
     context: ManagementContext,
     filters: ManagementInsightFilters,
@@ -1140,6 +1148,30 @@ export const managementAdapter: ManagementAdapter = {
       bookings: bookingResult.bookings.map((row) => mapLiveBooking(row, courtNames)),
       blocks: blockResult.blockedDates.map((row) => mapLiveBlock(row, courtNames)),
     };
+  },
+  async loadReschedulePreview(context, bookingReference, date) {
+    if (platformMode() === "preview") throw new Error("PREVIEW_RESCHEDULE_UNAVAILABLE");
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(
+      await getManagerSession(session.access_token),
+    );
+    assertBookingManager(authority, "reschedule");
+    const reference = safeActionText(
+      bookingReference,
+      6,
+      40,
+      "BOOKING_REFERENCE_INVALID",
+    ).toUpperCase();
+    if (!/^[A-Z0-9][A-Z0-9-]{5,39}$/.test(reference)) {
+      throw new Error("BOOKING_REFERENCE_INVALID");
+    }
+    return previewBookingReschedule(
+      session.access_token,
+      reference,
+      validDate(date, "RESCHEDULE_DATE_INVALID"),
+    );
   },
   async loadInsights(context, filters) {
     if (platformMode() === "preview") {
