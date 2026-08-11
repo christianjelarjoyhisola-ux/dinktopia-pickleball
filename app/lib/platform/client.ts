@@ -736,6 +736,92 @@ export async function deleteTenantPaymentQr(
   };
 }
 
+export type CourtGalleryAsset = {
+  url: string;
+  storagePath: string;
+  contentType?: "image/jpeg" | "image/png" | "image/webp";
+  photoAlt: string;
+  photoCaption: string;
+};
+
+export type CourtGalleryMutation = {
+  asset: CourtGalleryAsset | null;
+  tenantRevision: string;
+  cleanupPending: boolean;
+};
+
+async function mutateCourtGallery(
+  accessToken: string,
+  courtId: string,
+  action: "metadata" | "delete",
+  metadata?: { photoAlt: string; photoCaption: string },
+): Promise<CourtGalleryMutation> {
+  managementHostname({ mutation: true });
+  const response = await fetch(edgeUrl("tenant-court-gallery-asset"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Asset-Action": action,
+      "X-Court-ID": courtId,
+    },
+    body: JSON.stringify(metadata ?? {}),
+  });
+  const result = await responseJson<{ ok: true } & CourtGalleryMutation>(response);
+  return { ...result, cleanupPending: result.cleanupPending === true };
+}
+
+export async function uploadTenantCourtGallery(
+  accessToken: string,
+  courtId: string,
+  file: File,
+  photoAlt: string,
+  photoCaption: string,
+): Promise<CourtGalleryMutation> {
+  managementHostname({ mutation: true });
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    file.size < 1 || file.size > 5 * 1024 * 1024
+  ) {
+    throw new PlatformRequestError(400, "COURT_GALLERY_FILE_INVALID", "Choose a JPG, PNG, or WebP court photo no larger than 5 MB.");
+  }
+  if (!photoAlt.trim() || !photoCaption.trim()) {
+    throw new PlatformRequestError(400, "COURT_GALLERY_METADATA_INVALID", "Alt text and caption are required.");
+  }
+  const form = new FormData();
+  form.append("galleryFile", file);
+  form.append("photoAlt", photoAlt.trim());
+  form.append("photoCaption", photoCaption.trim());
+  const response = await fetch(edgeUrl("tenant-court-gallery-asset"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Asset-Action": "upload",
+      "X-Court-ID": courtId,
+    },
+    body: form,
+  });
+  const result = await responseJson<{ ok: true } & CourtGalleryMutation>(response);
+  return { ...result, cleanupPending: result.cleanupPending === true };
+}
+
+export function updateTenantCourtGalleryMetadata(
+  accessToken: string,
+  courtId: string,
+  photoAlt: string,
+  photoCaption: string,
+) {
+  return mutateCourtGallery(accessToken, courtId, "metadata", { photoAlt, photoCaption });
+}
+
+export function deleteTenantCourtGallery(accessToken: string, courtId: string) {
+  return mutateCourtGallery(accessToken, courtId, "delete");
+}
+
 export type ReceiptView = {
   signedUrl: string;
   expiresIn: number;

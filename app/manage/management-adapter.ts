@@ -10,6 +10,7 @@ import {
   createManualBooking,
   currentOwnerSession,
   deleteTenantPaymentQr,
+  deleteTenantCourtGallery,
   getActivationSettings,
   getBlockedDateAccess,
   getBookingFeeRemittanceDashboard,
@@ -34,6 +35,8 @@ import {
   updateActivationSettings,
   updateBusinessSettings,
   uploadTenantPaymentQr,
+  uploadTenantCourtGallery,
+  updateTenantCourtGalleryMetadata,
   type BookingReschedulePreview,
 } from "../lib/platform/client";
 
@@ -433,6 +436,12 @@ export type Court = {
   closesAt: string | null;
   rateDay: number | null;
   ratePeak: number | null;
+  publicConfig: {
+    photoUrl: string | null;
+    photoStoragePath: string | null;
+    photoAlt: string;
+    photoCaption: string;
+  };
 };
 
 export type SharedPriceBand = {
@@ -612,6 +621,23 @@ export interface ManagementAdapter {
     methodCode: string,
     file: File,
   ): Promise<{ url: string; contentType: string; tenantRevision: string }>;
+  uploadCourtGallery(
+    context: ManagementContext,
+    courtId: string,
+    file: File,
+    photoAlt: string,
+    photoCaption: string,
+  ): Promise<{ asset: Court["publicConfig"]; tenantRevision: string }>;
+  updateCourtGalleryMetadata(
+    context: ManagementContext,
+    courtId: string,
+    photoAlt: string,
+    photoCaption: string,
+  ): Promise<{ asset: Court["publicConfig"]; tenantRevision: string }>;
+  deleteCourtGallery(
+    context: ManagementContext,
+    courtId: string,
+  ): Promise<{ tenantRevision: string }>;
   perform(
     context: ManagementContext,
     action: { type: string; resourceId?: string; payload?: unknown },
@@ -1326,6 +1352,53 @@ export const managementAdapter: ManagementAdapter = {
       tenantRevision: result.tenantRevision,
     };
   },
+  async uploadCourtGallery(context, courtId, file, photoAlt, photoCaption) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    assertVenueManager(authority);
+    const result = await uploadTenantCourtGallery(
+      session.access_token,
+      requiredUuid(courtId, "COURT_ID_INVALID"),
+      file,
+      photoAlt,
+      photoCaption,
+    );
+    return validatedCourtGalleryResult(result);
+  },
+  async updateCourtGalleryMetadata(context, courtId, photoAlt, photoCaption) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    assertVenueManager(authority);
+    const result = await updateTenantCourtGalleryMetadata(
+      session.access_token,
+      requiredUuid(courtId, "COURT_ID_INVALID"),
+      photoAlt,
+      photoCaption,
+    );
+    return validatedCourtGalleryResult(result);
+  },
+  async deleteCourtGallery(context, courtId) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    assertVenueManager(authority);
+    const result = await deleteTenantCourtGallery(
+      session.access_token,
+      requiredUuid(courtId, "COURT_ID_INVALID"),
+    );
+    if (result.asset !== null || !validIsoRevision(result.tenantRevision)) {
+      throw new Error("COURT_GALLERY_RESPONSE_INVALID");
+    }
+    return { tenantRevision: result.tenantRevision };
+  },
   async perform(context, action) {
     assertLiveManagementPlatform();
     assertDinktopiaContext(context);
@@ -2033,6 +2106,13 @@ function mapLiveCourt(row: JsonObject): Court {
   const sortOrder = exactInteger(row, ["sort_order", "sortOrder"]);
   const currency = value(row, ["currency"]);
   const schedule = scheduleForCourt(row);
+  const publicConfig = record(row.public_config ?? row.publicConfig);
+  const photoUrl = typeof publicConfig?.photoUrl === "string" ? publicConfig.photoUrl.trim() : "";
+  const photoStoragePath = typeof publicConfig?.photoStoragePath === "string"
+    ? publicConfig.photoStoragePath.trim()
+    : "";
+  const photoAlt = typeof publicConfig?.photoAlt === "string" ? publicConfig.photoAlt.trim() : "";
+  const photoCaption = typeof publicConfig?.photoCaption === "string" ? publicConfig.photoCaption.trim() : "";
   if (
     !UUID_PATTERN.test(id) || !slug || !name ||
     (status !== "active" && status !== "inactive" && status !== "maintenance") ||
@@ -2056,6 +2136,45 @@ function mapLiveCourt(row: JsonObject): Court {
     ratePeak: schedule?.bands.length === 2
       ? schedule.bands[1]?.hourlyRate ?? null
       : null,
+    publicConfig: {
+      photoUrl: photoUrl && isAllowedCourtGalleryUrl(photoUrl) ? photoUrl : null,
+      photoStoragePath: photoStoragePath || null,
+      photoAlt: photoAlt || `${name} at Dinktopia`,
+      photoCaption: photoCaption || name,
+    },
+  };
+}
+
+function isAllowedCourtGalleryUrl(candidate: string): boolean {
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" &&
+      url.hostname === "neqvrwtofiolcuxewdze.supabase.co" &&
+      url.pathname.startsWith("/storage/v1/object/public/tenant-public-assets/") &&
+      url.pathname.includes("/court-gallery/");
+  } catch {
+    return false;
+  }
+}
+
+function validatedCourtGalleryResult(result: {
+  asset: { url: string; storagePath: string; photoAlt: string; photoCaption: string } | null;
+  tenantRevision: string;
+}) {
+  const asset = result.asset;
+  if (
+    !asset || !isAllowedCourtGalleryUrl(asset.url) || !asset.storagePath ||
+    !asset.photoAlt?.trim() || !asset.photoCaption?.trim() ||
+    !validIsoRevision(result.tenantRevision)
+  ) throw new Error("COURT_GALLERY_RESPONSE_INVALID");
+  return {
+    asset: {
+      photoUrl: asset.url,
+      photoStoragePath: asset.storagePath,
+      photoAlt: asset.photoAlt.trim(),
+      photoCaption: asset.photoCaption.trim(),
+    },
+    tenantRevision: result.tenantRevision,
   };
 }
 

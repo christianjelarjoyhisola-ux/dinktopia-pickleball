@@ -1426,6 +1426,7 @@
   grid-template-areas:
     "marker heading heading heading"
     "marker name description status"
+    ". gallery gallery gallery"
     ". actions actions actions";
   align-items: end;
   gap: 12px;
@@ -1437,6 +1438,21 @@
 .courtNameField { grid-area: name; min-width: 0; }
 .courtDescriptionField { grid-area: description; min-width: 0; }
 .courtStatusField { grid-area: status; min-width: 0; }
+.courtGalleryEditor { grid-area: gallery; display: grid; grid-template-columns: minmax(180px, 250px) minmax(0, 1fr); gap: 16px; align-items: stretch; border: 1px solid var(--line); border-radius: 14px; background: color-mix(in srgb, var(--paper-deep) 58%, var(--white)); padding: 13px; }
+.courtGalleryPreview { min-height: 158px; display: grid; overflow: hidden; place-items: center; border: 1px solid color-mix(in srgb, var(--line) 80%, var(--ink)); border-radius: 11px; background: var(--ink); }
+.courtGalleryPreview img { width: 100%; height: 100%; object-fit: cover; }
+.courtGalleryPreview > span { display: grid; justify-items: center; gap: 5px; color: rgba(255,255,255,.68); text-align: center; }
+.courtGalleryPreview b { color: var(--citrus); font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: 1.35rem; }
+.courtGalleryPreview small { font-size: var(--text-caption); }
+.courtGalleryContent { min-width: 0; display: grid; align-content: center; gap: 10px; }
+.courtGalleryHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.courtGalleryHeading strong { display: block; font-size: var(--text-small); }
+.courtGalleryHeading p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.courtGalleryHeading > span { border-radius: 999px; background: var(--positive-soft); padding: 5px 8px; color: var(--positive); font-size: var(--text-micro); font-weight: 800; }
+.courtGalleryFields { display: grid; grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); gap: 10px; }
+.courtGalleryActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.courtGalleryHelp, .galleryStatus { margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.4; }
+.galleryStatus { color: #176744; font-weight: 700; }
 .courtCardActions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
 .courtCardActions > * { flex: 1 1 7.5rem; }
 .courtHeadingActions {
@@ -2034,6 +2050,7 @@
       "marker heading heading"
       "marker name status"
       "marker description description"
+      ". gallery gallery"
       ". actions actions";
   }
   .sharedScheduleRow { grid-template-columns: repeat(3, minmax(0, 1fr)); overflow-x: visible; }
@@ -2222,6 +2239,7 @@
       "marker name"
       "marker description"
       "marker status"
+      ". gallery"
       ". actions";
     align-items: start;
   }
@@ -2316,10 +2334,15 @@
       "name name"
       "description description"
       "status status"
+      "gallery gallery"
       "actions actions";
     gap: 10px;
   }
   .courtMarker { justify-self: start; }
+  .courtGalleryEditor { grid-template-columns: minmax(0, 1fr); padding: 10px; }
+  .courtGalleryPreview { min-height: 190px; }
+  .courtGalleryFields { grid-template-columns: minmax(0, 1fr); }
+  .courtGalleryActions > * { flex: 1 1 8rem; }
   .courtCardActions { flex-direction: column; }
   .courtPanelHeading { align-items: center; flex-direction: row; gap: 10px; }
   .courtHeadingActions { width: auto; justify-content: flex-end; margin-left: auto; }
