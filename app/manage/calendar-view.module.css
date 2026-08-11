@@ -1082,3 +1082,44 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Premium readability pass: preserve the compact RallyOS rhythm without micro type. */
+.dateLabel span,
+.liveMark,
+.scheduleLegend,
+.courtFilter,
+.cornerLabel,
+.hourHeader time,
+.boardFooter span,
+.boardFooter p,
+.scheduleSummary article span,
+.scheduleSummary article small {
+  font-size: 12px;
+}
+
+.dateLabel strong { font-size: 15px; }
+.segmented button,
+.courtFilter select,
+.rowCourt strong,
+.bookingBlock strong,
+.scheduleSummary > button strong { font-size: 13px; }
+.hourHeader small,
+.rowCourt small,
+.bookingBlock span,
+.bookingBlock small,
+.bookingPreview dt,
+.bookingPreview dd,
+.scheduleSummary > button small { font-size: 11px; }
+
+@media (max-width: 760px) {
+  .scheduleSummary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scheduleSummary > * { min-height: 92px; }
+  .toolbarActions :is(button, select),
+  .dateControl > button,
+  .dateLabel { min-height: 44px; }
+}
+
+@media (max-width: 430px) {
+  .scheduleSummary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .scheduleSummary > * { min-height: 88px; padding: 14px; }
+}

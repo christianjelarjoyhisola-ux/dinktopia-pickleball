@@ -410,6 +410,12 @@ export function CalendarView({
   }, [loadDay]);
 
   useEffect(() => {
+    if (!window.matchMedia("(max-width: 760px)").matches) return;
+    const frame = window.requestAnimationFrame(() => setViewMode("agenda"));
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
     const requestId = ++requestSequence.current;
     let active = true;
 
@@ -587,7 +593,7 @@ export function CalendarView({
 
         <div className={styles.toolbarActions}>
           <div className={styles.segmented} aria-label="Schedule view">
-            <button type="button" className={viewMode === "courts" ? styles.active : undefined} onClick={() => setViewMode("courts")} aria-pressed={viewMode === "courts"}><LayoutGrid aria-hidden="true" size={15} /> Courts</button>
+            <button type="button" className={viewMode === "courts" ? styles.active : undefined} onClick={() => setViewMode("courts")} aria-pressed={viewMode === "courts"}><LayoutGrid aria-hidden="true" size={15} /> Timeline</button>
             <button type="button" className={viewMode === "agenda" ? styles.active : undefined} onClick={() => setViewMode("agenda")} aria-pressed={viewMode === "agenda"}><List aria-hidden="true" size={15} /> Agenda</button>
           </div>
           <button

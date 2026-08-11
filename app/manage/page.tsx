@@ -1230,6 +1230,7 @@ function BookingsView({
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const bookingListHeadingRef = useRef<HTMLHeadingElement>(null);
+  const rescheduleDialogRef = useRef<HTMLFormElement>(null);
   const canReviewPayments = can("payment:review");
   const [manual, setManual] = useState({
     courtId: courts[0]?.id ?? "",
@@ -1322,6 +1323,33 @@ function BookingsView({
   const selectedRescheduleOption = reschedulePreview?.options.find((option) =>
     option.startTime === rescheduleDraft.newStartTime
   ) ?? null;
+  const groupedRescheduleOptions = useMemo(() => {
+    const groups = [
+      { label: "Morning", range: "Before 12 PM", options: [] as NonNullable<typeof reschedulePreview>["options"] },
+      { label: "Afternoon", range: "12 PM–5 PM", options: [] as NonNullable<typeof reschedulePreview>["options"] },
+      { label: "Evening", range: "After 5 PM", options: [] as NonNullable<typeof reschedulePreview>["options"] },
+    ];
+    for (const option of reschedulePreview?.options ?? []) {
+      const hour = Number(option.startTime.split(":")[0]);
+      groups[hour < 12 ? 0 : hour < 17 ? 1 : 2].options.push(option);
+    }
+    return groups.filter((group) => group.options.length);
+  }, [reschedulePreview]);
+
+  useEffect(() => {
+    if (!rescheduling) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.requestAnimationFrame(() => rescheduleDialogRef.current?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setRescheduling(null);
+    };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [rescheduling]);
 
   const openPaymentReview = (booking: Booking, trigger: HTMLButtonElement) => {
     reviewReturnRef.current = trigger;
@@ -1396,7 +1424,17 @@ function BookingsView({
         </form>
       )}
       {!isPreview && rescheduling && (
-        <form className={cx(styles.compactActionForm, styles.rescheduleWorkspace)} onSubmit={(event) => {
+        <div className={styles.rescheduleBackdrop} onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setRescheduling(null);
+        }}>
+        <form
+          ref={rescheduleDialogRef}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="reschedule-dialog-title"
+          tabIndex={-1}
+          className={styles.rescheduleWorkspace}
+          onSubmit={(event) => {
           event.preventDefault();
           if (!selectedRescheduleOption || !selectedRescheduleOption.available || selectedRescheduleOption.paymentRequired) return;
           request({
@@ -1415,26 +1453,37 @@ function BookingsView({
             onSuccess: () => setRescheduling(null),
           });
         }}>
-          <div className={styles.compactFormHeading}><div><p className={styles.eyebrow}>Reschedule {rescheduling.reference}</p><h3>Choose an available time for {rescheduling.customer}</h3><span>{rescheduling.date} · {rescheduling.time} · {rescheduling.court}</span></div><button type="button" className={styles.textButton} onClick={() => setRescheduling(null)}>Close</button></div>
-
-          <div className={styles.rescheduleControls}>
-            <label className={styles.field}><span>New date</span><input required type="date" min={manilaCalendarDate()} value={rescheduleDraft.newDate} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newDate: event.target.value, newStartTime: "" })} /></label>
-            <div><span>Court</span><strong>{reschedulePreview?.booking.courtName ?? rescheduling.court}</strong><small>Same court for a protected move</small></div>
-            <div><span>Duration</span><strong>{reschedulePreview ? `${reschedulePreview.booking.durationHours} ${reschedulePreview.booking.durationHours === 1 ? "hour" : "hours"}` : rescheduling.duration}</strong><small>Original duration preserved</small></div>
-          </div>
-
-          <section className={styles.rescheduleAvailability} aria-labelledby="available-slot-title" aria-busy={reschedulePreviewState === "loading"}>
-            <div className={styles.rescheduleAvailabilityHeader}>
-              <div><p className={styles.eyebrow}>Live availability</p><h4 id="available-slot-title">Select a time slot</h4></div>
-              <div className={styles.rescheduleLegend}><span><i className={styles.slotOpenDot} />Available</span><span><i className={styles.slotBookedDot} />Unavailable</span><span><i className={styles.slotSelectedDot} />Selected</span></div>
+          <header className={styles.rescheduleHeader}>
+            <div>
+              <p className={styles.eyebrow}>Reschedule · {rescheduling.reference}</p>
+              <h3 id="reschedule-dialog-title">Choose a better time</h3>
+              <span>{rescheduling.customer} · {rescheduling.date} · {rescheduling.time}</span>
             </div>
+            <button type="button" className={styles.rescheduleClose} onClick={() => setRescheduling(null)} aria-label="Close reschedule"><X aria-hidden="true" size={18} /></button>
+          </header>
+
+          <div className={styles.rescheduleBody}>
+            <div className={styles.rescheduleStep}><span>1</span><div><strong>Choose a date</strong><small>We’ll show only valid times for this booking.</small></div></div>
+            <div className={styles.rescheduleControls}>
+              <label className={styles.field}><span>New date</span><input required type="date" min={manilaCalendarDate()} value={rescheduleDraft.newDate} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, newDate: event.target.value, newStartTime: "" })} /></label>
+              <div><span>Court</span><strong>{reschedulePreview?.booking.courtName ?? rescheduling.court}</strong><small>Same court</small></div>
+              <div><span>Duration</span><strong>{reschedulePreview ? `${reschedulePreview.booking.durationHours} ${reschedulePreview.booking.durationHours === 1 ? "hour" : "hours"}` : rescheduling.duration}</strong><small>Duration preserved</small></div>
+            </div>
+
+            <section className={styles.rescheduleAvailability} aria-labelledby="available-slot-title" aria-busy={reschedulePreviewState === "loading"}>
+              <div className={styles.rescheduleAvailabilityHeader}>
+                <div className={styles.rescheduleStep}><span>2</span><div><strong id="available-slot-title">Choose an available time</strong><small>Availability is checked live for {rescheduleDraft.newDate}.</small></div></div>
+              </div>
             {reschedulePreviewState === "loading" ? (
-              <div className={styles.rescheduleLoading} role="status"><span /><span /><span /><p>Checking every court-hour…</p></div>
+              <div className={styles.rescheduleLoading} role="status"><span /><span /><span /><p>Checking available court-hours…</p></div>
             ) : reschedulePreviewState === "error" ? (
               <div className={styles.rescheduleError} role="alert"><strong>Availability could not be loaded.</strong><span>Choose the date again or refresh the workspace.</span></div>
             ) : reschedulePreview?.options.length ? (
-              <div className={styles.rescheduleSlotGrid} role="listbox" aria-label={`Available times on ${rescheduleDraft.newDate}`}>
-                {reschedulePreview.options.map((option) => {
+              <div className={styles.rescheduleTimeGroups} role="listbox" aria-label={`Available times on ${rescheduleDraft.newDate}`}>
+                {groupedRescheduleOptions.map((group) => <section className={styles.rescheduleTimeGroup} key={group.label}>
+                  <header><strong>{group.label}</strong><span>{group.range} · {group.options.filter((option) => option.available && !option.paymentRequired).length} open</span></header>
+                  <div className={styles.rescheduleSlotGrid}>
+                  {group.options.map((option) => {
                   const selected = option.startTime === rescheduleDraft.newStartTime;
                   const disabled = !option.available || option.paymentRequired;
                   const stateLabel = !option.available
@@ -1452,34 +1501,44 @@ function BookingsView({
                       className={cx(styles.rescheduleSlot, selected && styles.rescheduleSlotSelected, disabled && styles.rescheduleSlotUnavailable, option.paymentRequired && styles.rescheduleSlotPayment)}
                       onClick={() => setRescheduleDraft({ ...rescheduleDraft, newStartTime: option.startTime })}
                     >
+                      <span className={styles.rescheduleSlotCheck} aria-hidden="true">{selected ? "✓" : ""}</span>
                       <strong>{wholeHourLabel(option.startTime)}</strong>
-                      <span>to {wholeHourLabel(option.endTime)}</span>
-                      <small>{stateLabel}</small>
+                      <span>{wholeHourLabel(option.startTime)}–{wholeHourLabel(option.endTime)}</span>
+                      <small>{selected ? "Selected" : stateLabel}</small>
                     </button>
                   );
-                })}
+                  })}
+                  </div>
+                </section>)}
               </div>
             ) : reschedulePreviewState === "ready" ? (
               <div className={styles.rescheduleError} role="status"><strong>No time slots were returned.</strong><span>Try another date.</span></div>
             ) : null}
-          </section>
+            </section>
 
-          {selectedRescheduleOption ? (
-            <div className={styles.rescheduleSelection} role="status">
-              <CircleCheck aria-hidden="true" size={19} />
-              <div><span>Selected move</span><strong>{reschedulePreview?.booking.courtName ?? rescheduling.court} · {wholeHourLabel(selectedRescheduleOption.startTime)}–{wholeHourLabel(selectedRescheduleOption.endTime)}</strong></div>
-              <div><span>New total</span><strong>{formatPeso(selectedRescheduleOption.newTotalAmount)}</strong></div>
-            </div>
-          ) : null}
-
-          <div className={styles.rescheduleDetails}>
-            <label className={styles.field}><span>Reason</span><select value={rescheduleDraft.reasonCode} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, reasonCode: event.target.value })}><option value="customer_request">Customer request</option><option value="weather">Weather</option><option value="court_maintenance">Court maintenance</option><option value="schedule_conflict">Schedule conflict</option><option value="admin_correction">Admin correction</option><option value="other">Other</option></select></label>
-            <label className={styles.field}><span>Customer-facing reason</span><input required minLength={3} maxLength={500} value={rescheduleDraft.publicReason} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, publicReason: event.target.value })} /></label>
-            <label className={cx(styles.field, styles.fieldWide)}><span>Internal note <small>optional</small></span><input minLength={3} maxLength={1000} value={rescheduleDraft.internalNote} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, internalNote: event.target.value })} /></label>
-            <label className={styles.switchLabel}><input type="checkbox" checked={rescheduleDraft.notifyCustomer} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, notifyCustomer: event.target.checked })} /><span aria-hidden="true" />Email customer</label>
+            <details className={styles.rescheduleDetailsDisclosure}>
+              <summary>Change details <span>Reason, customer message, and notification</span></summary>
+              <div className={styles.rescheduleDetails}>
+                <label className={styles.field}><span>Reason</span><select value={rescheduleDraft.reasonCode} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, reasonCode: event.target.value })}><option value="customer_request">Customer request</option><option value="weather">Weather</option><option value="court_maintenance">Court maintenance</option><option value="schedule_conflict">Schedule conflict</option><option value="admin_correction">Admin correction</option><option value="other">Other</option></select></label>
+                <label className={styles.field}><span>Customer-facing reason</span><input required minLength={3} maxLength={500} value={rescheduleDraft.publicReason} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, publicReason: event.target.value })} /></label>
+                <label className={cx(styles.field, styles.fieldWide)}><span>Internal note <small>optional</small></span><input minLength={3} maxLength={1000} value={rescheduleDraft.internalNote} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, internalNote: event.target.value })} /></label>
+                <label className={styles.switchLabel}><input type="checkbox" checked={rescheduleDraft.notifyCustomer} onChange={(event) => setRescheduleDraft({ ...rescheduleDraft, notifyCustomer: event.target.checked })} /><span aria-hidden="true" />Email customer</label>
+              </div>
+            </details>
           </div>
-          <div className={styles.compactFormActions}><span>The server rechecks this exact slot before moving the booking. Higher-rate options remain locked until an additional-payment workflow is available.</span><ActionButton type="submit" disabled={!selectedRescheduleOption || !selectedRescheduleOption.available || selectedRescheduleOption.paymentRequired}>Review change</ActionButton></div>
+
+          <footer className={styles.rescheduleFooter}>
+            {selectedRescheduleOption ? (
+              <div className={styles.rescheduleSelection} role="status">
+                <CircleCheck aria-hidden="true" size={20} />
+                <div><span>Selected move</span><strong>{reschedulePreview?.booking.courtName ?? rescheduling.court} · {wholeHourLabel(selectedRescheduleOption.startTime)}–{wholeHourLabel(selectedRescheduleOption.endTime)}</strong></div>
+                <div><span>New total</span><strong>{formatPeso(selectedRescheduleOption.newTotalAmount)}</strong></div>
+              </div>
+            ) : <div className={styles.rescheduleFooterHint}><span>Select an available time to continue</span><small>The slot is rechecked before it is moved.</small></div>}
+            <ActionButton type="submit" disabled={!selectedRescheduleOption || !selectedRescheduleOption.available || selectedRescheduleOption.paymentRequired}>Review change <ArrowRight aria-hidden="true" size={16} /></ActionButton>
+          </footer>
         </form>
+        </div>
       )}
       {!isPreview && canReviewPayments && reviewing?.paymentEvidence && (
         <PaymentReviewWorkspace
