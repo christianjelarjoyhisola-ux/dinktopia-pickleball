@@ -2648,11 +2648,18 @@ export function BookingExperience({
               </div>
             </div>
           </div>
-          <div className="home-benefits" aria-label="Booking benefits">
-            <div className="site-container">
-              <span><i aria-hidden="true" /> Exact court-hour selection</span>
-              <span><i aria-hidden="true" /> One checkout for multiple courts</span>
-              <span><i aria-hidden="true" /> Venue-managed GCash details</span>
+          <div className="home-benefits" aria-label="Dinktopia rally reminders">
+            <div className="home-marquee" aria-hidden="true">
+              {[0, 1].map((sequence) => <div className="home-marquee-sequence" key={sequence}>
+                <span>DINKTOPIA</span>
+                <i aria-hidden="true" />
+                <span>NEW HABIT</span>
+                <i aria-hidden="true" />
+                <span>NEXT RALLY</span>
+                <i aria-hidden="true" />
+                <span>PLAY HARDER</span>
+                <i aria-hidden="true" />
+              </div>)}
             </div>
           </div>
         </section>}
