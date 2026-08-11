@@ -2753,21 +2753,6 @@ export function BookingExperience({
           </div>
         </section>}
 
-        {isHome && <section className="how-section section-pad" id="how-it-works">
-          <div className="site-container how-grid">
-            <div className="how-intro">
-              <p className="eyebrow">A clearer way to book</p>
-              <h2>From “game?” to confirmed.</h2>
-              <p>Live availability, exact pricing, and a simple reservation flow from one trusted venue.</p>
-            </div>
-            <ol className="how-list">
-              <li><span>01</span><div><h3>Choose your courts</h3><p>Compare the live schedule and select every court-hour you need.</p></div></li>
-              <li><span>02</span><div><h3>Review one reservation</h3><p>See all courts, times, player details, and the exact total before continuing.</p></div></li>
-              <li><span>03</span><div><h3>Pay the venue directly</h3><p>Use the owner’s verified GCash details and submit your receipt securely.</p></div></li>
-            </ol>
-          </div>
-        </section>}
-
         {isBookingPage && <section className="booking-zone section-pad" id="book" ref={bookingSectionRef}>
           <div className="site-container booking-container">
             <div className="booking-zone-heading">
@@ -3408,6 +3393,21 @@ export function BookingExperience({
                 <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
               </a>
             </nav>
+          </div>
+        </section>}
+
+        {isHome && <section className="how-section section-pad" id="how-it-works">
+          <div className="site-container how-grid">
+            <div className="how-intro">
+              <p className="eyebrow">A clearer way to book</p>
+              <h2>From “game?” to confirmed.</h2>
+              <p>Live availability, exact pricing, and a simple reservation flow from one trusted venue.</p>
+            </div>
+            <ol className="how-list">
+              <li><span>01</span><div><h3>Choose your courts</h3><p>Compare the live schedule and select every court-hour you need.</p></div></li>
+              <li><span>02</span><div><h3>Review one reservation</h3><p>See all courts, times, player details, and the exact total before continuing.</p></div></li>
+              <li><span>03</span><div><h3>Pay the venue directly</h3><p>Use the owner’s verified GCash details and submit your receipt securely.</p></div></li>
+            </ol>
           </div>
         </section>}
       </main>
