@@ -434,9 +434,11 @@ export function AnalyticsView({
             </article>
           ))}
         </div>
-        {!promotions?.canCreate && (
+        {promotions && !promotions.available ? (
+          <p className={styles.recommendationNote}>Offer publishing will unlock after the Dinktopia promotion migration is installed.</p>
+        ) : !promotions?.canCreate ? (
           <p className={styles.recommendationNote}>Publishing offers is reserved for the System Owner or this tenant&apos;s court owner.</p>
-        )}
+        ) : null}
         {promotions?.items.some((offer) => offer.status === "active") ? (
           <div className={styles.activeOffers}>
             <span>Published offers</span>

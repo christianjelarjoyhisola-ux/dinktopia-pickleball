@@ -347,6 +347,7 @@ export type TenantPromotion = {
 };
 
 export type TenantPromotionState = {
+  available: boolean;
   canCreate: boolean;
   items: TenantPromotion[];
 };
@@ -1128,7 +1129,7 @@ export const managementAdapter: ManagementAdapter = {
         mode: "preview",
         report: null,
         finance: null,
-        promotions: { canCreate: false, items: [] },
+        promotions: { available: false, canCreate: false, items: [] },
         loadedAt: formatManilaDateTime(new Date()),
       };
     }
@@ -1148,7 +1149,7 @@ export const managementAdapter: ManagementAdapter = {
       getBookingFeeRemittanceHistory(session.access_token, { limit: 50 }),
       getManagerPromotions(session.access_token).catch((error) => {
         if (error instanceof PlatformRequestError && error.code === "PGRST202") {
-          return { canCreate: false, items: [] };
+          return { available: false, canCreate: false, items: [] };
         }
         throw error;
       }),
@@ -3212,7 +3213,7 @@ function tenantPromotionState(candidate: unknown): TenantPromotionState {
   if (!row || typeof row.canCreate !== "boolean" || !Array.isArray(row.items)) {
     throw new Error("PROMOTION_RESPONSE_INVALID");
   }
-  return { canCreate: row.canCreate, items: row.items.map(tenantPromotion) };
+  return { available: true, canCreate: row.canCreate, items: row.items.map(tenantPromotion) };
 }
 
 function value(row: Record<string, unknown>, keys: string[], fallback = ""): string {
