@@ -1524,10 +1524,28 @@ export function BookingExperience({
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
-  const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods[0] ?? null;
+  const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods.find(
+    (method) => (method.methodCode ?? method.code ?? "").toLowerCase() === "gcash",
+  ) ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
   const paymentLabel = paymentMethod?.displayName ?? "GCash";
-  const paymentQrUrl = paymentMethod?.qrImageUrl ?? paymentMethod?.qrUrl ?? null;
+  const paymentAccountName = paymentMethod?.accountName?.trim() ?? "";
+  const paymentAccountNumber = (
+    paymentMethod?.accountNumber ?? paymentMethod?.accountReference ?? ""
+  ).trim();
+  const paymentAccountDigits = paymentAccountNumber.replace(/\D/g, "");
+  const isGcashPayment = paymentMethodCode.toLowerCase() === "gcash";
+  const gcashLocalDigits = isGcashPayment
+    ? paymentAccountDigits.startsWith("63")
+      ? paymentAccountDigits.slice(2)
+      : paymentAccountDigits.startsWith("0")
+        ? paymentAccountDigits.slice(1)
+        : paymentAccountDigits
+    : paymentAccountDigits;
+  const paymentAccountDisplay = isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits)
+    ? gcashLocalDigits.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3")
+    : paymentAccountNumber;
+  const paymentAccountReady = Boolean(paymentAccountName && paymentAccountNumber);
   const rawPolicy = (bootstrap?.settings?.refund_reschedule_policy ??
     bootstrap?.refundReschedulePolicy ??
     null) as Record<string, unknown> | null;
@@ -1582,7 +1600,7 @@ export function BookingExperience({
     !isLive ||
     (bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
-      Boolean(paymentMethod) &&
+      paymentAccountReady &&
       Boolean(policyVersion) &&
       bookingFee !== null);
   const availabilityBootstrapState = isLive ? bootstrapState : "ready";
@@ -1592,7 +1610,7 @@ export function BookingExperience({
     !isLive ||
     (bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
-      Boolean(paymentMethod));
+      paymentAccountReady);
 
   useEffect(() => {
     let active = true;
@@ -2685,6 +2703,18 @@ export function BookingExperience({
                     </div>
                   </div>
                 )}
+                {step === 3 && (
+                  <div className="booking-compact-title">
+                    <button className="back-link" type="button" disabled={isSubmitting} onClick={() => setStep(2)}>
+                      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 18-6-6 6-6" /></svg>
+                      Back
+                    </button>
+                    <div>
+                      <p className="player-kicker">Secure checkout</p>
+                      <h2>Pay with {paymentLabel}</h2>
+                    </div>
+                  </div>
+                )}
                 {step < 4 && (
                   <>
                     <p className="booking-step-summary">
@@ -3038,115 +3068,95 @@ export function BookingExperience({
                 )}
 
                 {step === 3 && checkoutSlot && pendingBooking && (
-                  <div className="booking-layout compact-step booking-payment-step">
-                    <form className="booking-main-card" onSubmit={submitPayment} aria-busy={isSubmitting} noValidate>
-                      <div className="booking-card-heading">
-                        <span className="step-chip">STEP 03</span>
-                        <div>
-                          <h3 ref={paymentHeadingRef} tabIndex={-1}>{holdExpired ? "Hold unavailable" : !heldPaymentReady ? "Payment temporarily unavailable" : isLive ? `Pay with ${paymentLabel}` : "GCash payment preview"}</h3>
-                          <p>{holdExpired ? "Choose another time to continue." : !heldPaymentReady ? "Payment is paused until setup is verified." : isLive ? "Upload your GCash receipt before the hold expires." : "Use sample GCash details to inspect the receipt flow."}</p>
+                  <div className="checkout-layout booking-payment-view">
+                    <form className="booking-stage surface-card gcash-payment-card" onSubmit={submitPayment} aria-busy={isSubmitting} noValidate>
+                      <div className="gcash-heading">
+                        <h3 ref={paymentHeadingRef} tabIndex={-1}><span>G</span>Cash</h3>
+                        <span className="gcash-secure-pill"><i aria-hidden="true" /> Secure</span>
+                      </div>
+                      <div className="payment-amount">
+                        <span>Amount to pay</span>
+                        <strong>{peso(checkoutTotal)}</strong>
+                        <small>Send the exact booking total</small>
+                      </div>
+
+                      {holdExpired ? (
+                        <div className="payment-error" role="alert">
+                          <span aria-hidden="true">!</span><div><strong>Hold expired or released</strong><p>Payment is disabled. Choose another court time to continue.</p></div>
                         </div>
-                      </div>
-                      <div className="checkout-snapshot" aria-label="Checkout booking summary">
-                        <span><strong>{selectedSlots.length} court-hour{selectedSlots.length === 1 ? "" : "s"} · {selectedCourtCount} court{selectedCourtCount === 1 ? "" : "s"}</strong><small>{selectedDateDetails?.long}{!selectedDateDetails ? selectedDate : ""}{selectedNextDayDateSuffix}</small></span>
-                        <b>{peso(checkoutTotal)}</b>
-                      </div>
-                      {pendingBooking && (
+                      ) : !heldPaymentReady ? (
+                        <div className="payment-error" role="alert">
+                          <span aria-hidden="true">!</span><div><strong>GCash setup is incomplete</strong><p>The court owner must publish a GCash account in System Setup before payment can continue.</p></div>
+                        </div>
+                      ) : (
                         <>
-                          <div className={`notice-banner ${holdExpired ? "" : "notice-success"}`} role={holdExpired ? "alert" : undefined}>
-                            <div>
-                              <strong>{holdExpired ? "Hold expired or released" : isLive ? `Slot held · ${pendingBooking.reference}` : `Preview hold only · ${pendingBooking.reference}`}</strong>
-                              <span>
-                                {holdExpired
-                                  ? "Payment is disabled. Clear this hold and choose an available time."
-                                  : isLive
-                                    ? !heldPaymentReady
-                                      ? `${holdRemainingSeconds == null ? "The server controls this hold window." : `Hold expires in ${formatHoldCountdown(holdRemainingSeconds)}.`} Payment controls remain disabled until live setup is verified.`
-                                      : `${holdRemainingSeconds == null ? "The server controls this hold window." : `Hold expires in ${formatHoldCountdown(holdRemainingSeconds)}.`} Send payment only while this verified hold is active.`
-                                    : "No real court is reserved. Do not send money."}
-                              </span>
+                          <div className="owner-payment-note">
+                            <span aria-hidden="true">✦</span>
+                            <div><strong>Pay the court owner directly</strong><small>Use the verified GCash details saved by the venue in System Setup.</small></div>
+                          </div>
+                          <div className="gcash-account-field">
+                            <span>{paymentLabel} mobile number</span>
+                            <div className="gcash-account-number">
+                              {isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) && <b>+63</b>}
+                              <output aria-label={`${paymentLabel} account number`}>{isLive ? paymentAccountDisplay : "Available on the live booking site"}</output>
                             </div>
                           </div>
-                          {!holdExpired && heldPaymentReady && (
-                            <>
-                              <div className={`payment-panel${isLive ? "" : " payment-panel-preview"}`}>
-                                {isLive && paymentQrUrl ? (
-                                  <div className="payment-qr payment-qr-live">
-                                    {/* The URL is tenant-owned public payment configuration. */}
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={paymentQrUrl} alt={`${paymentLabel} payment QR code`} />
-                                  </div>
-                                ) : isLive ? (
-                                  <div className="payment-qr" aria-label={`${paymentLabel} QR code placeholder pending venue setup`}>
-                                    <div className="qr-pattern" aria-hidden="true"><i /><i /><i /><i /><i /><i /><i /><i /><i /></div>
-                                    <span>{paymentLabel.toUpperCase()}</span>
-                                  </div>
-                                ) : (
-                                  <div className="payment-preview-mark" aria-hidden="true"><span>LOCAL</span><strong>PREVIEW</strong></div>
-                                )}
-                                <div className="payment-instructions">
-                                  <span className="setup-badge">{isLive ? "SECURE PAYMENT" : "PREVIEW · DO NOT PAY"}</span>
-                                  <h4>{isLive ? <>Send exactly <strong>{peso(pendingBooking.amount)}</strong></> : <>Sample total <strong>{peso(pendingBooking.amount)}</strong></>}</h4>
-                                  <p>{isLive ? paymentMethod?.instructions ?? "The live QR and account name will appear here when the clubhouse payment profile is activated." : "Use sample details below. Nothing is sent."}</p>
-                                  {isLive && paymentMethod?.accountName && <p className="payment-account"><strong>Account:</strong> {paymentMethod.accountName}{paymentMethod.accountReference ? ` · ${paymentMethod.accountReference}` : paymentMethod.accountNumber ? ` · ${paymentMethod.accountNumber}` : ""}</p>}
-                                  {isLive && <ol><li>Open {paymentLabel} and scan the club QR.</li><li>Send the exact held total.</li><li>Save your receipt and add it below.</li></ol>}
-                                </div>
-                              </div>
-                              <div className="form-grid payment-fields">
-                                <div className="form-field">
-                                  <label htmlFor={`${formId}-payment-reference`}>{isLive ? paymentLabel : "Sample payment"} reference number</label>
-                                  <input id={`${formId}-payment-reference`} inputMode="numeric" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="e.g. 1234 5678 9012" />
-                                </div>
-                                <div className="form-field">
-                                  <label htmlFor={`${formId}-receipt`}>{isLive ? "Payment receipt" : "Sample receipt image"}</label>
-                                  <label className={`upload-control ${receiptFileName ? "has-file" : ""}`} htmlFor={`${formId}-receipt`}>
-                                    <span aria-hidden="true">＋</span>
-                                    <span><strong>{receiptFileName || "Choose a file"}</strong><small>{receiptFileName ? "Ready to submit" : "JPG, PNG, or WebP · max 2 MB"}</small></span>
-                                  </label>
-                                  <input
-                                    className="visually-hidden-file"
-                                    id={`${formId}-receipt`}
-                                    type="file"
-                                    accept="image/jpeg,image/png,image/webp"
-                                    onChange={(event) => {
-                                      const file = event.target.files?.[0] ?? null;
-                                      if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
-                                        setReceiptFile(null);
-                                        setReceiptFileName("");
-                                        setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
-                                        event.target.value = "";
-                                        return;
-                                      }
-                                      setPaymentError("");
-                                      setReceiptFile(file);
-                                      setReceiptFileName(file?.name ?? "");
-                                    }}
-                                  />
-                                </div>
-                              </div>
-                            </>
-                          )}
+                          <div className="payment-recipient">
+                            <span>Paying</span>
+                            <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
+                            <small>{paymentLabel} account from System Setup</small>
+                          </div>
+                          {isLive && paymentMethod?.instructions && <p className="payment-owner-instructions">{paymentMethod.instructions}</p>}
+                          <div className="gcash-hold-status" role="status">
+                            <span><i aria-hidden="true" /> Slot held · {pendingBooking.reference}</span>
+                            <small>{holdRemainingSeconds == null ? "Complete payment while this hold is active." : `Expires in ${formatHoldCountdown(holdRemainingSeconds)}.`}</small>
+                          </div>
+                          <div className="form-grid payment-evidence-fields">
+                            <div className="form-field">
+                              <label htmlFor={`${formId}-payment-reference`}>{paymentLabel} reference number</label>
+                              <input id={`${formId}-payment-reference`} inputMode="numeric" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="e.g. 1234 5678 9012" />
+                            </div>
+                            <div className="form-field">
+                              <label htmlFor={`${formId}-receipt`}>Payment receipt</label>
+                              <label className={`upload-control ${receiptFileName ? "has-file" : ""}`} htmlFor={`${formId}-receipt`}>
+                                <span aria-hidden="true">＋</span>
+                                <span><strong>{receiptFileName || "Choose a file"}</strong><small>{receiptFileName ? "Ready to submit" : "JPG, PNG, or WebP · max 2 MB"}</small></span>
+                              </label>
+                              <input
+                                className="visually-hidden-file"
+                                id={`${formId}-receipt`}
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                onChange={(event) => {
+                                  const file = event.target.files?.[0] ?? null;
+                                  if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
+                                    setReceiptFile(null);
+                                    setReceiptFileName("");
+                                    setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
+                                    event.target.value = "";
+                                    return;
+                                  }
+                                  setPaymentError("");
+                                  setReceiptFile(file);
+                                  setReceiptFileName(file?.name ?? "");
+                                }}
+                              />
+                            </div>
+                          </div>
                         </>
-                      )}
-                      {pendingBooking && !holdExpired && !heldPaymentReady && (
-                        <div className="payment-error" role="alert">
-                          <span aria-hidden="true">!</span><div><strong>Payment remains disabled</strong><p>Live payment setup could not be verified. Cancel this unpaid hold or refresh before its expiry.</p></div>
-                        </div>
                       )}
                       {paymentError && (
                         <div className="payment-error" role="alert">
                           <span aria-hidden="true">!</span><div><strong>Payment needs another look</strong><p>{paymentError}</p></div>
                         </div>
                       )}
-                      <p className="secure-note"><span aria-hidden="true">◇</span> {!isLive ? "No card details are collected in preview." : `${holdExpired ? "Payment is disabled for this unavailable hold." : !heldPaymentReady ? "Payment is disabled until live venue configuration is verified." : "Your slot is held and becomes confirmed only after payment review."} No card details are collected here.`}</p>
-                      <div className="step-actions">
-                        <button className="button button-ghost" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
-                        {!holdExpired && heldPaymentReady && <button data-testid="submit-receipt" className="button button-blue" type="submit" disabled={isSubmitting}>
-                          {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>{isLive ? "Submit GCash receipt" : "Submit sample receipt"} <span aria-hidden="true">→</span></>}
-                        </button>}
-                      </div>
+                      {!holdExpired && heldPaymentReady && <button data-testid="submit-receipt" className="button gcash-button" type="submit" disabled={isSubmitting}>
+                        {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>Submit receipt · {peso(checkoutTotal)} <span aria-hidden="true">→</span></>}
+                      </button>}
+                      <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
+                      <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s GCash details come directly from System Setup.</p>
                     </form>
-                    <BookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
                   </div>
                 )}
 
@@ -3241,9 +3251,6 @@ type BookingSummaryProps = {
   subtotal: number;
   bookingFee: number;
   total: number;
-  actionLabel?: string;
-  actionDisabled?: boolean;
-  onAction?: () => void;
 };
 
 function RallyBookingSummary({
@@ -3290,54 +3297,6 @@ function RallyBookingSummary({
       </div>
       <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
       <p className="summary-note">Free cancellation up to 12 hours before your booking.</p>
-    </aside>
-  );
-}
-
-function BookingSummary({
-  selections,
-  dateLabel,
-  subtotal,
-  bookingFee,
-  total,
-  actionLabel,
-  actionDisabled,
-  onAction,
-}: BookingSummaryProps) {
-  const groups = groupSelectionDetails(selections);
-  const courtCount = new Set(selections.map((item) => item.court.id)).size;
-  const hasSelection = selections.length > 0;
-  return (
-    <aside className={`booking-summary${actionLabel ? " booking-summary-selection" : ""}`} aria-label="Booking summary">
-      <div className="summary-mobile-heading">
-        <span>
-          <strong>{hasSelection ? `${courtCount} court${courtCount === 1 ? "" : "s"} · ${selections.length} hr${selections.length === 1 ? "" : "s"}` : "Booking summary"}</strong>
-          <small>{hasSelection ? dateLabel : "Select a court and time"}</small>
-        </span>
-        <b>{hasSelection ? peso(total) : "—"}</b>
-      </div>
-      {groups.length > 0 && (
-        <ul className="summary-sessions" aria-label="Selected sessions">
-          {groups.map((group) => (
-            <li key={`${group.court.id}:${group.startHour}`}>
-              <span><strong>{group.court.name}</strong><small>{formatHourRange(group.startHour, group.endHour)} · {group.courtHours} court-hour{group.courtHours === 1 ? "" : "s"}</small></span>
-              <b>{peso(group.subtotal)}</b>
-            </li>
-          ))}
-        </ul>
-      )}
-      {hasSelection ? (
-        <div className="price-breakdown">
-          <div><span>Court booking</span><span>{peso(subtotal)}</span></div>
-          <div><span>Booking fee</span><span>{peso(bookingFee)}</span></div>
-          <div className="summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
-        </div>
-      ) : (
-        <p className="summary-empty-copy">Choose an open time to see your total.</p>
-      )}
-      {actionLabel && onAction && (
-        <button className="button button-lime summary-button" type="button" disabled={actionDisabled} onClick={onAction}>{actionLabel} <span aria-hidden="true">→</span></button>
-      )}
     </aside>
   );
 }

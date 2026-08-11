@@ -322,6 +322,233 @@
   text-align: center;
 }
 
+/* RallyOS payment hierarchy with real venue-owned GCash configuration. */
+.booking-route .checkout-layout.booking-payment-view {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(270px, 0.72fr);
+  align-items: start;
+  gap: 20px;
+}
+
+.booking-route .gcash-payment-card {
+  min-width: 0;
+  border-radius: 20px;
+  padding: clamp(21px, 3vw, 29px);
+}
+
+.booking-route .gcash-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 20px;
+}
+
+.booking-route .gcash-heading h3 {
+  margin: 0;
+  color: #143aa2;
+  font-family: var(--font-body), Arial, sans-serif;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.07em;
+}
+
+.booking-route .gcash-heading h3 > span { color: #0873e6; }
+
+.booking-route .gcash-secure-pill {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
+  background: #e4f6ef;
+  padding: 6px 11px;
+  color: #16845b;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.booking-route .gcash-secure-pill i,
+.booking-route .gcash-hold-status i {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.booking-route .gcash-payment-card .payment-amount {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  padding: 27px 0 25px;
+  text-align: center;
+}
+
+.booking-route .gcash-payment-card .payment-amount span,
+.booking-route .gcash-payment-card .payment-amount small {
+  color: var(--muted);
+  font-size: 0.67rem;
+}
+
+.booking-route .gcash-payment-card .payment-amount strong {
+  color: var(--ink);
+  font-family: var(--font-display), var(--font-body), Arial, sans-serif;
+  font-size: clamp(1.85rem, 4.5vw, 2.1rem);
+  font-weight: 700;
+  letter-spacing: -0.055em;
+  line-height: 1.1;
+}
+
+.booking-route .owner-payment-note {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 18px;
+  border-radius: 12px;
+  background: #eaf2ff;
+  padding: 13px;
+  color: #315fc0;
+}
+
+.booking-route .owner-payment-note > span {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 9px;
+  background: white;
+  font-size: 0.9rem;
+}
+
+.booking-route .owner-payment-note strong,
+.booking-route .owner-payment-note small { display: block; }
+.booking-route .owner-payment-note strong { font-size: 0.69rem; }
+.booking-route .owner-payment-note small { margin-top: 3px; font-size: 0.62rem; line-height: 1.45; }
+
+.booking-route .gcash-account-field {
+  display: grid;
+  gap: 7px;
+}
+
+.booking-route .gcash-account-field > span {
+  color: #344640;
+  font-size: 0.71rem;
+  font-weight: 700;
+}
+
+.booking-route .gcash-account-number {
+  display: grid;
+  min-height: 48px;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: white;
+}
+
+.booking-route .gcash-account-number b {
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  border-right: 1px solid var(--line);
+  padding: 0 11px;
+  color: var(--muted);
+  font-size: 0.71rem;
+  font-weight: 500;
+}
+
+.booking-route .gcash-account-number output {
+  min-width: 0;
+  padding: 0 13px;
+  color: var(--ink);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
+}
+
+.booking-route .payment-recipient {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  margin: 18px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 13px;
+}
+
+.booking-route .payment-recipient span,
+.booking-route .payment-recipient small { color: var(--muted); font-size: 0.61rem; }
+.booking-route .payment-recipient strong { font-size: 0.72rem; text-align: right; }
+.booking-route .payment-recipient small { grid-column: 2; text-align: right; }
+
+.booking-route .payment-owner-instructions {
+  margin: 9px 1px 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+  line-height: 1.45;
+}
+
+.booking-route .gcash-hold-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 17px;
+  border-radius: 10px;
+  background: #e4f6ef;
+  padding: 10px 12px;
+  color: #16845b;
+  font-size: 0.64rem;
+}
+
+.booking-route .gcash-hold-status > span { display: inline-flex; align-items: center; gap: 7px; font-weight: 700; }
+.booking-route .gcash-hold-status small { font-size: inherit; }
+
+.booking-route .payment-evidence-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 13px;
+  margin-top: 18px;
+}
+
+.booking-route .gcash-button {
+  width: 100%;
+  min-height: 50px;
+  margin-top: 19px;
+  border: 0;
+  border-radius: 10px;
+  background: #0873e6;
+  color: white;
+  box-shadow: 0 10px 24px rgba(8, 115, 230, 0.2);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.booking-route .gcash-button:hover { background: #0766ca; transform: translateY(-1px); }
+
+.booking-route .cancel-hold-link {
+  display: block;
+  margin: 12px auto 0;
+  border-bottom: 1px solid currentColor;
+  background: transparent;
+  padding: 3px 0;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.booking-route .payment-security {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 0.61rem;
+  text-align: center;
+}
+
+.booking-route .payment-security > span { margin-right: 5px; color: #16845b; font-weight: 800; }
+
 @media (max-width: 760px) {
   .booking-route .checkout-layout.booking-details-view { grid-template-columns: 1fr; }
   .booking-route .booking-details-view .rally-booking-summary {
@@ -336,6 +563,13 @@
   }
   .booking-route .booking-details-view .form-footer > span { justify-content: center; }
   .booking-route .booking-details-view .form-footer .button { width: 100%; }
+  .booking-route .checkout-layout.booking-payment-view { grid-template-columns: 1fr; }
+  .booking-route .booking-payment-view .rally-booking-summary {
+    position: static;
+    grid-row: 1;
+  }
+  .booking-route .booking-payment-view .gcash-payment-card { grid-row: 2; }
+  .booking-route .payment-evidence-fields { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 430px) {
