@@ -43,7 +43,6 @@ import {
   formatPeso,
   isAllowedCustomerQrUrl,
   managementAdapter,
-  previewRoleSessions,
   type Booking,
   type BookingPaymentStatus,
   type BookingStatus,
@@ -60,7 +59,6 @@ import {
 } from "./management-adapter";
 import {
   PlatformRequestError,
-  platformMode,
   signInOwner,
   signOutOwner,
 } from "../lib/platform/client";
@@ -534,6 +532,23 @@ function StatePanel({
       <p>{copy.body}</p>
       <ActionButton onClick={onRestore}>{copy.action}</ActionButton>
     </section>
+  );
+}
+
+function DatabaseConnectionGate() {
+  return (
+    <main id="main-content" className={styles.fatalState} tabIndex={-1}>
+      <section className={styles.statePanel} aria-labelledby="database-connection-title">
+        <span className={styles.stateMark} aria-hidden="true">!</span>
+        <p className={styles.eyebrow}>Dinktopia · Live workspace</p>
+        <h1 id="database-connection-title">Live database connection required</h1>
+        <p>
+          This dashboard no longer uses demo data. Connect the Dinktopia Supabase
+          configuration, then reload to open the authenticated workspace.
+        </p>
+        <ActionButton onClick={() => window.location.reload()}>Reload connection</ActionButton>
+      </section>
+    </main>
   );
 }
 
@@ -3554,13 +3569,13 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
 }
 
 export default function ManagePage() {
-  const runtimeMode = platformMode();
-  const isPreview = runtimeMode === "preview";
+  const isPreview = false;
   const [view, setView] = useState<View>("overview");
   const [role] = useState<TenantRole>("owner");
   const [previewState, setPreviewState] = useState<PreviewState>("ready");
   const [snapshot, setSnapshot] = useState<ManagementSnapshot | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [configurationRequired, setConfigurationRequired] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmPending, setConfirmPending] = useState(false);
@@ -3587,13 +3602,11 @@ export default function ManagePage() {
     .join("|") ?? "";
   const context = useMemo<ManagementContext>(() => ({
     tenantSlug: activeTenant.identity.slug,
-    role: isPreview ? role : liveSessionRole,
-    capabilities: isPreview
-      ? previewRoleSessions[role]
-      : liveCapabilityKey
-        ? liveCapabilityKey.split("|") as ManagementCapability[]
-        : [],
-  }), [isPreview, liveCapabilityKey, liveSessionRole, role]);
+    role: liveSessionRole,
+    capabilities: liveCapabilityKey
+      ? liveCapabilityKey.split("|") as ManagementCapability[]
+      : [],
+  }), [liveCapabilityKey, liveSessionRole]);
   const sessionRole = context.role;
 
   const can = (capability: ManagementCapability) => context.capabilities.includes(capability);
@@ -3742,6 +3755,8 @@ export default function ManagePage() {
       if (!active) return;
       if (error instanceof Error && error.message === "MANAGER_SIGN_IN_REQUIRED") {
         setAuthRequired(true);
+      } else if (error instanceof Error && error.message === "MANAGER_PLATFORM_CONFIGURATION_REQUIRED") {
+        setConfigurationRequired(true);
       } else {
         setLoadError(true);
       }
@@ -3952,7 +3967,11 @@ export default function ManagePage() {
     }
   };
 
-  if (authRequired && !isPreview) {
+  if (configurationRequired) {
+    return <DatabaseConnectionGate />;
+  }
+
+  if (authRequired) {
     return (
       <SignInGate
         onSignedIn={async () => {

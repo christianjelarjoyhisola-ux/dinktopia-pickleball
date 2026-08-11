@@ -971,16 +971,15 @@ export const previewSnapshot: ManagementSnapshot = {
   },
 };
 
-const delay = (milliseconds: number) =>
-  new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+function assertLiveManagementPlatform(): void {
+  if (platformMode() !== "live") {
+    throw new Error("MANAGER_PLATFORM_CONFIGURATION_REQUIRED");
+  }
+}
 
 export const managementAdapter: ManagementAdapter = {
   async load(context) {
-    if (platformMode() === "preview") {
-      await delay(240);
-      return previewSnapshot;
-    }
-
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
 
     const session = await currentOwnerSession();
@@ -1114,13 +1113,7 @@ export const managementAdapter: ManagementAdapter = {
     if (!DATE_PATTERN.test(date)) {
       throw new Error("CALENDAR_DATE_INVALID");
     }
-    if (platformMode() === "preview") {
-      return {
-        bookings: previewSnapshot.bookings.filter((booking) => booking.bookingDate === date),
-        blocks: previewSnapshot.blocks.filter((block) => block.dateValue === date),
-      };
-    }
-
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     if (
       current.tenant.mode !== "live" ||
@@ -1150,7 +1143,7 @@ export const managementAdapter: ManagementAdapter = {
     };
   },
   async loadReschedulePreview(context, bookingReference, date) {
-    if (platformMode() === "preview") throw new Error("PREVIEW_RESCHEDULE_UNAVAILABLE");
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
@@ -1174,16 +1167,7 @@ export const managementAdapter: ManagementAdapter = {
     );
   },
   async loadInsights(context, filters) {
-    if (platformMode() === "preview") {
-      return {
-        mode: "preview",
-        report: null,
-        finance: null,
-        promotions: { available: false, canCreate: false, items: [] },
-        loadedAt: formatManilaDateTime(new Date()),
-      };
-    }
-
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     const normalizedFilters = insightFilters(filters);
     const session = await currentOwnerSession();
@@ -1219,7 +1203,7 @@ export const managementAdapter: ManagementAdapter = {
     };
   },
   async refreshOperations(context, current) {
-    if (platformMode() === "preview") return previewSnapshot;
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     if (
       current.tenant.mode !== "live" ||
@@ -1254,9 +1238,7 @@ export const managementAdapter: ManagementAdapter = {
     };
   },
   async loadPaymentReceipt(context, verificationId) {
-    if (platformMode() === "preview") {
-      throw new Error("PREVIEW_RECEIPT_UNAVAILABLE");
-    }
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
@@ -1282,7 +1264,7 @@ export const managementAdapter: ManagementAdapter = {
     };
   },
   async createPromotion(context, input) {
-    if (platformMode() === "preview") throw new Error("PREVIEW_PROMOTION_UNAVAILABLE");
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
@@ -1294,9 +1276,7 @@ export const managementAdapter: ManagementAdapter = {
     return tenantPromotion(result);
   },
   async uploadPaymentQr(context, methodCode, file) {
-    if (platformMode() === "preview") {
-      throw new Error("PREVIEW_PAYMENT_ASSET_UNAVAILABLE");
-    }
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
@@ -1324,17 +1304,7 @@ export const managementAdapter: ManagementAdapter = {
     };
   },
   async perform(context, action) {
-    if (platformMode() === "preview") {
-      await delay(320);
-      return {
-        ok: true,
-        message:
-          action.type === "tenant:publish"
-            ? "Preview acknowledged. Live activation stays locked until setup is complete."
-            : "Preview action completed. No production data was changed.",
-      };
-    }
-
+    assertLiveManagementPlatform();
     assertDinktopiaContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
