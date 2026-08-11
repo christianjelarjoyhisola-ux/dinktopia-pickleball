@@ -313,16 +313,26 @@
 
 .dateLabel {
   position: relative;
-  display: block;
+  display: grid;
   min-width: 174px;
+  min-height: 48px;
+  align-content: center;
+  border: 1px solid var(--line, #dedfd9);
+  border-radius: 11px;
+  background: var(--paper, #fffefa);
+  padding: 7px 42px 7px 12px;
   cursor: pointer;
+  transition: border-color 140ms ease, box-shadow 140ms ease, background 140ms ease;
 }
+.dateLabel:hover { border-color: #b9bdb6; background: #fff; }
+.dateLabel:focus-within { border-color: #6558e8; box-shadow: 0 0 0 3px rgba(101, 88, 232, .12); }
 
 .dateLabel span,
 .dateLabel strong { display: block; }
 .dateLabel span { color: #6558e8; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .dateLabel strong { margin-top: 3px; color: #14231e; font-size: 14px; font-weight: 720; }
-.dateLabel input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.dateLabel > svg { position: absolute; top: 50%; right: 13px; color: #53635c; transform: translateY(-50%); }
+.dateLabel input { position: absolute; z-index: 2; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 
 .segmented {
   display: flex;

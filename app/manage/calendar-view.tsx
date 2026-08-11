@@ -559,10 +559,19 @@ export function CalendarView({
           <label className={styles.dateLabel}>
             <span>{selectedDate === today ? "Today" : "Selected day"}</span>
             <strong id="calendar-view-title">{compactDate}</strong>
+            <CalendarDays aria-hidden="true" size={17} />
             <input
               type="date"
               value={selectedDate}
               aria-label="Choose schedule date"
+              title="Choose any schedule date"
+              onClick={(event) => {
+                try {
+                  event.currentTarget.showPicker?.();
+                } catch {
+                  event.currentTarget.focus();
+                }
+              }}
               onChange={(event) => {
                 if (!DATE_PATTERN.test(event.target.value)) return;
                 setPhase("loading");
