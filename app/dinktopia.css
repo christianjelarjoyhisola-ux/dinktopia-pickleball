@@ -6149,10 +6149,14 @@
   box-shadow: 0 14px 30px rgba(126, 175, 67, 0.14);
 }
 .home-route .hero-actions .text-link {
-  border-bottom-color: rgba(255, 255, 255, 0.26);
+  border-bottom: 0;
   color: rgba(255, 255, 255, 0.88);
   font-size: 0.8125rem;
+  transition: color 180ms ease;
 }
+.home-route .hero-actions .text-link > span { transition: transform 180ms ease; }
+.home-route .hero-actions .text-link:hover { color: var(--home-accent-soft); }
+.home-route .hero-actions .text-link:hover > span { transform: translateY(2px); }
 .home-route .hero-proof {
   max-width: 610px;
   gap: 24px;
