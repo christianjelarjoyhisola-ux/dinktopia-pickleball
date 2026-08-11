@@ -1743,15 +1743,19 @@ function BlocksView({
   const [courtId, setCourtId] = useState("");
   const [date, setDate] = useState(isLive ? "" : "2026-08-10");
   const [from, setFrom] = useState(isLive ? "" : "12:00");
+  const [to, setTo] = useState(isLive ? "" : "13:00");
   const [publicLabel, setPublicLabel] = useState(isLive ? "" : "Maintenance");
   const [reason, setReason] = useState(isLive ? "" : "Court maintenance");
   const selectedCourt = snapshot.courts.find((item) => item.id === courtId);
   const courtLabel = scope === "all" ? "all courts" : selectedCourt?.name ?? "one court";
   const fromHour = Number.parseInt(from.slice(0, 2), 10);
-  const to = Number.isFinite(fromHour) ? `${String(fromHour + 1).padStart(2, "0")}:00` : "";
+  const toHour = Number.parseInt(to.slice(0, 2), 10);
+  const durationHours = Number.isFinite(fromHour) && Number.isFinite(toHour) && toHour > fromHour
+    ? toHour - fromHour
+    : 0;
   const formComplete = Boolean(
     scope && (scope === "all" || selectedCourt) && date && date >= minimumDate &&
-    from && to && publicLabel,
+    from && to && publicLabel && durationHours > 0,
   );
   const accessExpiry = snapshot.configuration.blockAccessExpiresAt
     ? new Date(snapshot.configuration.blockAccessExpiresAt)
@@ -1778,6 +1782,7 @@ function BlocksView({
     setCourtId("");
     setDate("");
     setFrom("");
+    setTo("");
     setPublicLabel("");
     setReason("");
   };
@@ -1786,9 +1791,9 @@ function BlocksView({
       <div>
         <p className={styles.eyebrow}>Court operations</p>
         <h2 id="court-blocks-title">Protect court availability with confidence.</h2>
-        <p>Create clean one-hour closures for maintenance, private events, and operational downtime.</p>
+        <p>Create clean whole-hour closures for maintenance, private events, and operational downtime.</p>
       </div>
-      <span className={styles.oneHourBadge}><Clock3 aria-hidden="true" /> Whole-hour blocks only</span>
+      <span className={styles.oneHourBadge}><Clock3 aria-hidden="true" /> Whole hours only</span>
     </header>
   );
 
@@ -1886,7 +1891,7 @@ function BlocksView({
           }
           request({
             title: `Block ${courtLabel}?`,
-            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". This is a one-hour block and the server will recheck conflicts before saving.`,
+            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". This ${durationHours}-hour block will be checked for conflicts before saving.`,
             confirmLabel: "Create block",
             actionType: "schedule:block",
             payload: {
@@ -1946,15 +1951,29 @@ function BlocksView({
           </label>
           <label className={styles.field}>
             <span>Start time</span>
-            <select value={from} onChange={(event) => setFrom(event.target.value)} required>
+            <select value={from} onChange={(event) => {
+              const nextStart = event.target.value;
+              const nextStartHour = Number.parseInt(nextStart.slice(0, 2), 10);
+              setFrom(nextStart);
+              if (!to || Number.parseInt(to.slice(0, 2), 10) <= nextStartHour) {
+                setTo(`${String(nextStartHour + 1).padStart(2, "0")}:00`);
+              }
+            }} required>
               <option value="" disabled>Choose an hour</option>
               {wholeHourOptions.filter((option) => option.logicalHour < 23).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
             </select>
           </label>
+          <label className={styles.field}>
+            <span>End time</span>
+            <select value={to} onChange={(event) => setTo(event.target.value)} disabled={!from} required>
+              <option value="" disabled>{from ? "Choose an ending hour" : "Choose a start time first"}</option>
+              {wholeHourOptions.filter((option) => option.logicalHour > fromHour).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </label>
           <div className={styles.blockDurationField}>
             <span>Duration</span>
-            <strong>1 hour</strong>
-            <small>{from ? `${wholeHourLabel(from)} to ${wholeHourLabel(to)}` : "End time is calculated automatically"}</small>
+            <strong>{durationHours ? `${durationHours} ${durationHours === 1 ? "hour" : "hours"}` : "Select a time range"}</strong>
+            <small>{durationHours ? `${wholeHourLabel(from)} to ${wholeHourLabel(to)}` : "Start and end must use whole hours"}</small>
           </div>
           <label className={cx(styles.field, styles.fieldWide)}>
             <span>Customer-facing label</span>
@@ -1977,7 +1996,7 @@ function BlocksView({
           <p><strong>Conflict-safe.</strong> A final availability check runs before the block is created. Existing paid bookings are never silently displaced.</p>
         </div>
         {!formComplete && (
-          <p className={styles.inlineError}>Choose a scope, future date, start hour, and public label before review.</p>
+          <p className={styles.inlineError}>Choose a scope, future date, valid whole-hour range, and public label before review.</p>
         )}
         <ActionButton type="submit" disabled={!canManage}>
           Review court block
