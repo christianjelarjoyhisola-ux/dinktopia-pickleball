@@ -2157,3 +2157,53 @@
 .manageShell .mobileNav button span svg{width:15px;height:15px}
 @media (max-width:900px){.manageShell .topbar{position:static;min-height:76px}.manageShell .main{padding:22px 18px 80px}}
 @media (max-width:680px){.manageShell .topbar{flex-direction:row;align-items:center;padding:0 15px}}
+
+/* Premium product typography: one compact RallyOS hierarchy across management. */
+.manageShell {
+  font-size: var(--type-body, .875rem);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.manageShell :is(h1, h2, h3, h4, h5, h6) {
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -.04em;
+}
+
+.manageShell :is(button, input, select, textarea) {
+  font-family: var(--font-body), "DM Sans", "Segoe UI", sans-serif;
+}
+
+.manageShell button {
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.manageShell :is(
+  .topbarTitle h1,
+  .pageHeading h1,
+  .pageHeading h2,
+  .panelHeading h2,
+  .rallySectionHeading h2
+) {
+  font-family: var(--font-display), "Sora", "Segoe UI", sans-serif;
+  font-weight: 600;
+}
+
+.manageShell :is(
+  .rallyMetrics article > strong,
+  .metricCard > strong,
+  .metricValue,
+  .amount,
+  time
+) {
+  font-family: var(--font-display), "Sora", "Segoe UI", sans-serif;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.manageShell :is(.dataTable, .bookingRecord, .field, .desktopNav, .mobileNav) {
+  font-size: var(--type-ui, .8125rem);
+}

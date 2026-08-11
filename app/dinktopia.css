@@ -5952,3 +5952,37 @@
   .footer-grid button,
   .footer-grid p { color: var(--ink); }
 }
+
+/* Premium product typography: shared with the player booking experience. */
+.dinktopia-site {
+  font-size: var(--type-body, .875rem);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.dinktopia-site :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-display), "Sora", "Segoe UI", sans-serif;
+  font-weight: 600;
+  line-height: 1.18;
+  letter-spacing: -.04em;
+}
+
+.dinktopia-site :is(button, input, select, textarea) {
+  font-family: var(--font-body), "DM Sans", "Segoe UI", sans-serif;
+}
+
+.dinktopia-site button {
+  font-weight: 600;
+  letter-spacing: -.01em;
+}
+
+.dinktopia-site :is(
+  .booking-total,
+  .payment-amount,
+  .summary-total,
+  .metric-value,
+  time
+) {
+  font-variant-numeric: tabular-nums;
+}
