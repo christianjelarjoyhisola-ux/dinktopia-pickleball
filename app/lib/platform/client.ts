@@ -822,6 +822,108 @@ export function deleteTenantCourtGallery(accessToken: string, courtId: string) {
   return mutateCourtGallery(accessToken, courtId, "delete");
 }
 
+export type VenueGalleryCategory = "venue" | "community" | "events" | "activities";
+
+export type VenueGalleryItem = {
+  id: string;
+  photoUrl: string;
+  storagePath: string;
+  photoAlt: string;
+  photoCaption: string;
+  category: VenueGalleryCategory;
+  featured: boolean;
+  published: boolean;
+  sortOrder: number;
+  createdAt?: string;
+};
+
+export type VenueGalleryResult = {
+  items: VenueGalleryItem[];
+  tenantRevision: string;
+};
+
+async function venueGalleryRequest(
+  accessToken: string,
+  action: "list" | "metadata" | "delete" | "reorder",
+  body: Record<string, unknown> = {},
+): Promise<VenueGalleryResult> {
+  if (action !== "list") managementHostname({ mutation: true });
+  const response = await fetch(edgeUrl("tenant-venue-gallery-asset"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Asset-Action": action,
+    },
+    body: JSON.stringify(body),
+  });
+  const result = await responseJson<{ ok: true } & VenueGalleryResult>(response);
+  return { items: result.items, tenantRevision: result.tenantRevision };
+}
+
+export function listTenantVenueGallery(accessToken: string) {
+  return venueGalleryRequest(accessToken, "list");
+}
+
+export async function uploadTenantVenueGallery(
+  accessToken: string,
+  file: File,
+  metadata: {
+    photoAlt: string;
+    photoCaption: string;
+    category: VenueGalleryCategory;
+    featured: boolean;
+    published: boolean;
+  },
+): Promise<VenueGalleryResult> {
+  managementHostname({ mutation: true });
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    file.size < 1 || file.size > 5 * 1024 * 1024
+  ) {
+    throw new PlatformRequestError(400, "VENUE_GALLERY_FILE_INVALID", "Choose a JPG, PNG, or WebP venue photo no larger than 5 MB.");
+  }
+  if (!metadata.photoAlt.trim() || !metadata.photoCaption.trim()) {
+    throw new PlatformRequestError(400, "VENUE_GALLERY_METADATA_INVALID", "Alt text and caption are required.");
+  }
+  const form = new FormData();
+  form.append("venueFile", file);
+  form.append("photoAlt", metadata.photoAlt.trim());
+  form.append("photoCaption", metadata.photoCaption.trim());
+  form.append("category", metadata.category);
+  form.append("featured", String(metadata.featured));
+  form.append("published", String(metadata.published));
+  const response = await fetch(edgeUrl("tenant-venue-gallery-asset"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${accessToken}`,
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Asset-Action": "upload",
+    },
+    body: form,
+  });
+  const result = await responseJson<{ ok: true } & VenueGalleryResult>(response);
+  return { items: result.items, tenantRevision: result.tenantRevision };
+}
+
+export function updateTenantVenueGallery(
+  accessToken: string,
+  item: Pick<VenueGalleryItem, "id" | "photoAlt" | "photoCaption" | "category" | "featured" | "published">,
+) {
+  return venueGalleryRequest(accessToken, "metadata", item);
+}
+
+export function deleteTenantVenueGallery(accessToken: string, id: string) {
+  return venueGalleryRequest(accessToken, "delete", { id });
+}
+
+export function reorderTenantVenueGallery(accessToken: string, orderIds: string[]) {
+  return venueGalleryRequest(accessToken, "reorder", { orderIds });
+}
+
 export type ReceiptView = {
   signedUrl: string;
   expiresIn: number;

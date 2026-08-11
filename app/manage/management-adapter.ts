@@ -22,6 +22,7 @@ import {
   getPaymentReceiptView,
   getRemittanceDestination,
   getTenantPolicy,
+  listTenantVenueGallery,
   listManagerBlocks,
   listManagerBookings,
   manageBlockedDates,
@@ -37,7 +38,12 @@ import {
   uploadTenantPaymentQr,
   uploadTenantCourtGallery,
   updateTenantCourtGalleryMetadata,
+  updateTenantVenueGallery,
+  uploadTenantVenueGallery,
+  deleteTenantVenueGallery,
+  reorderTenantVenueGallery,
   type BookingReschedulePreview,
+  type VenueGalleryItem,
 } from "../lib/platform/client";
 
 export type TenantRole = "owner" | "admin" | "staff" | "host";
@@ -515,6 +521,11 @@ export type LiveConfiguration = {
   remittanceDestination: RemittanceDestination | null;
   remittanceStatus: "available" | "missing" | "unavailable";
   launchRequirementsV2Required: boolean;
+  venueGallery: {
+    items: VenueGalleryItem[];
+    tenantRevision: string | null;
+    status: "available" | "unavailable";
+  };
 };
 
 export type ScheduleSlot = {
@@ -638,6 +649,23 @@ export interface ManagementAdapter {
     context: ManagementContext,
     courtId: string,
   ): Promise<{ tenantRevision: string }>;
+  uploadVenueGallery(
+    context: ManagementContext,
+    file: File,
+    metadata: Pick<VenueGalleryItem, "photoAlt" | "photoCaption" | "category" | "featured" | "published">,
+  ): Promise<{ items: VenueGalleryItem[]; tenantRevision: string }>;
+  updateVenueGallery(
+    context: ManagementContext,
+    item: Pick<VenueGalleryItem, "id" | "photoAlt" | "photoCaption" | "category" | "featured" | "published">,
+  ): Promise<{ items: VenueGalleryItem[]; tenantRevision: string }>;
+  deleteVenueGallery(
+    context: ManagementContext,
+    id: string,
+  ): Promise<{ items: VenueGalleryItem[]; tenantRevision: string }>;
+  reorderVenueGallery(
+    context: ManagementContext,
+    orderIds: string[],
+  ): Promise<{ items: VenueGalleryItem[]; tenantRevision: string }>;
   perform(
     context: ManagementContext,
     action: { type: string; resourceId?: string; payload?: unknown },
@@ -1017,6 +1045,7 @@ export const previewSnapshot: ManagementSnapshot = {
     remittanceDestination: null,
     remittanceStatus: "missing",
     launchRequirementsV2Required: false,
+    venueGallery: { items: [], tenantRevision: null, status: "available" },
   },
 };
 
@@ -1051,6 +1080,7 @@ export const managementAdapter: ManagementAdapter = {
       blockAccessResult,
       policyResult,
       remittanceResult,
+      venueGalleryResult,
     ] = await Promise.all([
       listManagerBookings(session.access_token, { activeOnly: false, limit: 500 }),
       listManagerBlocks(session.access_token, { limit: 100 }),
@@ -1068,6 +1098,9 @@ export const managementAdapter: ManagementAdapter = {
         : Promise.resolve(null),
       canReadManagerSettings
         ? getRemittanceDestination(session.access_token).catch(() => null)
+        : Promise.resolve(null),
+      canReadManagerSettings
+        ? listTenantVenueGallery(session.access_token).catch(() => null)
         : Promise.resolve(null),
     ]);
 
@@ -1155,6 +1188,13 @@ export const managementAdapter: ManagementAdapter = {
             : "missing",
         launchRequirementsV2Required:
           record(settings?.readiness)?.launchRequirementsV2Required === true,
+        venueGallery: venueGalleryResult
+          ? {
+              items: venueGalleryResult.items,
+              tenantRevision: venueGalleryResult.tenantRevision,
+              status: "available",
+            }
+          : { items: [], tenantRevision: null, status: "unavailable" },
       },
     };
   },
@@ -1398,6 +1438,41 @@ export const managementAdapter: ManagementAdapter = {
       throw new Error("COURT_GALLERY_RESPONSE_INVALID");
     }
     return { tenantRevision: result.tenantRevision };
+  },
+  async uploadVenueGallery(context, file, metadata) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    assertVenueManager(normalizeManagerSession(await getManagerSession(session.access_token)));
+    return validatedVenueGalleryResult(await uploadTenantVenueGallery(session.access_token, file, metadata));
+  },
+  async updateVenueGallery(context, item) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    assertVenueManager(normalizeManagerSession(await getManagerSession(session.access_token)));
+    return validatedVenueGalleryResult(await updateTenantVenueGallery(session.access_token, item));
+  },
+  async deleteVenueGallery(context, id) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    assertVenueManager(normalizeManagerSession(await getManagerSession(session.access_token)));
+    return validatedVenueGalleryResult(await deleteTenantVenueGallery(session.access_token, requiredUuid(id, "VENUE_GALLERY_ID_INVALID")));
+  },
+  async reorderVenueGallery(context, orderIds) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    assertVenueManager(normalizeManagerSession(await getManagerSession(session.access_token)));
+    return validatedVenueGalleryResult(await reorderTenantVenueGallery(
+      session.access_token,
+      orderIds.map((id) => requiredUuid(id, "VENUE_GALLERY_ID_INVALID")),
+    ));
   },
   async perform(context, action) {
     assertLiveManagementPlatform();
@@ -2176,6 +2251,38 @@ function validatedCourtGalleryResult(result: {
     },
     tenantRevision: result.tenantRevision,
   };
+}
+
+function validatedVenueGalleryResult(result: {
+  items: VenueGalleryItem[];
+  tenantRevision: string;
+}) {
+  if (!Array.isArray(result.items) || result.items.length > 20 || !validIsoRevision(result.tenantRevision)) {
+    throw new Error("VENUE_GALLERY_RESPONSE_INVALID");
+  }
+  const ids = new Set<string>();
+  for (const item of result.items) {
+    if (
+      !item || ids.has(item.id) || !isAllowedVenueGalleryUrl(item.photoUrl) ||
+      !item.storagePath?.includes("/venue-gallery/") || !item.photoAlt?.trim() ||
+      !item.photoCaption?.trim() ||
+      !["venue", "community", "events", "activities"].includes(item.category)
+    ) throw new Error("VENUE_GALLERY_RESPONSE_INVALID");
+    ids.add(item.id);
+  }
+  return { items: result.items, tenantRevision: result.tenantRevision };
+}
+
+function isAllowedVenueGalleryUrl(candidate: string): boolean {
+  try {
+    const url = new URL(candidate);
+    return url.protocol === "https:" &&
+      url.hostname === "neqvrwtofiolcuxewdze.supabase.co" &&
+      url.pathname.startsWith("/storage/v1/object/public/tenant-public-assets/") &&
+      url.pathname.includes("/venue-gallery/");
+  } catch {
+    return false;
+  }
 }
 
 function sharedLiveConfiguration(courtRows: JsonObject[]): Pick<

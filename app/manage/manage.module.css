@@ -1452,6 +1452,45 @@
 .courtGalleryFields { display: grid; grid-template-columns: minmax(0, .72fr) minmax(0, 1.28fr); gap: 10px; }
 .courtGalleryActions { display: flex; flex-wrap: wrap; gap: 8px; }
 .courtGalleryHelp, .galleryStatus { margin: 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.4; }
+
+.venueGalleryWorkspace { display: grid; gap: 18px; }
+.venueGalleryHero { display: flex; align-items: flex-end; justify-content: space-between; gap: 28px; overflow: hidden; border-radius: 20px; background: linear-gradient(135deg, #102b45, #0a2136); padding: 26px; color: #fff; }
+.venueGalleryHero h2 { max-width: 650px; margin: 6px 0 8px; font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: clamp(1.55rem, 2.5vw, 2.2rem); line-height: 1.08; letter-spacing: -.035em; }
+.venueGalleryHero p:last-child { max-width: 670px; margin: 0; color: rgba(255,255,255,.68); font-size: var(--text-small); line-height: 1.55; }
+.venueGalleryCount { min-width: 104px; display: grid; flex: 0 0 auto; justify-items: end; }
+.venueGalleryCount strong { color: var(--citrus); font-family: var(--font-display),var(--font-body),Arial,sans-serif; font-size: 2.3rem; line-height: 1; }
+.venueGalleryCount span { margin-top: 5px; color: rgba(255,255,255,.62); font-size: var(--text-caption); }
+.venueGalleryUpload { border: 1px solid var(--line); border-radius: 18px; background: var(--white); padding: 20px; box-shadow: 0 12px 32px rgba(16,42,67,.055); }
+.venueGalleryUploadIntro { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.venueGalleryUploadIntro > span { width: 38px; height: 38px; display: grid; flex: 0 0 auto; place-items: center; border-radius: 11px; background: var(--positive-soft); color: var(--positive); font-size: 1.25rem; font-weight: 700; }
+.venueGalleryUploadIntro h3 { margin: 0; font-size: 1rem; }
+.venueGalleryUploadIntro p { margin: 3px 0 0; color: var(--muted); font-size: var(--text-caption); }
+.venueGalleryUploadGrid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.venueGalleryUploadFooter, .venueGalleryCardFooter { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+.venueGalleryToggles { display: flex; flex-wrap: wrap; gap: 14px; }
+.venueGalleryToggles label { display: inline-flex; min-height: 32px; align-items: center; gap: 7px; color: var(--muted); font-size: var(--text-caption); font-weight: 700; }
+.venueGalleryToggles input { width: 16px; height: 16px; accent-color: var(--positive); }
+.venueGalleryList { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; }
+.venueGalleryCard { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 18px; background: var(--white); box-shadow: 0 10px 28px rgba(16,42,67,.05); }
+.venueGalleryFeatured { border-color: color-mix(in srgb, var(--positive) 46%, var(--line)); box-shadow: 0 12px 32px rgba(18,104,78,.1); }
+.venueGalleryImage { position: relative; aspect-ratio: 16 / 9; overflow: hidden; background: #102b45; }
+.venueGalleryImage img { width: 100%; height: 100%; object-fit: cover; }
+.venueGalleryImage::after { position: absolute; inset: auto 0 0; height: 42%; background: linear-gradient(transparent,rgba(7,25,40,.72)); content: ""; }
+.venueGalleryImage > div { position: absolute; z-index: 1; right: 12px; bottom: 11px; left: 12px; display: flex; flex-wrap: wrap; gap: 6px; }
+.venueGalleryImage span, .venueGalleryImage b { border-radius: 999px; background: rgba(255,255,255,.92); padding: 5px 8px; color: #102b45; font-size: .62rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.venueGalleryImage b { background: #dff4ea; color: #116343; }
+.venueGalleryCardBody { padding: 16px; }
+.venueGalleryCardTop { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.venueGalleryCardTop > span { color: var(--muted); font-size: var(--text-micro); font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.venueGalleryCardTop > div { display: flex; gap: 6px; }
+.venueGalleryCardTop button { width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 9px; background: var(--white); color: var(--ink); font-weight: 800; }
+.venueGalleryCardTop button:hover:not(:disabled) { border-color: var(--positive); color: var(--positive); }
+.venueGalleryFields { display: grid; grid-template-columns: minmax(0,.7fr) minmax(0,1.3fr); gap: 10px; }
+.venueGalleryEmpty { display: grid; justify-items: center; border: 1px dashed color-mix(in srgb,var(--line) 72%,var(--ink)); border-radius: 18px; background: color-mix(in srgb,var(--paper-deep) 70%,var(--white)); padding: 42px 24px; text-align: center; }
+.venueGalleryEmpty span { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 50%; background: #102b45; color: var(--citrus); font-weight: 800; }
+.venueGalleryEmpty h3 { margin: 13px 0 5px; font-size: 1.1rem; }
+.venueGalleryEmpty p { max-width: 470px; margin: 0; color: var(--muted); font-size: var(--text-small); }
+.venueGalleryMessage { position: sticky; bottom: 16px; z-index: 2; margin: 0 auto; border: 1px solid color-mix(in srgb,var(--positive) 35%,var(--line)); border-radius: 999px; background: rgba(255,255,255,.96); padding: 9px 14px; color: var(--positive); box-shadow: 0 10px 26px rgba(16,42,67,.12); font-size: var(--text-caption); font-weight: 700; }
 .galleryStatus { color: #176744; font-weight: 700; }
 .courtCardActions { grid-area: actions; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
 .courtCardActions > * { flex: 1 1 7.5rem; }
@@ -2556,4 +2595,27 @@
   .rescheduleControls > .field { grid-column: auto; }
   .rescheduleSelection { grid-template-columns: auto minmax(0, 1fr); }
   .rescheduleSelection > div:last-child { grid-column: 2; justify-items: start; }
+}
+
+@media (max-width: 760px) {
+  .venueGalleryHero { align-items: flex-start; padding: 20px; }
+  .venueGalleryUploadGrid, .venueGalleryList, .venueGalleryFields { grid-template-columns: minmax(0,1fr); }
+  .venueGalleryUploadFooter, .venueGalleryCardFooter { align-items: stretch; flex-direction: column; }
+  .venueGalleryUploadFooter > button, .venueGalleryCardFooter .inlineActions { width: 100%; }
+  .venueGalleryCardFooter .inlineActions > * { flex: 1; }
+}
+
+@media (max-width: 520px) {
+  .venueGalleryWorkspace { gap: 12px; }
+  .venueGalleryHero { border-radius: 16px; padding: 18px; }
+  .venueGalleryHero h2 { font-size: 1.45rem; }
+  .venueGalleryHero p:last-child { font-size: .78rem; }
+  .venueGalleryCount { min-width: 62px; }
+  .venueGalleryCount strong { font-size: 1.8rem; }
+  .venueGalleryCount span { font-size: .62rem; }
+  .venueGalleryUpload { border-radius: 15px; padding: 14px; }
+  .venueGalleryImage { aspect-ratio: 4 / 3; }
+  .venueGalleryCardBody { padding: 13px; }
+  .venueGalleryCardTop button { width: 40px; height: 40px; }
+  .venueGalleryToggles label { min-height: 40px; }
 }

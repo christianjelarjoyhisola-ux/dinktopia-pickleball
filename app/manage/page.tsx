@@ -62,6 +62,8 @@ import {
   PlatformRequestError,
   signInOwner,
   signOutOwner,
+  type VenueGalleryCategory,
+  type VenueGalleryItem,
 } from "../lib/platform/client";
 import {
   boundaryOptionsFor,
@@ -2732,6 +2734,135 @@ function businessDraftError(draft: BusinessDraft): string | null {
   return null;
 }
 
+type VenueGalleryOperations = {
+  upload: (
+    file: File,
+    metadata: Pick<VenueGalleryItem, "photoAlt" | "photoCaption" | "category" | "featured" | "published">,
+  ) => Promise<unknown>;
+  update: (item: Pick<VenueGalleryItem, "id" | "photoAlt" | "photoCaption" | "category" | "featured" | "published">) => Promise<unknown>;
+  remove: (id: string) => Promise<unknown>;
+  reorder: (orderIds: string[]) => Promise<unknown>;
+};
+
+function VenueGalleryEditor({
+  items,
+  canEdit,
+  operations,
+}: {
+  items: VenueGalleryItem[];
+  canEdit: boolean;
+  operations: VenueGalleryOperations;
+}) {
+  const [drafts, setDrafts] = useState<Record<string, VenueGalleryItem>>(() =>
+    Object.fromEntries(items.map((item) => [item.id, item]))
+  );
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadDraft, setUploadDraft] = useState<{
+    photoCaption: string;
+    photoAlt: string;
+    category: VenueGalleryCategory;
+    featured: boolean;
+    published: boolean;
+  }>({ photoCaption: "", photoAlt: "", category: "community", featured: items.length === 0, published: true });
+  const [busy, setBusy] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  const setDraft = <Key extends keyof VenueGalleryItem>(id: string, key: Key, value: VenueGalleryItem[Key]) => {
+    setDrafts((current) => ({ ...current, [id]: { ...current[id], [key]: value } }));
+  };
+
+  const run = async (key: string, action: () => Promise<unknown>, success: string) => {
+    setBusy(key);
+    setMessage(null);
+    try {
+      await action();
+      setMessage(success);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "The venue gallery could not be updated.");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const uploadReady = Boolean(uploadFile && uploadDraft.photoCaption.trim() && uploadDraft.photoAlt.trim());
+  const orderedIds = items.map((item) => item.id);
+
+  return (
+    <div className={styles.venueGalleryWorkspace}>
+      <div className={styles.venueGalleryHero}>
+        <div>
+          <p className={styles.eyebrow}>Editorial venue gallery</p>
+          <h2>Show the energy beyond the courts.</h2>
+          <p>Publish venue, community, event, and activity photos in one polished homepage gallery.</p>
+        </div>
+        <div className={styles.venueGalleryCount} aria-label={`${items.length} of 20 gallery images`}>
+          <strong>{items.length}</strong><span>of 20 images</span>
+        </div>
+      </div>
+
+      <section className={styles.venueGalleryUpload} aria-labelledby="venue-gallery-upload-title">
+        <div className={styles.venueGalleryUploadIntro}>
+          <span aria-hidden="true">+</span>
+          <div><h3 id="venue-gallery-upload-title">Add a new moment</h3><p>JPG, PNG, or WebP · up to 5 MB</p></div>
+        </div>
+        <div className={styles.venueGalleryUploadGrid}>
+          <label className={cx(styles.field, styles.fieldWide)}><span>Photo</span><input type="file" accept="image/jpeg,image/png,image/webp" disabled={!canEdit || items.length >= 20 || busy !== null} onChange={(event) => setUploadFile(event.currentTarget.files?.[0] ?? null)} /><small>{uploadFile?.name ?? "Choose a clear landscape or portrait photo."}</small></label>
+          <label className={styles.field}><span>Category</span><select value={uploadDraft.category} onChange={(event) => setUploadDraft((current) => ({ ...current, category: event.target.value as VenueGalleryCategory }))}><option value="venue">Venue</option><option value="community">Community</option><option value="events">Events</option><option value="activities">Activities</option></select></label>
+          <label className={styles.field}><span>Caption</span><input maxLength={100} placeholder="e.g. Friday community rally" value={uploadDraft.photoCaption} onChange={(event) => setUploadDraft((current) => ({ ...current, photoCaption: event.target.value }))} /></label>
+          <label className={cx(styles.field, styles.fieldWide)}><span>Accessible description</span><input maxLength={180} placeholder="Describe what is visible in the photo" value={uploadDraft.photoAlt} onChange={(event) => setUploadDraft((current) => ({ ...current, photoAlt: event.target.value }))} /></label>
+        </div>
+        <div className={styles.venueGalleryUploadFooter}>
+          <div className={styles.venueGalleryToggles}>
+            <label><input type="checkbox" checked={uploadDraft.featured} onChange={(event) => setUploadDraft((current) => ({ ...current, featured: event.target.checked }))} /> Featured</label>
+            <label><input type="checkbox" checked={uploadDraft.published} onChange={(event) => setUploadDraft((current) => ({ ...current, published: event.target.checked }))} /> Published</label>
+          </div>
+          <ActionButton disabled={!canEdit || !uploadReady || items.length >= 20 || busy !== null} onClick={() => uploadFile && void run("upload", () => operations.upload(uploadFile, uploadDraft), "The new venue photo is published.")}>{busy === "upload" ? "Publishing…" : "Publish photo"}</ActionButton>
+        </div>
+      </section>
+
+      {items.length ? (
+        <div className={styles.venueGalleryList}>
+          {items.map((item, index) => {
+            const draft = drafts[item.id] ?? item;
+            const itemBusy = busy === item.id || busy === `move-${item.id}` || busy === `delete-${item.id}`;
+            return (
+              <article className={cx(styles.venueGalleryCard, draft.featured && styles.venueGalleryFeatured)} key={item.id}>
+                <div className={styles.venueGalleryImage}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={item.photoUrl} alt="" loading="lazy" decoding="async" />
+                  <div><span>{draft.category}</span>{draft.featured && <b>Featured</b>}{!draft.published && <b>Hidden</b>}</div>
+                </div>
+                <div className={styles.venueGalleryCardBody}>
+                  <div className={styles.venueGalleryCardTop}><span>Image {String(index + 1).padStart(2, "0")}</span><div><button type="button" aria-label={`Move ${draft.photoCaption} earlier`} disabled={!canEdit || index === 0 || busy !== null} onClick={() => { const order = [...orderedIds]; [order[index - 1], order[index]] = [order[index], order[index - 1]]; void run(`move-${item.id}`, () => operations.reorder(order), "Gallery order updated."); }}>↑</button><button type="button" aria-label={`Move ${draft.photoCaption} later`} disabled={!canEdit || index === items.length - 1 || busy !== null} onClick={() => { const order = [...orderedIds]; [order[index], order[index + 1]] = [order[index + 1], order[index]]; void run(`move-${item.id}`, () => operations.reorder(order), "Gallery order updated."); }}>↓</button></div></div>
+                  <div className={styles.venueGalleryFields}>
+                    <label className={styles.field}><span>Category</span><select value={draft.category} onChange={(event) => setDraft(item.id, "category", event.target.value as VenueGalleryCategory)}><option value="venue">Venue</option><option value="community">Community</option><option value="events">Events</option><option value="activities">Activities</option></select></label>
+                    <label className={styles.field}><span>Caption</span><input maxLength={100} value={draft.photoCaption} onChange={(event) => setDraft(item.id, "photoCaption", event.target.value)} /></label>
+                    <label className={cx(styles.field, styles.fieldWide)}><span>Accessible description</span><input maxLength={180} value={draft.photoAlt} onChange={(event) => setDraft(item.id, "photoAlt", event.target.value)} /></label>
+                  </div>
+                  <div className={styles.venueGalleryCardFooter}>
+                    <div className={styles.venueGalleryToggles}>
+                      <label><input type="checkbox" checked={draft.featured} onChange={(event) => setDraft(item.id, "featured", event.target.checked)} /> Featured</label>
+                      <label><input type="checkbox" checked={draft.published} onChange={(event) => setDraft(item.id, "published", event.target.checked)} /> Published</label>
+                    </div>
+                    <div className={styles.inlineActions}>
+                      {deleteId === item.id ? <><button className={cx(styles.button, styles.secondary)} type="button" onClick={() => setDeleteId(null)}>Keep</button><button className={cx(styles.button, styles.danger)} type="button" disabled={busy !== null} onClick={() => void run(`delete-${item.id}`, () => operations.remove(item.id), "The venue photo was removed.")}>Confirm remove</button></> : <button className={cx(styles.button, styles.secondary)} type="button" disabled={!canEdit || busy !== null} onClick={() => setDeleteId(item.id)}>Remove</button>}
+                      <ActionButton disabled={!canEdit || itemBusy || busy !== null || !draft.photoAlt.trim() || !draft.photoCaption.trim()} onClick={() => void run(item.id, () => operations.update(draft), "Photo details saved.")}>{busy === item.id ? "Saving…" : "Save"}</ActionButton>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className={styles.venueGalleryEmpty}><span aria-hidden="true">01</span><h3>Your venue story starts here.</h3><p>Add the first image to replace the homepage placeholder with a real Dinktopia moment.</p></div>
+      )}
+      {message && <p className={styles.venueGalleryMessage} role="status">{message}</p>}
+    </div>
+  );
+}
+
 function LiveSettingsView({
   snapshot,
   can,
@@ -2740,6 +2871,7 @@ function LiveSettingsView({
   uploadCourtGallery,
   updateCourtGalleryMetadata,
   deleteCourtGallery,
+  venueGalleryOperations,
   onSectionChange,
   initialSection = "courts",
 }: {
@@ -2750,10 +2882,11 @@ function LiveSettingsView({
   uploadCourtGallery: (courtId: string, file: File, photoAlt: string, photoCaption: string) => Promise<{ asset: ManagementSnapshot["courts"][number]["publicConfig"]; tenantRevision: string }>;
   updateCourtGalleryMetadata: (courtId: string, photoAlt: string, photoCaption: string) => Promise<{ asset: ManagementSnapshot["courts"][number]["publicConfig"]; tenantRevision: string }>;
   deleteCourtGallery: (courtId: string) => Promise<{ tenantRevision: string }>;
-  onSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
-  initialSection?: "courts" | "schedule" | "business" | "rules";
+  venueGalleryOperations: VenueGalleryOperations;
+  onSectionChange: (section: "courts" | "gallery" | "schedule" | "business" | "rules") => void;
+  initialSection?: "courts" | "gallery" | "schedule" | "business" | "rules";
 }) {
-  const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">(initialSection);
+  const [section, setSection] = useState<"courts" | "gallery" | "schedule" | "business" | "rules">(initialSection);
   const [courtDrafts, setCourtDrafts] = useState(() => courtDraftsFor(snapshot));
   const [newCourt, setNewCourt] = useState<NewCourtDraft>(() => newCourtDraftFor(snapshot));
   const [newCourtAttempted, setNewCourtAttempted] = useState(false);
@@ -3016,7 +3149,7 @@ function LiveSettingsView({
   return (
     <section className={styles.settingsLayout}>
       <nav className={styles.settingsNav} aria-label="Venue settings sections">
-        {(["courts", "schedule", "business", "rules"] as const).map((item, index) => (
+        {(["courts", "gallery", "schedule", "business", "rules"] as const).map((item, index) => (
           <button type="button" key={item} className={section === item ? styles.settingsActive : undefined} onClick={() => { setSection(item); onSectionChange(item); }} aria-current={section === item ? "page" : undefined}>
             <span>0{index + 1}</span>{item[0].toUpperCase() + item.slice(1)}
           </button>
@@ -3203,6 +3336,13 @@ function LiveSettingsView({
             )}
           </div>
         )}
+        {section === "gallery" && (
+          <VenueGalleryEditor
+            items={snapshot.configuration.venueGallery.items}
+            canEdit={can("settings:update") && snapshot.configuration.venueGallery.status === "available"}
+            operations={venueGalleryOperations}
+          />
+        )}
         {section === "schedule" && (
           <div className={styles.settingsSection}>
             <div className={styles.panelHeading}><div><p className={styles.eyebrow}>PHP · Asia/Manila · Every court</p><h2>Shared schedule</h2></div><span className={styles.previewTag}>Atomic update</span></div>
@@ -3388,17 +3528,19 @@ function SettingsView({
   uploadCourtGallery,
   updateCourtGalleryMetadata,
   deleteCourtGallery,
+  venueGalleryOperations,
   onLiveSectionChange,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
-  initialLiveSection?: "courts" | "schedule" | "business" | "rules";
+  initialLiveSection?: "courts" | "gallery" | "schedule" | "business" | "rules";
   uploadPaymentQr: (methodCode: string, file: File) => Promise<{ url: string; contentType: string; tenantRevision: string }>;
   uploadCourtGallery: (courtId: string, file: File, photoAlt: string, photoCaption: string) => Promise<{ asset: ManagementSnapshot["courts"][number]["publicConfig"]; tenantRevision: string }>;
   updateCourtGalleryMetadata: (courtId: string, photoAlt: string, photoCaption: string) => Promise<{ asset: ManagementSnapshot["courts"][number]["publicConfig"]; tenantRevision: string }>;
   deleteCourtGallery: (courtId: string) => Promise<{ tenantRevision: string }>;
-  onLiveSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
+  venueGalleryOperations: VenueGalleryOperations;
+  onLiveSectionChange: (section: "courts" | "gallery" | "schedule" | "business" | "rules") => void;
 }) {
   const [section, setSection] = useState<"courts" | "rates" | "hours" | "rules">("courts");
   if (snapshot.tenant.mode === "live") {
@@ -3409,6 +3551,7 @@ function SettingsView({
           snapshot.configuration.sharedSchedule,
           snapshot.configuration.businessPayments,
           snapshot.configuration.policy,
+          snapshot.configuration.venueGallery,
           initialLiveSection,
         ])}
         snapshot={snapshot}
@@ -3419,6 +3562,7 @@ function SettingsView({
         uploadCourtGallery={uploadCourtGallery}
         updateCourtGalleryMetadata={updateCourtGalleryMetadata}
         deleteCourtGallery={deleteCourtGallery}
+        venueGalleryOperations={venueGalleryOperations}
         onSectionChange={onLiveSectionChange}
       />
     );
@@ -3747,7 +3891,7 @@ export default function ManagePage() {
   const [syncPending, setSyncPending] = useState(false);
   const [accountPending, setAccountPending] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
-  const [settingsSection, setSettingsSection] = useState<"courts" | "schedule" | "business" | "rules">("courts");
+  const [settingsSection, setSettingsSection] = useState<"courts" | "gallery" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
   const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
@@ -3852,6 +3996,56 @@ export default function ManagePage() {
     setToast({ message: "The court photo was removed from the homepage gallery.", tone: "success" });
     return result;
   }, [context, patchCourtGallery, snapshot]);
+
+  const patchVenueGallery = useCallback((items: VenueGalleryItem[], tenantRevision: string) => {
+    setSnapshot((current) => current ? {
+      ...current,
+      configuration: {
+        ...current.configuration,
+        venueGallery: { items, tenantRevision, status: "available" },
+      },
+    } : current);
+  }, []);
+
+  const uploadVenueGallery = useCallback(async (
+    file: File,
+    metadata: Pick<VenueGalleryItem, "photoAlt" | "photoCaption" | "category" | "featured" | "published">,
+  ) => {
+    const result = await managementAdapter.uploadVenueGallery(context, file, metadata);
+    patchVenueGallery(result.items, result.tenantRevision);
+    setToast({ message: "The venue photo is live in the homepage gallery.", tone: "success" });
+    return result;
+  }, [context, patchVenueGallery]);
+
+  const updateVenueGallery = useCallback(async (
+    item: Pick<VenueGalleryItem, "id" | "photoAlt" | "photoCaption" | "category" | "featured" | "published">,
+  ) => {
+    const result = await managementAdapter.updateVenueGallery(context, item);
+    patchVenueGallery(result.items, result.tenantRevision);
+    setToast({ message: "The venue gallery details are saved.", tone: "success" });
+    return result;
+  }, [context, patchVenueGallery]);
+
+  const removeVenueGallery = useCallback(async (id: string) => {
+    const result = await managementAdapter.deleteVenueGallery(context, id);
+    patchVenueGallery(result.items, result.tenantRevision);
+    setToast({ message: "The venue photo was removed.", tone: "success" });
+    return result;
+  }, [context, patchVenueGallery]);
+
+  const reorderVenueGallery = useCallback(async (orderIds: string[]) => {
+    const result = await managementAdapter.reorderVenueGallery(context, orderIds);
+    patchVenueGallery(result.items, result.tenantRevision);
+    setToast({ message: "The venue gallery order is updated.", tone: "success" });
+    return result;
+  }, [context, patchVenueGallery]);
+
+  const venueGalleryOperations = useMemo<VenueGalleryOperations>(() => ({
+    upload: uploadVenueGallery,
+    update: updateVenueGallery,
+    remove: removeVenueGallery,
+    reorder: reorderVenueGallery,
+  }), [removeVenueGallery, reorderVenueGallery, updateVenueGallery, uploadVenueGallery]);
 
   const retryInsights = useCallback(() => {
     setInsightsRevision((revision) => revision + 1);
@@ -4174,7 +4368,7 @@ export default function ManagePage() {
         error={insightsError}
         onRetry={retryInsights}
       />;
-      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} uploadPaymentQr={uploadPaymentQr} uploadCourtGallery={uploadCourtGallery} updateCourtGalleryMetadata={updateCourtGalleryMetadata} deleteCourtGallery={deleteCourtGallery} onLiveSectionChange={setSettingsSection} />;
+      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} uploadPaymentQr={uploadPaymentQr} uploadCourtGallery={uploadCourtGallery} updateCourtGalleryMetadata={updateCourtGalleryMetadata} deleteCourtGallery={deleteCourtGallery} venueGalleryOperations={venueGalleryOperations} onLiveSectionChange={setSettingsSection} />;
       case "launch": return <LaunchView snapshot={snapshot} request={request} openSettings={(section) => { setSettingsSection(section); setView("settings"); }} />;
       case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} toolAvailability={snapshot.configuration.toolAvailability} />;
     }

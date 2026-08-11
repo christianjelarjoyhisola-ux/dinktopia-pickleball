@@ -67,6 +67,8 @@ type GalleryPhoto = {
   src: string;
   alt: string;
   caption: string;
+  category?: string;
+  featured?: boolean;
 };
 
 type SlotStatus = "available" | "limited" | "unavailable";
@@ -248,6 +250,29 @@ function galleryText(value: unknown, fallback: string, maxLength: number) {
 
 function galleryPhotosFromPlatform(tenantBootstrap: TenantBootstrap | null) {
   if (!tenantBootstrap) return [];
+  const configuredGallery = tenantBootstrap.tenant.publicConfig?.venueGallery;
+  if (Array.isArray(configuredGallery)) {
+    const venuePhotos = configuredGallery
+      .flatMap<GalleryPhoto>((candidate) => {
+        if (!candidate || typeof candidate !== "object") return [];
+        const item = candidate as Record<string, unknown>;
+        if (item.published !== true) return [];
+        const src = trustedGallerySource(item.photoUrl);
+        const id = typeof item.id === "string" ? item.id : "";
+        if (!src || !id) return [];
+        return [{
+          id,
+          src,
+          alt: galleryText(item.photoAlt, `A Dinktopia venue moment`, 180),
+          caption: galleryText(item.photoCaption, "Dinktopia Court Hub", 100),
+          category: galleryText(item.category, "venue", 24),
+          featured: item.featured === true,
+        }];
+      })
+      .sort((left, right) => Number(right.featured) - Number(left.featured))
+      .slice(0, 12);
+    if (venuePhotos.length) return venuePhotos;
+  }
   return tenantBootstrap.courts
     .flatMap<GalleryPhoto>((court) => {
       const config = (court.publicConfig ?? {}) as {
@@ -2449,13 +2474,13 @@ export function BookingExperience({
 
         {galleryPhotos.length ? (
           <div
-            className={`gallery-grid${galleryPhotos.length === 5 ? " is-bento" : ""}`}
-            aria-label="Dinktopia court gallery"
+            className={`gallery-grid${galleryPhotos.some((photo) => photo.featured) ? " has-featured" : galleryPhotos.length === 5 ? " is-bento" : ""}`}
+            aria-label="Dinktopia venue gallery"
             role="region"
             tabIndex={0}
           >
             {galleryPhotos.map((photo) => (
-              <figure className="gallery-card" key={photo.id}>
+              <figure className={`gallery-card${photo.featured ? " is-featured" : ""}`} key={photo.id}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={photo.src}
@@ -2465,7 +2490,7 @@ export function BookingExperience({
                   loading="lazy"
                   decoding="async"
                 />
-                <figcaption>{photo.caption}</figcaption>
+                <figcaption>{photo.category && <span>{photo.category}</span>}<strong>{photo.caption}</strong></figcaption>
               </figure>
             ))}
           </div>
