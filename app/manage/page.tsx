@@ -117,7 +117,7 @@ const NAV_ITEMS: { id: View; label: string; short: string }[] = [
   { id: "overview", label: "Today", short: "OV" },
   { id: "schedule", label: "Schedule", short: "CA" },
   { id: "bookings", label: "Bookings", short: "BK" },
-  { id: "blocks", label: "Court issues", short: "BL" },
+  { id: "blocks", label: "Court blocks", short: "BL" },
   { id: "customers", label: "Customers", short: "CU" },
   { id: "finance", label: "Money", short: "FN" },
   { id: "reports", label: "Insights", short: "AN" },
@@ -1743,14 +1743,15 @@ function BlocksView({
   const [courtId, setCourtId] = useState("");
   const [date, setDate] = useState(isLive ? "" : "2026-08-10");
   const [from, setFrom] = useState(isLive ? "" : "12:00");
-  const [to, setTo] = useState(isLive ? "" : "13:00");
   const [publicLabel, setPublicLabel] = useState(isLive ? "" : "Maintenance");
   const [reason, setReason] = useState(isLive ? "" : "Court maintenance");
   const selectedCourt = snapshot.courts.find((item) => item.id === courtId);
   const courtLabel = scope === "all" ? "all courts" : selectedCourt?.name ?? "one court";
+  const fromHour = Number.parseInt(from.slice(0, 2), 10);
+  const to = Number.isFinite(fromHour) ? `${String(fromHour + 1).padStart(2, "0")}:00` : "";
   const formComplete = Boolean(
     scope && (scope === "all" || selectedCourt) && date && date >= minimumDate &&
-    from && to && publicLabel && to > from,
+    from && to && publicLabel,
   );
   const accessExpiry = snapshot.configuration.blockAccessExpiresAt
     ? new Date(snapshot.configuration.blockAccessExpiresAt)
@@ -1777,10 +1778,19 @@ function BlocksView({
     setCourtId("");
     setDate("");
     setFrom("");
-    setTo("");
     setPublicLabel("");
     setReason("");
   };
+  const blocksHero = (
+    <header className={styles.courtBlocksHero}>
+      <div>
+        <p className={styles.eyebrow}>Court operations</p>
+        <h2 id="court-blocks-title">Protect court availability with confidence.</h2>
+        <p>Create clean one-hour closures for maintenance, private events, and operational downtime.</p>
+      </div>
+      <span className={styles.oneHourBadge}><Clock3 aria-hidden="true" /> Whole-hour blocks only</span>
+    </header>
+  );
 
   const blockList = (
     <>
@@ -1846,21 +1856,26 @@ function BlocksView({
 
   if (isLive && !canManage) {
     return (
-      <section className={styles.panel} aria-labelledby="loaded-blocks-title">
-        {blockList}
-        <div className={styles.noticeBox}>
-          <span aria-hidden="true">i</span>
-          <p>
-            <strong>Read-only for this load.</strong> Creating or removing a block requires a
-            server-issued block-management capability; viewing the loaded tenant result does not.
-          </p>
-        </div>
+      <section className={styles.courtBlocksWorkspace} aria-labelledby="court-blocks-title">
+        {blocksHero}
+        <section className={styles.panel} aria-labelledby="loaded-blocks-title">
+          {blockList}
+          <div className={styles.noticeBox}>
+            <span aria-hidden="true">i</span>
+            <p>
+              <strong>Read-only for this load.</strong> Creating or removing a block requires a
+              server-issued block-management capability; viewing the loaded tenant result does not.
+            </p>
+          </div>
+        </section>
       </section>
     );
   }
 
   return (
-    <section className={styles.splitLayout}>
+    <section className={styles.courtBlocksWorkspace} aria-labelledby="court-blocks-title">
+      {blocksHero}
+      <div className={styles.splitLayout}>
       <form
         className={cx(styles.panel, styles.blockForm)}
         onSubmit={(event) => {
@@ -1871,7 +1886,7 @@ function BlocksView({
           }
           request({
             title: `Block ${courtLabel}?`,
-            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". The server will recheck conflicts before saving.`,
+            detail: `${date}, ${from}-${to}, labelled "${publicLabel}". This is a one-hour block and the server will recheck conflicts before saving.`,
             confirmLabel: "Create block",
             actionType: "schedule:block",
             payload: {
@@ -1890,9 +1905,9 @@ function BlocksView({
         <div className={styles.panelHeading}>
           <div>
             <p className={styles.eyebrow}>New availability block</p>
-            <h2>Take time offline</h2>
+            <h2>Create a court block</h2>
           </div>
-          <span className={styles.stepBadge}>Review first</span>
+          <span className={styles.stepBadge}>Conflict-safe</span>
         </div>
         <div className={cx(styles.formGrid, styles.blockScopeGrid)}>
           <label className={styles.field}>
@@ -1930,13 +1945,17 @@ function BlocksView({
             <input type="date" value={date} min={minimumDate} onChange={(event) => setDate(event.target.value)} required />
           </label>
           <label className={styles.field}>
-            <span>From</span>
-            <input type="time" step={3600} value={from} onChange={(event) => setFrom(event.target.value)} required />
+            <span>Start time</span>
+            <select value={from} onChange={(event) => setFrom(event.target.value)} required>
+              <option value="" disabled>Choose an hour</option>
+              {wholeHourOptions.filter((option) => option.logicalHour < 23).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </label>
-          <label className={styles.field}>
-            <span>To</span>
-            <input type="time" step={3600} value={to} onChange={(event) => setTo(event.target.value)} required />
-          </label>
+          <div className={styles.blockDurationField}>
+            <span>Duration</span>
+            <strong>1 hour</strong>
+            <small>{from ? `${wholeHourLabel(from)} to ${wholeHourLabel(to)}` : "End time is calculated automatically"}</small>
+          </div>
           <label className={cx(styles.field, styles.fieldWide)}>
             <span>Customer-facing label</span>
             <select value={publicLabel} onChange={(event) => setPublicLabel(event.target.value)} required>
@@ -1958,7 +1977,7 @@ function BlocksView({
           <p><strong>Conflict-safe.</strong> A final availability check runs before the block is created. Existing paid bookings are never silently displaced.</p>
         </div>
         {!formComplete && (
-          <p className={styles.inlineError}>Choose a scope, future date, time range, and public label before review.</p>
+          <p className={styles.inlineError}>Choose a scope, future date, start hour, and public label before review.</p>
         )}
         <ActionButton type="submit" disabled={!canManage}>
           Review court block
@@ -1966,6 +1985,7 @@ function BlocksView({
       </form>
 
       <aside className={styles.panel} aria-labelledby="loaded-blocks-title">{blockList}</aside>
+      </div>
     </section>
   );
 }
@@ -3844,7 +3864,7 @@ export default function ManagePage() {
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
-          {view !== "overview" && view !== "reports" && view !== "bookings" && <header className={styles.pageHeader}>
+          {view !== "overview" && view !== "reports" && view !== "bookings" && view !== "blocks" && <header className={styles.pageHeader}>
             <div>
               <h1>{selectedCopy.title}</h1>
               <p>{selectedCopy.description}</p>

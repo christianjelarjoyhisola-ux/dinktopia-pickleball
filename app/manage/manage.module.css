@@ -1206,8 +1206,33 @@
 .dayEmpty h2 { margin-top: 3px; }
 .dayEmpty > p:last-of-type { max-width: 430px; margin: 8px 0 19px; color: var(--muted); font-size: var(--text-meta); }
 
-.splitLayout { display: grid; grid-template-columns: minmax(0,1.3fr) minmax(300px,.75fr); gap: 14px; align-items: start; }
-.blockForm .button { margin-left: auto; }
+.courtBlocksWorkspace {
+  --block-violet: #6558e8;
+  --block-violet-soft: #eeecff;
+  display: grid;
+  min-width: 0;
+  gap: 18px;
+}
+.courtBlocksHero {
+  display: flex;
+  min-height: 118px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid var(--line);
+  padding: 4px 2px 24px;
+}
+.courtBlocksHero > div { max-width: 760px; }
+.courtBlocksHero .eyebrow { margin: 0 0 7px; color: var(--block-violet); font-size: .61rem; letter-spacing: .12em; }
+.courtBlocksHero h2 { margin: 0; font: 600 clamp(1.5rem, 2.8vw, 2.25rem)/1.15 var(--font-display), "Sora", sans-serif; letter-spacing: -.055em; }
+.courtBlocksHero p:last-child { max-width: 650px; margin: 10px 0 0; color: var(--muted); font-size: .82rem; line-height: 1.55; }
+.oneHourBadge { display: inline-flex; min-height: 38px; flex: 0 0 auto; align-items: center; gap: 8px; border: 1px solid #d9d6ff; border-radius: 999px; background: var(--block-violet-soft); padding: 0 13px; color: #5546d7; font-size: .66rem; font-weight: 800; white-space: nowrap; }
+.oneHourBadge svg { width: 15px; height: 15px; }
+
+.splitLayout { display: grid; grid-template-columns: minmax(0,1.18fr) minmax(320px,.82fr); gap: 18px; align-items: start; }
+.courtBlocksWorkspace .panel { border-radius: 18px; box-shadow: 0 10px 30px rgba(16,42,67,.045); }
+.blockForm { border-top: 3px solid var(--block-violet); }
+.blockForm .button { min-height: 40px; margin-left: auto; border-radius: 10px; box-shadow: 0 8px 20px rgba(101,88,232,.18); }
 .stepBadge, .countBadge, .previewTag, .needsTag, .openTag { display: inline-flex; align-items: center; border-radius: 999px; padding: 5px 9px; font-size: var(--text-micro); font-weight: 800; white-space: nowrap; }
 .stepBadge, .previewTag { background: var(--blue-soft); color: var(--blue); }
 .countBadge { min-width: 27px; justify-content: center; background: var(--ink); color: var(--white); }
@@ -1263,6 +1288,10 @@
 .blockScopeGrid > .field:nth-child(3),
 .blockScopeGrid > .field:nth-child(4),
 .blockScopeGrid > .field:nth-child(5) { grid-column: span 2; }
+.blockDurationField { display: grid; grid-column: span 2; align-content: start; gap: 5px; border: 1px solid #d9d6ff; border-radius: 10px; background: var(--block-violet-soft); padding: 8px 11px; }
+.blockDurationField > span { color: #5546d7; font-size: var(--text-micro); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.blockDurationField strong { font: 600 .88rem var(--font-display), "Sora", sans-serif; }
+.blockDurationField small { color: var(--muted); font-size: .59rem; }
 .blockAccessMeta {
   display: flex;
   align-items: flex-start;
@@ -2047,9 +2076,13 @@
   .formGrid { grid-template-columns: 1fr; }
   .fieldWide { grid-column: auto; }
   .blockScopeGrid > .field { grid-column: auto; }
+  .blockDurationField { grid-column: auto; }
   .blockForm .button { width: 100%; }
   .blockList { grid-template-columns: 1fr; }
   .blockScopeGrid, .businessGrid { grid-template-columns: 1fr; }
+  .courtBlocksHero { min-height: 0; align-items: stretch; flex-direction: column; gap: 16px; }
+  .courtBlocksHero h2 { font-size: 1.5rem; }
+  .oneHourBadge { align-self: flex-start; }
   .blockAccessMeta { align-items: stretch; flex-direction: column; }
   .customerMetrics { grid-template-columns: 1fr 1fr; }
   .customerMetrics > div:last-child { grid-column: 1 / -1; }
