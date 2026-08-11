@@ -1020,6 +1020,10 @@
 .bookingRecordSession strong,
 .bookingRecordPayment strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-meta); }
 .bookingRecordSession > span:last-child { color: var(--muted); font-size: var(--text-caption); }
+.bookingSessionList { min-width: 0; display: grid; gap: 5px; margin-top: 3px; }
+.bookingSessionList > span { min-width: 0; display: grid; grid-template-columns: minmax(64px, auto) minmax(0, 1fr); align-items: baseline; gap: 7px; border-left: 2px solid var(--blue-soft); padding-left: 7px; }
+.bookingSessionList b { overflow: hidden; color: var(--ink); font-size: var(--text-caption); font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bookingSessionList time { overflow: hidden; color: var(--muted); font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
 .bookingRecordLabel { color: var(--muted); font-size: var(--text-micro); font-weight: 800; letter-spacing: var(--tracking-label); text-transform: uppercase; }
 .bookingRecordPayment .paymentLabel { margin: 0; }
 .bookingRecordStatus { grid-area: status; min-width: 0; }

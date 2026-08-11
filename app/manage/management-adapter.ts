@@ -79,6 +79,22 @@ export type BookingPaymentStatus =
   | "rejected"
   | "unknown";
 
+export type BookingSession = {
+  key: string;
+  courtId: string;
+  court: string;
+  bookingDate: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  time: string;
+  duration: string;
+  durationHours: number;
+  startsAt: string;
+  endsAt: string;
+  amount: number;
+};
+
 export type Booking = {
   bookingId: string;
   bookingType: "regular" | "event";
@@ -99,6 +115,7 @@ export type Booking = {
   startTime: string | null;
   endTime?: string | null;
   endsAt?: string | null;
+  sessions?: BookingSession[];
   paymentEvidence?: PaymentEvidence | null;
 };
 
@@ -3278,6 +3295,82 @@ function bookingAmount(row: JsonObject): number {
   return Math.max(0, (subtotal ?? 0) + (serviceFee ?? 0));
 }
 
+function nestedRecord(candidate: unknown): JsonObject | null {
+  if (typeof candidate === "string") {
+    try {
+      return record(JSON.parse(candidate));
+    } catch {
+      return null;
+    }
+  }
+  return record(candidate);
+}
+
+function localDateValue(candidate: Date): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: activeTenant.identity.timezone,
+  }).formatToParts(candidate);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function liveBookingSessions(
+  row: JsonObject,
+  bookingId: string,
+  courtNames: ReadonlyMap<string, string>,
+): BookingSession[] {
+  const metadata = nestedRecord(row.metadata ?? row.booking_metadata);
+  const candidates = [row.sessions, metadata?.sessions, row.booking_sessions]
+    .find(Array.isArray) as unknown[] | undefined;
+  if (!candidates?.length) return [];
+
+  return candidates
+    .map((candidate, index) => {
+      const session = record(candidate);
+      if (!session) return null;
+      const courtId = value(session, ["courtId", "court_id"]);
+      const startsAt = parsedInstant(session, ["startsAt", "starts_at"]);
+      const endsAt = parsedInstant(session, ["endsAt", "ends_at"]);
+      if (!UUID_PATTERN.test(courtId) || !startsAt || !endsAt || endsAt <= startsAt) {
+        return null;
+      }
+      const bookingDateCandidate = value(session, ["bookingDate", "booking_date"]);
+      const bookingDate = DATE_PATTERN.test(bookingDateCandidate)
+        ? bookingDateCandidate
+        : localDateValue(startsAt);
+      const durationHours = numberValue(session, ["durationHours", "duration_hours"])
+        ?? (endsAt.getTime() - startsAt.getTime()) / 3_600_000;
+      const court = value(
+        session,
+        ["courtName", "court_name"],
+        courtLabel(courtId, courtNames),
+      );
+      return {
+        key: `${bookingId}:${courtId}:${startsAt.toISOString()}:${index}`,
+        courtId,
+        court,
+        bookingDate,
+        date: formatManilaDate(startsAt),
+        startTime: formatManilaClock(startsAt),
+        endTime: formatManilaClock(endsAt),
+        time: bookingTimeLabel(startsAt, endsAt),
+        duration: durationLabel(startsAt, endsAt),
+        durationHours: Math.max(1, durationHours),
+        startsAt: startsAt.toISOString(),
+        endsAt: endsAt.toISOString(),
+        amount: Math.max(0, numberValue(session, ["subtotalAmount", "subtotal_amount"]) ?? 0),
+      } satisfies BookingSession;
+    })
+    .filter((session): session is BookingSession => session !== null)
+    .sort((left, right) =>
+      left.startsAt.localeCompare(right.startsAt) || left.court.localeCompare(right.court)
+    );
+}
+
 function liveStatus(
   row: JsonObject,
   payment: BookingPaymentStatus,
@@ -3556,6 +3649,9 @@ function mapLiveBooking(
   const paymentEvidence = latestPaymentEvidence(row, bookingStatus, paymentStatus);
   const phone = value(row, ["customer_phone", "phone", "mobile"]);
   const email = value(row, ["customer_email", "customerEmail"]);
+  const sessions = liveBookingSessions(row, bookingId, courtNames);
+  const sessionCourts = [...new Set(sessions.map((session) => session.court))];
+  const totalCourtHours = sessions.reduce((total, session) => total + session.durationHours, 0);
   return {
     bookingId,
     bookingType,
@@ -3564,14 +3660,14 @@ function mapLiveBooking(
     customer,
     initials: initialsFor(customer),
     phone: phone || email || "Contact unavailable",
-    court: value(
-      row,
-      ["court_name", "courtName"],
-      courtLabel(courtId, courtNames),
-    ),
+    court: sessions.length > 1
+      ? `${sessionCourts.length} court${sessionCourts.length === 1 ? "" : "s"}`
+      : value(row, ["court_name", "courtName"], courtLabel(courtId, courtNames)),
     date: bookingDateLabel(row, startsAt),
     time: bookingTimeLabel(startsAt, endsAt),
-    duration: durationLabel(startsAt, endsAt),
+    duration: sessions.length > 1
+      ? `${totalCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })} court-hours`
+      : durationLabel(startsAt, endsAt),
     amount: bookingAmount(row),
     status: liveStatus(row, payment, paymentEvidence, endsAt),
     payment,
@@ -3582,6 +3678,7 @@ function mapLiveBooking(
     startTime: startsAt ? formatManilaClock(startsAt) : null,
     endTime: endsAt ? formatManilaClock(endsAt) : null,
     endsAt: endsAt?.toISOString() ?? null,
+    sessions,
     paymentEvidence,
   };
 }

@@ -1328,7 +1328,7 @@ function BookingsView({
     { all: 0, awaiting: 0, pending: 0, confirmed: 0, completed: 0, cancelled: 0 },
   );
   const filtered = bookings.filter((booking) => {
-    const matchesQuery = `${booking.customer} ${booking.id} ${booking.court}`
+    const matchesQuery = `${booking.customer} ${booking.id} ${booking.court} ${(booking.sessions ?? []).map((session) => session.court).join(" ")}`
       .toLowerCase()
       .includes(query.trim().toLowerCase());
     const matchesStatus = bookingMatchesFilter(booking, status);
@@ -1660,10 +1660,13 @@ function BookingsView({
       {filtered.length ? (
         <ol className={styles.bookingRecordList} aria-label="Booking results">
           {filtered.map((booking, index) => {
+            const bookingSessions = booking.sessions ?? [];
+            const isMultiSession = bookingSessions.length > 1;
+            const bookingCourtCount = new Set(bookingSessions.map((session) => session.courtId)).size;
             const terminal = booking.status === "completed" ||
               booking.status === "cancelled" || booking.status === "expired";
             const canCancelBooking = !terminal && booking.status !== "checked_in";
-            const canMoveBooking = !isPreview && booking.status === "confirmed" && booking.payment === "paid";
+            const canMoveBooking = !isPreview && !isMultiSession && booking.status === "confirmed" && booking.payment === "paid";
             const statusDetail = bookingStatusDetail(booking);
             return (
               <li key={booking.bookingId}>
@@ -1678,11 +1681,27 @@ function BookingsView({
 
                   <div className={styles.bookingRecordSession}>
                     <span className={styles.bookingRecordLabel}>Session</span>
-                    <strong>
-                      {booking.bookingDate ? <time dateTime={booking.bookingDate}>{booking.date}</time> : booking.date}
-                      <span aria-hidden="true"> · </span>{booking.time}
-                    </strong>
-                    <span>{booking.court} · {booking.duration}</span>
+                    {isMultiSession ? (
+                      <>
+                        <strong>{bookingCourtCount} courts · {bookingSessions.length} time ranges · {booking.duration}</strong>
+                        <div className={styles.bookingSessionList}>
+                          {bookingSessions.map((session) => (
+                            <span key={session.key}>
+                              <b>{session.court}</b>
+                              <time dateTime={`${session.bookingDate}T${session.startTime}`}>{session.date} · {session.time}</time>
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <strong>
+                          {booking.bookingDate ? <time dateTime={booking.bookingDate}>{booking.date}</time> : booking.date}
+                          <span aria-hidden="true"> · </span>{booking.time}
+                        </strong>
+                        <span>{booking.court} · {booking.duration}</span>
+                      </>
+                    )}
                   </div>
 
                   <div className={styles.bookingRecordPayment}>

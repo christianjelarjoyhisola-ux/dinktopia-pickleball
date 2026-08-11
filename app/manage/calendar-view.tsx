@@ -189,8 +189,26 @@ function rowsForDate(
   bookings: Booking[],
   blocks: CourtBlock[],
 ): CalendarDayData {
+  const expandedBookings = bookings.flatMap((booking) => {
+    if (!booking.sessions?.length) return [booking];
+    return booking.sessions.map((session) => settleElapsedBooking({
+      ...booking,
+      bookingId: session.key,
+      courtId: session.courtId,
+      court: session.court,
+      bookingDate: session.bookingDate,
+      date: session.date,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      time: session.time,
+      duration: session.duration,
+      amount: session.amount,
+      endsAt: session.endsAt,
+      sessions: [],
+    }));
+  });
   return {
-    bookings: bookings.filter(
+    bookings: expandedBookings.filter(
       (booking) =>
         booking.bookingDate === date &&
         !TERMINAL_HIDDEN_STATUSES.has(booking.status),
