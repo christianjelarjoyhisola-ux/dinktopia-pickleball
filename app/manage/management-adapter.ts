@@ -98,6 +98,7 @@ export type Booking = {
   bookingDate: string | null;
   startTime: string | null;
   endTime?: string | null;
+  endsAt?: string | null;
   paymentEvidence?: PaymentEvidence | null;
 };
 
@@ -3281,12 +3282,19 @@ function liveStatus(
   row: JsonObject,
   payment: BookingPaymentStatus,
   paymentEvidence: PaymentEvidence | null,
+  endsAt: Date | null,
 ): BookingStatus {
   const status = value(row, ["status"]).toLowerCase();
   if (status === "cancelled") return "cancelled";
   if (status === "expired") return "expired";
   if (status === "completed") return "completed";
-  if (value(row, ["checked_in_at"])) return "checked_in";
+  if (
+    (status === "confirmed" || status === "checked_in") &&
+    endsAt && endsAt.getTime() <= Date.now()
+  ) {
+    return "completed";
+  }
+  if (status === "checked_in" || value(row, ["checked_in_at"])) return "checked_in";
   if (status === "confirmed") return "confirmed";
 
   if (status === "pending_payment" || status === "payment_review") {
@@ -3316,6 +3324,19 @@ function liveStatus(
     return "payment_attention";
   }
   throw new Error("LIVE_BOOKING_STATUS_INVALID");
+}
+
+export function settleElapsedBooking(
+  booking: Booking,
+  now = Date.now(),
+): Booking {
+  if (booking.status !== "confirmed" && booking.status !== "checked_in") {
+    return booking;
+  }
+  const endsAt = booking.endsAt ? Date.parse(booking.endsAt) : Number.NaN;
+  return Number.isFinite(endsAt) && endsAt <= now
+    ? { ...booking, status: "completed" }
+    : booking;
 }
 
 function initialsFor(name: string): string {
@@ -3552,7 +3573,7 @@ function mapLiveBooking(
     time: bookingTimeLabel(startsAt, endsAt),
     duration: durationLabel(startsAt, endsAt),
     amount: bookingAmount(row),
-    status: liveStatus(row, payment, paymentEvidence),
+    status: liveStatus(row, payment, paymentEvidence, endsAt),
     payment,
     courtId,
     bookingDate: DATE_PATTERN.test(value(row, ["local_booking_date"]))
@@ -3560,6 +3581,7 @@ function mapLiveBooking(
       : null,
     startTime: startsAt ? formatManilaClock(startsAt) : null,
     endTime: endsAt ? formatManilaClock(endsAt) : null,
+    endsAt: endsAt?.toISOString() ?? null,
     paymentEvidence,
   };
 }
@@ -3874,7 +3896,7 @@ function deriveLiveCustomers(
       nextBookingAt: null,
       latestNameAt: nameTimestamp,
     };
-    const status = value(row, ["status"]);
+    const status = booking.status;
     const paymentStatus = value(row, ["payment_status"]);
     const terminalCancelled = status === "cancelled" || status === "expired";
 

@@ -43,6 +43,7 @@ import {
   formatPeso,
   isAllowedCustomerQrUrl,
   managementAdapter,
+  settleElapsedBooking,
   type Booking,
   type BookingPaymentStatus,
   type BookingStatus,
@@ -3715,6 +3716,25 @@ export default function ManagePage() {
     setInsightsRevision((revision) => revision + 1);
   }, []);
 
+  useEffect(() => {
+    const settleElapsed = () => {
+      const now = Date.now();
+      setSnapshot((current) => {
+        if (!current || current.tenant.mode !== "live") return current;
+        let changed = false;
+        const bookings = current.bookings.map((booking) => {
+          const settled = settleElapsedBooking(booking, now);
+          if (settled !== booking) changed = true;
+          return settled;
+        });
+        return changed ? { ...current, bookings } : current;
+      });
+    };
+    settleElapsed();
+    const interval = window.setInterval(settleElapsed, 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const publishRecommendedOffer = useCallback(async (
     input: Parameters<typeof managementAdapter.createPromotion>[1],
   ) => {
@@ -3820,12 +3840,13 @@ export default function ManagePage() {
   useEffect(() => {
     if (
       isPreview || !snapshot || authRequired || confirmAction || confirmPending || refreshPending ||
-      (view !== "overview" && view !== "bookings")
+      (view !== "overview" && view !== "bookings" && view !== "customers")
     ) return;
 
     const refreshIfVisible = () => {
       if (document.visibilityState === "visible") void refreshWorkspace(false);
     };
+    refreshIfVisible();
     const interval = window.setInterval(refreshIfVisible, 20_000);
     window.addEventListener("focus", refreshIfVisible);
     document.addEventListener("visibilitychange", refreshIfVisible);

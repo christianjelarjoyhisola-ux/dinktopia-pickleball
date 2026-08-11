@@ -11,7 +11,12 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import type { Booking, Court, CourtBlock } from "./management-adapter";
+import {
+  settleElapsedBooking,
+  type Booking,
+  type Court,
+  type CourtBlock,
+} from "./management-adapter";
 import styles from "./calendar-view.module.css";
 
 export type CalendarDayData = {
@@ -410,6 +415,24 @@ export function CalendarView({
   }, [loadDay]);
 
   useEffect(() => {
+    const settleElapsed = () => {
+      const now = Date.now();
+      setDayData((current) => {
+        let changed = false;
+        const bookings = current.bookings.map((booking) => {
+          const settled = settleElapsedBooking(booking, now);
+          if (settled !== booking) changed = true;
+          return settled;
+        });
+        return changed ? { ...current, bookings } : current;
+      });
+    };
+    settleElapsed();
+    const interval = window.setInterval(settleElapsed, 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
     if (!window.matchMedia("(max-width: 760px)").matches) return;
     const frame = window.requestAnimationFrame(() => setViewMode("agenda"));
     return () => window.cancelAnimationFrame(frame);
@@ -470,6 +493,10 @@ export function CalendarView({
   );
   const holdCount = visibleBookings.filter((booking) => HOLD_STATUSES.has(booking.status)).length;
   const bookingCount = visibleBookings.length - holdCount;
+  const completedCount = visibleBookings.filter((booking) => booking.status === "completed").length;
+  const confirmedCount = visibleBookings.filter(
+    (booking) => booking.status === "confirmed" || booking.status === "checked_in",
+  ).length;
   const visibleCourtCount = Math.max(
     effectiveCourtFilter === "all" ? courts.length : selectedCourt ? 1 : 0,
     1,
@@ -695,7 +722,7 @@ export function CalendarView({
             <div className={styles.boardFooter}><span><Clock3 aria-hidden="true" size={14} /> {timezone}</span><p role="status" aria-live="polite">{resultCount} {resultCount === 1 ? "schedule entry" : "schedule entries"}</p></div>
           </section>
           <section className={styles.scheduleSummary} aria-label="Schedule totals">
-            <article><span>Booked court hours</span><strong>{(bookedMinutes / 60).toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{bookingCount} confirmed booking{bookingCount === 1 ? "" : "s"}</small></article>
+            <article><span>Booked court hours</span><strong>{(bookedMinutes / 60).toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{completedCount} completed · {confirmedCount} confirmed</small></article>
             <article><span>Paid booking value</span><strong>{amountLabel(paidRevenue, currency)}</strong><small>Server-returned paid bookings</small></article>
             <article><span>Open inventory</span><strong>{openCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{blockedCourtHours ? `After ${blockedCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })} blocked court-hours` : "No court blocks today"}</small></article>
             <button type="button" onClick={onOpenBlocks} disabled={!canBlock}><span><Ban aria-hidden="true" size={17} /></span><strong>Block court time</strong><small>Take a court out of inventory</small></button>
