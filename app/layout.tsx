@@ -38,7 +38,7 @@ function safeRequestOrigin(requestHeaders: Headers): string {
 
 export async function generateMetadata(): Promise<Metadata> {
   const origin = safeRequestOrigin(await headers());
-  const socialImage = new URL("/og.png", origin).toString();
+  const socialImage = new URL("/og-premium.png", origin).toString();
   return {
     metadataBase: new URL(origin),
     title: { default: title, template: "%s · Dinktopia Pickleball" },
@@ -52,7 +52,7 @@ export async function generateMetadata(): Promise<Metadata> {
       siteName: "Dinktopia Pickleball",
       title,
       description,
-      images: [{ url: socialImage, width: 1727, height: 911, alt: "Dinktopia — Your next rally starts here." }],
+      images: [{ url: socialImage, width: 1536, height: 1024, alt: "Dinktopia — Your next rally starts here." }],
     },
     twitter: {
       card: "summary_large_image",

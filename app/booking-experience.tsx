@@ -184,7 +184,6 @@ const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => 
   color: index % 2 === 0 ? "blue" : "coral",
 }));
 
-const tickerPhrases = ["PLAY MORE", "RALLY OFTEN", "STAY FOCUSED", "NEW HABIT"] as const;
 
 function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
   return publicCourts.map((court, index) => ({
@@ -2473,9 +2472,10 @@ export function BookingExperience({
               <span>01</span><span>02</span><span>+</span>
             </div>
             <div>
-              <p className="eyebrow eyebrow-dark">Gallery ready</p>
-              <h3>Court photos are coming soon.</h3>
-              <p>Fresh court photos will appear here after the Dinktopia team publishes them.</p>
+              <p className="eyebrow eyebrow-dark">Venue gallery</p>
+              <h3>A closer look is coming soon.</h3>
+              <p>Verified court photos will appear here as soon as the Dinktopia team publishes them.</p>
+              <Link className="gallery-empty-link" href="/courts">Explore available courts <span aria-hidden="true">→</span></Link>
             </div>
           </div>
         )}
@@ -2484,7 +2484,7 @@ export function BookingExperience({
   );
 
   return (
-    <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}>
+    <div className={`dinktopia-site${isHome ? " home-route" : ""}${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}>
       {isBookingPage ? (
         <div className="preview-ribbon" role="status">
           <strong>{isLive ? "Live booking" : "Setup preview"}</strong>
@@ -2599,14 +2599,14 @@ export function BookingExperience({
         {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
-              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>Welcome to your next favorite habit</span></p>
+              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>Dinktopia Court Hub · Live booking</span></p>
               <h1>
                 Your next rally
                 <span>starts here.</span>
               </h1>
               <p className="hero-lede">
-                Good games should be easy to find. Pick your court, lock in an hour,
-                and meet your crew on the bright side of the net.
+                Choose an available court, reserve the exact hours you need, and
+                keep the whole booking in one clear place.
               </p>
               <div className="hero-actions">
                 <Link className="button button-lime button-large" href="/book">
@@ -2617,9 +2617,9 @@ export function BookingExperience({
                 </a>
               </div>
               <ul className="hero-proof" aria-label="Booking highlights">
-                <li><strong>{displayCourts.length}</strong><span>{isLive ? "bookable courts" : "preview courts"}</span></li>
-                <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>per court-hour</span></li>
-                <li><strong>24/7</strong><span>live availability</span></li>
+                <li><strong>{displayCourts.length}</strong><span>{isLive ? "courts online" : "courts in preview"}</span></li>
+                <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>transparent hourly rates</span></li>
+                <li><strong>Live</strong><span>availability from the venue</span></li>
               </ul>
             </div>
 
@@ -2636,43 +2636,19 @@ export function BookingExperience({
                 <span className="court-label court-label-one">DINK</span>
                 <span className="court-label court-label-two">TOPIA</span>
               </div>
-              <div className="score-card">
-                <div><span>COURT</span><strong>01</strong></div>
-                <div><span>NEXT OPEN</span><strong>07:00</strong></div>
-                <span className="score-live"><i aria-hidden="true" /> LIVE</span>
-              </div>
-              <div className="floating-note">
-                <span className="floating-note-icon" aria-hidden="true">↗</span>
-                <p><strong>One tap closer</strong><br />to your next game</p>
+              <div className="hero-visual-note">
+                <span>Online booking</span>
+                <strong>{displayCourts.length} {displayCourts.length === 1 ? "court" : "courts"}</strong>
+                <small>{startingHourlyRate === null ? "Published rates coming soon" : `Rates from ${peso(startingHourlyRate)} per hour`}</small>
               </div>
             </div>
           </div>
-          <div className="ticker">
-            <p id={`${formId}-ticker-copy`} className="sr-only">
-              Play more. Rally often. Stay focused. New habit.
-            </p>
-            <input
-              id={`${formId}-ticker-motion`}
-              className="ticker-motion-toggle sr-only"
-              type="checkbox"
-              aria-label="Pause or resume moving club phrases"
-            />
-            <label className="ticker-viewport" htmlFor={`${formId}-ticker-motion`}>
-              <span className="ticker-track" aria-hidden="true">
-                {[0, 1].map((copy) => (
-                  <span
-                    className={`ticker-group${copy === 1 ? " ticker-group-clone" : ""}`}
-                    key={copy}
-                  >
-                    {tickerPhrases.map((phrase) => (
-                      <span key={`${copy}-${phrase}`}>
-                        <strong>{phrase}</strong><i aria-hidden="true">◆</i>
-                      </span>
-                    ))}
-                  </span>
-                ))}
-              </span>
-            </label>
+          <div className="home-benefits" aria-label="Booking benefits">
+            <div className="site-container">
+              <span><i aria-hidden="true" /> Exact court-hour selection</span>
+              <span><i aria-hidden="true" /> One checkout for multiple courts</span>
+              <span><i aria-hidden="true" /> Venue-managed GCash details</span>
+            </div>
           </div>
         </section>}
 
@@ -2766,14 +2742,14 @@ export function BookingExperience({
         {isHome && <section className="how-section section-pad" id="how-it-works">
           <div className="site-container how-grid">
             <div className="how-intro">
-              <p className="eyebrow">No back-and-forth</p>
-              <h2>From “game?” to booked.</h2>
-              <p>Everything you need, nothing that slows down the rally.</p>
+              <p className="eyebrow">A clearer way to book</p>
+              <h2>From “game?” to confirmed.</h2>
+              <p>Live availability, exact pricing, and a simple reservation flow from one trusted venue.</p>
             </div>
             <ol className="how-list">
-              <li><span>01</span><div><h3>Build your court plan</h3><p>See every active court and select exact court-hours.</p></div></li>
-              <li><span>02</span><div><h3>Bring your crew</h3><p>Book one to three whole hours, up to 30 days ahead.</p></div></li>
-              <li><span>03</span><div><h3>Pay, then play</h3><p>Send your GCash receipt and get a booking reference.</p></div></li>
+              <li><span>01</span><div><h3>Choose your courts</h3><p>Compare the live schedule and select every court-hour you need.</p></div></li>
+              <li><span>02</span><div><h3>Review one reservation</h3><p>See all courts, times, player details, and the exact total before continuing.</p></div></li>
+              <li><span>03</span><div><h3>Pay the venue directly</h3><p>Use the owner’s verified GCash details and submit your receipt securely.</p></div></li>
             </ol>
           </div>
         </section>}
@@ -3391,9 +3367,14 @@ export function BookingExperience({
 
         {isHome && <section className="club-note">
           <div className="site-container club-note-inner">
-            <p className="eyebrow">Welcome to your next favorite habit</p>
-            <h2>Serious court.<br /><span>Playful spirit.</span></h2>
-            <Link className="button button-lime button-large" href="/book">Book a court <span aria-hidden="true">→</span></Link>
+            <div>
+              <p className="eyebrow">Your next rally is waiting</p>
+              <h2>Reserve with confidence.<br /><span>Arrive ready to play.</span></h2>
+            </div>
+            <div className="club-note-actions">
+              <p>Live venue availability, clear pricing, and one booking reference.</p>
+              <Link className="button button-lime button-large" href="/book">Book a court <span aria-hidden="true">→</span></Link>
+            </div>
           </div>
         </section>}
       </main>
@@ -3403,7 +3384,7 @@ export function BookingExperience({
           <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" unoptimized /></Link><p>Good games live here.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
-          <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
+          <div><h2>Booking status</h2><p>{isLive ? <>Live venue connection.<br />Availability and payments connected.</> : <>Setup preview.<br />No live reservations are created.</>}</p></div>
         </div>
         <div className="site-container footer-bottom"><span>© 2026 Dinktopia Pickleball Club</span><span>Made for longer rallies.</span></div>
       </footer>
