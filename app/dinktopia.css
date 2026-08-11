@@ -6916,4 +6916,5 @@
   }
   .home-route .hero-location-action > svg { width: 16px; height: 16px; }
   .home-route .hero-actions { margin-top: 20px; }
+  .home-route .hero-actions .text-link { position: relative; top: -9px; }
 }
