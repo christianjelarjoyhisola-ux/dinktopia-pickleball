@@ -6878,7 +6878,7 @@
 }
 
 @media (max-width: 430px) {
-  .home-route .hero-grid { padding-bottom: 24px; }
+  .home-route .hero-grid { padding-bottom: 36px; }
   .home-route .hero-copy h1 {
     max-width: 410px;
     font-size: clamp(2.75rem, 13.4vw, 3.6rem);
@@ -6892,7 +6892,12 @@
     position: relative;
     top: 36px;
   }
-  .home-route .hero-proof { position: relative; top: 12px; }
+  .home-route .hero-proof { position: relative; top: 24px; }
+  .home-route .hero-proof li:last-child strong {
+    white-space: nowrap;
+    font-size: 0.8rem;
+    letter-spacing: -0.025em;
+  }
   .home-route .hero-location {
     min-height: 66px;
     grid-template-columns: 38px minmax(0, 1fr) auto;
