@@ -242,7 +242,8 @@ as $$
 declare
   v_tenant_id uuid;
   v_membership_role text;
-  v_promotion public.tenant_promotions%rowtype;
+  v_promotion_id uuid;
+  v_promotion_name text;
   v_weekdays smallint[];
 begin
   if auth.uid() is null or auth.role() is distinct from 'authenticated' then
@@ -426,14 +427,16 @@ begin
       from public.courts court
       where court.tenant_id = v_tenant_id and court.id = v_slot.court_id;
 
-      v_promotion := null;
+      v_promotion_id := null;
+      v_promotion_name := null;
       v_slot_discount := 0;
-      select promotion,
+      select promotion.id,
+        promotion.name,
         round(least(v_slot_base, case promotion.discount_type
           when 'percentage' then v_slot_base * promotion.discount_value / 100
           else promotion.discount_value
         end), 2)
-      into v_promotion, v_slot_discount
+      into v_promotion_id, v_promotion_name, v_slot_discount
       from public.tenant_promotions promotion
       join public.tenant_promotion_courts scope
         on scope.tenant_id = promotion.tenant_id and scope.promotion_id = promotion.id
@@ -449,15 +452,15 @@ begin
             or (v_slot.starts_at at time zone v_timezone)::time < promotion.ends_at
         end
         and (promotion.max_redemptions is null or promotion.redemption_count < promotion.max_redemptions)
-      order by 2 desc, promotion.created_at
+      order by 3 desc, promotion.created_at
       limit 1
       for update of promotion;
 
-      if v_promotion.id is not null and v_slot_discount > 0 then
+      if v_promotion_id is not null and v_slot_discount > 0 then
         v_discount := v_discount + v_slot_discount;
         v_applications := v_applications || jsonb_build_array(jsonb_build_object(
-          'promotionId', v_promotion.id,
-          'name', v_promotion.name,
+          'promotionId', v_promotion_id,
+          'name', v_promotion_name,
           'courtId', v_slot.court_id,
           'startsAt', v_slot.starts_at,
           'baseAmount', v_slot_base,
