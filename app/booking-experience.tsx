@@ -3388,7 +3388,7 @@ export function BookingExperience({
             </div>
             <nav className="community-links" aria-label="Dinktopia community channels">
               <a className="community-card community-card-featured" href="https://reclub.co/clubs/@dinktopia-5f6utc" target="_blank" rel="noopener noreferrer" aria-label="Join Dinktopia on Reclub (opens in a new tab)">
-                <span className="community-mark community-mark-reclub" aria-hidden="true"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7d/8b/99/7d8b99e0-36d8-44ac-546d-b823d5b91eac/reclub-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg" alt="" /></span>
+                <span className="community-mark community-mark-reclub" aria-hidden="true"><Image src="/reclub-logo.png" alt="" width={1024} height={1024} sizes="42px" /></span>
                 <span className="community-card-copy"><small>Play &amp; connect</small><strong>Reclub</strong><span>Join games &amp; community</span></span>
                 <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
               </a>
