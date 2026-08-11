@@ -6400,3 +6400,155 @@
   .home-route .hero-proof li { min-height: 45px; justify-content: center; }
   .home-route .hero-proof li + li { border-top: 1px solid rgba(255, 255, 255, 0.1); border-left: 0; padding-top: 10px; padding-left: 0; }
 }
+
+.home-route .nav-admin-link {
+  color: var(--home-forest) !important;
+  font-weight: 700 !important;
+}
+.home-route .footer-admin-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 40px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #a4ef72 !important;
+  font-weight: 700;
+}
+
+@media (min-width: 1180px) {
+  .home-route .nav-admin-link {
+    min-height: 32px !important;
+    border-left: 1px solid rgba(16, 42, 67, 0.14) !important;
+    padding-left: 22px !important;
+  }
+}
+
+/* Phone composition: shorter, clearer and touch-first. */
+@media (max-width: 779.98px) {
+  .home-route .header-inner > .wordmark { width: 132px; }
+  .home-route .menu-button { gap: 0; border-radius: 10px; }
+  .home-route .menu-button > span:last-child { display: none; }
+  .home-route .primary-nav,
+  .home-route .primary-nav.is-open {
+    top: calc(100% + 8px);
+    max-height: calc(100dvh - 88px);
+    overflow-y: auto;
+    border-color: rgba(16, 42, 67, 0.11);
+    background: rgba(255, 254, 250, 0.99);
+    padding: 10px;
+    box-shadow: 0 24px 70px rgba(11, 29, 45, 0.2);
+  }
+  .home-route .primary-nav > a:not(.button),
+  .home-route .primary-nav > .nav-text-button {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    border-radius: 11px;
+    padding: 11px 13px;
+    font-size: 0.875rem;
+  }
+  .home-route .primary-nav > .nav-admin-link {
+    justify-content: space-between;
+    background: #edf3f0;
+    color: var(--home-forest) !important;
+  }
+  .home-route .primary-nav > .nav-admin-link::after {
+    color: #16845b;
+    content: "→";
+  }
+  .home-route .primary-nav > .button-small {
+    min-height: 48px;
+    margin-top: 4px;
+    font-size: 0.875rem;
+  }
+  .home-route .hero-grid { padding-top: 98px; padding-bottom: 42px; }
+  .home-route .hero-eyebrow { margin-bottom: 15px; font-size: 0.68rem; }
+  .home-route .hero-copy h1 {
+    max-width: 380px;
+    font-size: clamp(2.45rem, 11.5vw, 3.2rem);
+    line-height: 1.02;
+  }
+  .home-route .hero-lede { margin-top: 18px; font-size: 0.875rem; line-height: 1.65; }
+  .home-route .hero-actions { gap: 10px; margin-top: 24px; }
+  .home-route .hero-actions .button-large { min-height: 48px; }
+  .home-route .hero-actions .text-link { min-height: 42px; font-size: 0.78rem; }
+  .home-route .hero-proof {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 28px;
+    padding-top: 17px;
+  }
+  .home-route .hero-proof li { min-height: 0; justify-content: flex-start; gap: 4px; padding: 0 8px; }
+  .home-route .hero-proof li:first-child { padding-left: 0; }
+  .home-route .hero-proof li + li {
+    border-top: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.11);
+    padding-top: 0;
+    padding-left: 12px;
+  }
+  .home-route .hero-proof strong { font-size: 0.92rem; }
+  .home-route .hero-proof span { font-size: 0.625rem; line-height: 1.35; }
+  .home-route .home-benefits { overflow: hidden; }
+  .home-route .home-benefits > div {
+    display: flex;
+    min-height: 52px;
+    gap: 8px;
+    overflow-x: auto;
+    padding-block: 8px;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .home-route .home-benefits > div::-webkit-scrollbar { display: none; }
+  .home-route .home-benefits span {
+    min-height: 36px;
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    scroll-snap-align: start;
+    border: 1px solid rgba(255, 255, 255, 0.09) !important;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.035);
+    padding: 0 13px;
+    font-size: 0.69rem;
+    white-space: nowrap;
+  }
+  .home-route .club-gallery.section-pad { padding-block: 54px; }
+  .home-route .gallery-heading { gap: 8px; margin-bottom: 18px; }
+  .home-route .gallery-heading h2 { font-size: clamp(1.85rem, 8.7vw, 2.3rem); }
+  .home-route .gallery-heading > p { font-size: 0.75rem; }
+  .home-route .gallery-empty { gap: 20px; border-radius: 19px; padding: 10px 10px 24px; }
+  .home-route .gallery-empty-frames { min-height: 145px; border-radius: 14px; }
+  .home-route .gallery-empty-frames::before { inset: 14px; }
+  .home-route .gallery-empty-frames::after { right: 14px; left: 14px; }
+  .home-route .gallery-empty h3 { font-size: 1.35rem; }
+  .home-route .gallery-empty > div:last-child > p:last-of-type { font-size: 0.8rem; line-height: 1.55; }
+  .home-route .gallery-empty-link { margin-top: 12px; }
+  .home-route .how-section.section-pad { padding-bottom: 54px; }
+  .home-route .how-grid { gap: 24px; border-radius: 19px; padding: 28px 20px; }
+  .home-route .how-intro h2 { max-width: 300px; font-size: 1.9rem; }
+  .home-route .how-intro > p:last-child { margin-top: 12px; font-size: 0.8rem; }
+  .home-route .how-list li { grid-template-columns: 36px 1fr; gap: 12px; padding: 17px 0; }
+  .home-route .how-list > li > span { width: 30px; height: 30px; }
+  .home-route .how-list h3 { font-size: 0.94rem; }
+  .home-route .how-list p { font-size: 0.75rem; }
+  .home-route .club-note { padding-bottom: 54px; }
+  .home-route .club-note-inner { gap: 22px; border-radius: 19px; padding: 28px 20px; }
+  .home-route .club-note h2 { font-size: 1.9rem; }
+  .home-route .club-note-actions { gap: 16px; }
+  .home-route .club-note-actions p { font-size: 0.8rem; }
+  .home-route .club-note-actions .button { width: 100%; }
+  .home-route .site-footer { padding-top: 40px; }
+  .home-route .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 18px; }
+  .home-route .footer-grid > div:first-child { grid-column: 1 / -1; }
+  .home-route .footer-grid > div:last-child { grid-column: 1 / -1; }
+  .home-route .footer-grid a,
+  .home-route .footer-grid button,
+  .home-route .footer-grid p { font-size: 0.75rem; }
+  .home-route .footer-bottom { margin-top: 24px; font-size: 0.69rem; }
+}
+
+@media (max-width: 360px) {
+  .home-route .site-container { width: calc(100% - 22px); }
+  .home-route .hero-proof strong { font-size: 0.84rem; }
+  .home-route .hero-proof span { font-size: 0.58rem; }
+}

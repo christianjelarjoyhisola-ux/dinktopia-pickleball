@@ -2588,6 +2588,9 @@ export function BookingExperience({
             >
               Manage booking
             </Link>
+            <Link className="nav-admin-link" href="/manage" onClick={() => setMobileNavOpen(false)}>
+              Admin login
+            </Link>
             <Link className="button button-small button-lime" href="/book" onClick={() => setMobileNavOpen(false)}>
               Book a court <span aria-hidden="true">↗</span>
             </Link>
@@ -3384,7 +3387,7 @@ export function BookingExperience({
           <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" unoptimized /></Link><p>Good games live here.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
-          <div><h2>Booking status</h2><p>{isLive ? <>Live venue connection.<br />Availability and payments connected.</> : <>Setup preview.<br />No live reservations are created.</>}</p></div>
+          <div><h2>Venue access</h2><p>{isLive ? <>Live venue connection.<br />Availability and payments connected.</> : <>Setup preview.<br />No live reservations are created.</>}</p><Link className="footer-admin-link" href="/manage">Admin login <span aria-hidden="true">→</span></Link></div>
         </div>
         <div className="site-container footer-bottom"><span>© 2026 Dinktopia Pickleball Club</span><span>Made for longer rallies.</span></div>
       </footer>
