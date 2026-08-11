@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import {
+  ArrowUpRight,
   CalendarDays,
   Check,
   Clock3,
@@ -3378,15 +3379,34 @@ export function BookingExperience({
         </section>}
 
         {isHome && <section className="club-note">
-          <div className="site-container club-note-inner">
-            <div>
-              <p className="eyebrow">Your next rally is waiting</p>
-              <h2>Reserve with confidence.<br /><span>Arrive ready to play.</span></h2>
+          <div className="site-container club-note-inner community-hub">
+            <div className="community-intro">
+              <p className="eyebrow">Stay in the rally</p>
+              <h2>Follow the game<br /><span>beyond the court.</span></h2>
+              <p>Get match updates, community highlights, events, and everything happening at Dinktopia.</p>
             </div>
-            <div className="club-note-actions">
-              <p>Live venue availability, clear pricing, and one booking reference.</p>
-              <Link className="button button-lime button-large" href="/book">Book a court <span aria-hidden="true">→</span></Link>
-            </div>
+            <nav className="community-links" aria-label="Dinktopia community channels">
+              <a className="community-card community-card-featured" href="https://reclub.co/clubs/@dinktopia-5f6utc" target="_blank" rel="noopener noreferrer" aria-label="Join Dinktopia on Reclub (opens in a new tab)">
+                <span className="community-mark" aria-hidden="true">R</span>
+                <span className="community-card-copy"><small>Play &amp; connect</small><strong>Reclub</strong><span>Join games &amp; community</span></span>
+                <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
+              </a>
+              <a className="community-card" href="https://www.instagram.com/dinktopiacourthub/" target="_blank" rel="noopener noreferrer" aria-label="Visit Dinktopia on Instagram (opens in a new tab)">
+                <span className="community-mark" aria-hidden="true">IG</span>
+                <span className="community-card-copy"><strong>Instagram</strong><span>See court highlights</span></span>
+                <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
+              </a>
+              <a className="community-card" href="https://www.facebook.com/dinktopia/" target="_blank" rel="noopener noreferrer" aria-label="Visit Dinktopia on Facebook (opens in a new tab)">
+                <span className="community-mark" aria-hidden="true">f</span>
+                <span className="community-card-copy"><strong>Facebook</strong><span>News &amp; announcements</span></span>
+                <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
+              </a>
+              <a className="community-card" href="https://www.tiktok.com/@dinktopiacourthub" target="_blank" rel="noopener noreferrer" aria-label="Visit Dinktopia on TikTok (opens in a new tab)">
+                <span className="community-mark" aria-hidden="true">TT</span>
+                <span className="community-card-copy"><strong>TikTok</strong><span>Watch the latest rallies</span></span>
+                <ArrowUpRight aria-hidden="true" size={18} strokeWidth={1.8} />
+              </a>
+            </nav>
           </div>
         </section>}
       </main>

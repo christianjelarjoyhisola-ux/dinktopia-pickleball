@@ -6346,9 +6346,9 @@
 .home-route .club-note::after { display: none; }
 .home-route .club-note-inner {
   display: grid;
-  grid-template-columns: 1.25fr 0.75fr;
-  align-items: end;
-  gap: 48px;
+  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
+  align-items: center;
+  gap: clamp(42px, 5vw, 76px);
   overflow: hidden;
   border-radius: 28px;
   background:
@@ -6358,11 +6358,90 @@
   box-shadow: var(--home-shadow);
 }
 .home-route .club-note .eyebrow { color: var(--home-accent-soft); }
-.home-route .club-note h2 { max-width: 680px; font-size: clamp(2.15rem, 3.3vw, 3.15rem); }
+.home-route .club-note h2 { max-width: 620px; font-size: clamp(2.15rem, 3.3vw, 3.15rem); line-height: 1.03; }
 .home-route .club-note h2 span { color: var(--home-accent-soft); }
-.home-route .club-note-actions { display: grid; justify-items: start; gap: 22px; }
-.home-route .club-note-actions p { max-width: 370px; color: rgba(255, 255, 255, 0.64); font-size: 0.875rem; line-height: 1.6; }
-.home-route .club-note .button { margin-top: 0; }
+.home-route .community-intro > p:last-child {
+  max-width: 420px;
+  margin-top: 22px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.9rem;
+  line-height: 1.65;
+}
+.home-route .community-links {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.home-route .community-card {
+  display: grid;
+  min-height: 102px;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 17px;
+  background: rgba(255, 255, 255, 0.055);
+  padding: 15px;
+  color: #fffefa;
+  text-decoration: none;
+  transition: transform 180ms ease, border-color 180ms ease, background 180ms ease, box-shadow 180ms ease;
+}
+.home-route .community-card:hover {
+  transform: translateY(-3px);
+  border-color: rgba(151, 196, 95, 0.48);
+  background: rgba(255, 255, 255, 0.085);
+  box-shadow: 0 16px 28px rgba(2, 11, 22, 0.18);
+}
+.home-route .community-card:focus-visible {
+  outline: 3px solid rgba(151, 196, 95, 0.72);
+  outline-offset: 3px;
+}
+.home-route .community-card > svg {
+  color: rgba(255, 255, 255, 0.55);
+  transition: color 180ms ease, transform 180ms ease;
+}
+.home-route .community-card:hover > svg { color: var(--home-accent-soft); transform: translate(2px, -2px); }
+.home-route .community-card-featured {
+  border-color: rgba(151, 196, 95, 0.36);
+  background: linear-gradient(135deg, rgba(151, 196, 95, 0.13), rgba(255, 255, 255, 0.055));
+}
+.home-route .community-mark {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--home-accent-soft);
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.73rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.home-route .community-card-copy { display: grid; min-width: 0; gap: 4px; }
+.home-route .community-card-copy small {
+  color: var(--home-accent-soft);
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.home-route .community-card-copy strong {
+  font-family: var(--font-display), sans-serif;
+  font-size: 0.92rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.home-route .community-card-copy span {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.53);
+  font-size: 0.7rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .home-route .site-footer {
   border-top: 0;
@@ -6690,4 +6769,21 @@
     min-height: 390px;
     opacity: 0.13;
   }
+}
+
+@media (max-width: 779.98px) {
+  .home-route .community-hub { gap: 28px; }
+  .home-route .community-intro > p:last-child { margin-top: 16px; font-size: 0.82rem; }
+  .home-route .community-card { min-height: 94px; }
+}
+
+@media (max-width: 520px) {
+  .home-route .community-links { grid-template-columns: 1fr; gap: 10px; }
+  .home-route .community-card {
+    min-height: 82px;
+    border-radius: 14px;
+    padding: 13px 14px;
+  }
+  .home-route .community-card-copy strong { font-size: 0.9rem; }
+  .home-route .community-card-copy span { font-size: 0.69rem; }
 }
