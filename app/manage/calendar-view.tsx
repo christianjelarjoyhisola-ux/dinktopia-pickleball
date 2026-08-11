@@ -6,9 +6,11 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock3,
+  LayoutGrid,
+  List,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { Booking, Court, CourtBlock } from "./management-adapter";
 import styles from "./calendar-view.module.css";
 
@@ -132,6 +134,33 @@ function minutesFromDisplayTime(value: string): number {
   let hour = Number(match[1]) % 12;
   if (match[3].toUpperCase() === "PM") hour += 12;
   return hour * 60 + Number(match[2]);
+}
+
+function durationMinutes(value: string): number {
+  const hours = Number(/(\d+(?:\.\d+)?)\s*(?:h|hr|hour)/i.exec(value)?.[1] ?? 0);
+  const minutes = Number(/(\d+)\s*(?:m|min|minute)/i.exec(value)?.[1] ?? 0);
+  const total = Math.round(hours * 60 + minutes);
+  return total > 0 ? total : 60;
+}
+
+function displayTimeRange(value: string): { start: number; end: number } | null {
+  if (value === "All day") return null;
+  const matches = [...value.matchAll(/(\d{1,2}):(\d{2})\s*(AM|PM)/gi)];
+  if (!matches.length) return null;
+  const toMinutes = (match: RegExpMatchArray) => {
+    let hour = Number(match[1]) % 12;
+    if (match[3].toUpperCase() === "PM") hour += 12;
+    return hour * 60 + Number(match[2]);
+  };
+  const start = toMinutes(matches[0]);
+  return { start, end: matches[1] ? toMinutes(matches[1]) : start + 60 };
+}
+
+function shortTime(minutes: number): string {
+  const hour = Math.floor(minutes / 60) % 24;
+  const minute = minutes % 60;
+  const labelHour = hour % 12 || 12;
+  return `${labelHour}${minute ? `:${String(minute).padStart(2, "0")}` : ""} ${hour < 12 ? "AM" : "PM"}`;
 }
 
 function amountLabel(amount: number, currency: string): string {
@@ -377,6 +406,7 @@ export function CalendarView({
   const [phase, setPhase] = useState<LoadPhase>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
+  const [viewMode, setViewMode] = useState<"courts" | "agenda">("courts");
   const loadDayRef = useRef(loadDay);
   const requestSequence = useRef(0);
 
@@ -452,6 +482,36 @@ export function CalendarView({
     month: "short",
     day: "numeric",
   });
+  const timeline = useMemo(() => {
+    const courtOpenings = courts.map((court) => minutesFromClock(court.opensAt)).filter(Number.isFinite).filter((value) => value < Number.MAX_SAFE_INTEGER);
+    const courtClosings = courts.map((court) => minutesFromClock(court.closesAt)).filter(Number.isFinite).filter((value) => value < Number.MAX_SAFE_INTEGER);
+    const entryStarts = groups.flatMap((group) => group.entries.map((entry) => entry.startMinutes)).filter((value) => value >= 0 && value < Number.MAX_SAFE_INTEGER);
+    const entryEnds = groups.flatMap((group) => group.entries.map((entry) => entry.kind === "booking"
+      ? entry.startMinutes + durationMinutes(entry.booking.duration)
+      : displayTimeRange(entry.block.time)?.end ?? entry.startMinutes + 60));
+    const start = Math.floor(Math.min(8 * 60, ...courtOpenings, ...entryStarts) / 30) * 30;
+    const end = Math.ceil(Math.max(22 * 60, ...courtClosings, ...entryEnds) / 30) * 30;
+    const slotCount = Math.max(2, (end - start) / 30);
+    const hours = Array.from({ length: Math.ceil((end - start) / 60) }, (_, index) => start + index * 60);
+    return { start, end, slotCount, hours };
+  }, [courts, groups]);
+  const bookedMinutes = visibleBookings.reduce((sum, booking) => sum + durationMinutes(booking.duration), 0);
+  const paidRevenue = visibleBookings.filter((booking) => booking.payment === "paid").reduce((sum, booking) => sum + booking.amount, 0);
+  const totalInventoryMinutes = Math.max(0, timeline.end - timeline.start) * Math.max(groups.filter((group) => !group.global).length, 1);
+  const openCourtHours = Math.max(0, (totalInventoryMinutes - bookedMinutes) / 60);
+
+  const timelineEntryStyle = (entry: AgendaEntry): CSSProperties => {
+    const rawStart = entry.kind === "block" ? displayTimeRange(entry.block.time)?.start ?? timeline.start : entry.startMinutes;
+    const rawEnd = entry.kind === "block"
+      ? displayTimeRange(entry.block.time)?.end ?? timeline.end
+      : rawStart + durationMinutes(entry.booking.duration);
+    const start = Math.max(timeline.start, Math.min(rawStart, timeline.end - 30));
+    const end = Math.max(start + 30, Math.min(rawEnd, timeline.end));
+    return {
+      "--slot": Math.floor((start - timeline.start) / 30) + 2,
+      "--span": Math.max(1, Math.ceil((end - start) / 30)),
+    } as CSSProperties;
+  };
 
   const moveDate = (days: number) => {
     setPhase("loading");
@@ -475,11 +535,32 @@ export function CalendarView({
   return (
     <section className={styles.calendar} aria-labelledby="calendar-view-title" aria-busy={phase === "loading"}>
       <header className={styles.calendarHeader}>
-        <div className={styles.titleRow}>
-          <div className={styles.titleBlock}>
-            <h2 id="calendar-view-title">
-              <time dateTime={selectedDate}>{dateHeading}</time>
-            </h2>
+        <div className={styles.dateControl}>
+          <button type="button" onClick={() => moveDate(-1)} aria-label="Previous day"><ChevronLeft aria-hidden="true" size={19} /></button>
+          <label className={styles.dateLabel}>
+            <span>{selectedDate === today ? "Today" : "Selected day"}</span>
+            <strong id="calendar-view-title">{compactDate}</strong>
+            <input
+              type="date"
+              value={selectedDate}
+              aria-label="Choose schedule date"
+              onChange={(event) => {
+                if (!DATE_PATTERN.test(event.target.value)) return;
+                setPhase("loading");
+                setErrorMessage("");
+                setDayData({ bookings: [], blocks: [] });
+                setSelectedDate(event.target.value);
+              }}
+            />
+          </label>
+          <button type="button" onClick={() => moveDate(1)} aria-label="Next day"><ChevronRight aria-hidden="true" size={19} /></button>
+          {selectedDate !== today ? <button type="button" className={styles.todayButton} onClick={goToToday}>Today</button> : null}
+        </div>
+
+        <div className={styles.toolbarActions}>
+          <div className={styles.segmented} aria-label="Schedule view">
+            <button type="button" className={viewMode === "courts" ? styles.active : undefined} onClick={() => setViewMode("courts")} aria-pressed={viewMode === "courts"}><LayoutGrid aria-hidden="true" size={15} /> Courts</button>
+            <button type="button" className={viewMode === "agenda" ? styles.active : undefined} onClick={() => setViewMode("agenda")} aria-pressed={viewMode === "agenda"}><List aria-hidden="true" size={15} /> Agenda</button>
           </div>
           <button
             type="button"
@@ -489,54 +570,8 @@ export function CalendarView({
             title={canBlock ? undefined : "Your account cannot block court time"}
           >
             <Ban aria-hidden="true" size={18} />
-            Block court time
+            Court block
           </button>
-        </div>
-
-        <div className={styles.toolbar} aria-label="Calendar controls">
-          <div className={styles.dayNavigation}>
-            <button type="button" onClick={() => moveDate(-1)} aria-label="Previous day">
-              <ChevronLeft aria-hidden="true" size={20} />
-            </button>
-            <button type="button" className={styles.todayButton} onClick={goToToday}>
-              Today
-            </button>
-            <button type="button" onClick={() => moveDate(1)} aria-label="Next day">
-              <ChevronRight aria-hidden="true" size={20} />
-            </button>
-          </div>
-
-          <label className={styles.control}>
-            <span>Date</span>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => {
-                if (!DATE_PATTERN.test(event.target.value)) return;
-                setPhase("loading");
-                setErrorMessage("");
-                setDayData({ bookings: [], blocks: [] });
-                if (event.target.value === selectedDate) {
-                  setRefreshKey((key) => key + 1);
-                } else {
-                  setSelectedDate(event.target.value);
-                }
-              }}
-            />
-          </label>
-
-          <label className={styles.control}>
-            <span>Court</span>
-            <select value={effectiveCourtFilter} onChange={(event) => setCourtFilter(event.target.value)}>
-              <option value="all">All courts</option>
-              {[...courts]
-                .sort((left, right) => left.sortOrder - right.sortOrder)
-                .map((court) => (
-                  <option key={court.id} value={court.id}>{court.name}</option>
-                ))}
-            </select>
-          </label>
-
           <button
             type="button"
             className={styles.refreshButton}
@@ -554,30 +589,6 @@ export function CalendarView({
           </button>
         </div>
       </header>
-
-      <div className={styles.summaryStrip}>
-        <dl className={styles.summary}>
-          <div><dt>Bookings</dt><dd>{bookingCount}</dd></div>
-          <div><dt>Payment holds</dt><dd>{holdCount}</dd></div>
-          <div><dt>Court blocks</dt><dd>{blockCount}</dd></div>
-        </dl>
-
-        <div className={styles.resultBar}>
-          <div>
-            <Clock3 aria-hidden="true" size={17} />
-            <span>{timezone}</span>
-            <span aria-hidden="true">·</span>
-            <strong>{selectedCourt?.name ?? "All courts"}</strong>
-          </div>
-          <p role="status" aria-live="polite">
-            {phase === "loading"
-              ? `Loading ${compactDate}…`
-              : phase === "error"
-                ? "Schedule unavailable"
-                : `${resultCount} ${resultCount === 1 ? "entry" : "entries"}`}
-          </p>
-        </div>
-      </div>
 
       <p className={styles.srOnly} aria-live="polite">
         {phase === "loading"
@@ -608,61 +619,48 @@ export function CalendarView({
             Try again
           </button>
         </div>
-      ) : resultCount === 0 ? (
-        <div className={styles.emptyState}>
-          <CalendarDays aria-hidden="true" size={28} />
-          <strong>No schedule entries returned</strong>
-          <p>
-            {selectedCourt
-              ? `There are no bookings or blocks for ${selectedCourt.name} on this loaded day.`
-              : "There are no bookings, payment holds, or court blocks for this loaded day."}
-          </p>
+      ) : viewMode === "courts" ? (
+        <>
+          <section className={styles.scheduleBoard} aria-label={`Court schedule for ${dateHeading}`}>
+            <div className={styles.boardMeta}>
+              <div><span className={styles.liveMark}><i /> Live coverage</span><strong>{shortTime(timeline.start)}–{shortTime(timeline.end)}</strong></div>
+              <div className={styles.scheduleLegend}><span><i className={styles.playing} />Checked in</span><span><i className={styles.reserved} />Confirmed</span><span><i className={styles.review} />Payment review</span><span><i className={styles.blocked} />Court block</span></div>
+              <label className={styles.courtFilter}><span>Show</span><select value={effectiveCourtFilter} onChange={(event) => setCourtFilter(event.target.value)}><option value="all">All courts</option>{[...courts].sort((left, right) => left.sortOrder - right.sortOrder).map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}</select></label>
+            </div>
+            <div className={styles.boardScroll} tabIndex={0} aria-label="Scroll horizontally through court times">
+              <div className={styles.timeHeader} style={{ gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(31px, 1fr))` }}>
+                <span>Court</span>
+                {timeline.hours.map((hour) => <time key={hour} style={{ gridColumn: `${Math.floor((hour - timeline.start) / 30) + 2} / span 2` }}>{shortTime(hour)}</time>)}
+              </div>
+              {groups.map((group) => (
+                <div className={`${styles.scheduleRow} ${group.status === "maintenance" ? styles.maintenance : ""}`} style={{ gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(31px, 1fr))` }} key={group.key}>
+                  <div className={styles.rowCourt}><span>{group.global ? "ALL" : group.name.match(/\d+/)?.[0] ?? group.name.slice(0, 2).toUpperCase()}</span><div><strong>{group.name}</strong><small>{group.detail}</small></div></div>
+                  {group.entries.map((entry) => entry.kind === "booking" ? (
+                    <div key={entry.booking.bookingId} className={`${styles.bookingBlock} ${entry.booking.status === "checked_in" ? styles.playingBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`}>
+                      <strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small>
+                    </div>
+                  ) : (
+                    <div key={entry.block.id} className={`${styles.bookingBlock} ${styles.blockedBlock}`} style={timelineEntryStyle(entry)} title={entry.block.publicLabel}><strong>{entry.block.publicLabel}</strong><span>{entry.block.time}</span></div>
+                  ))}
+                  {group.status === "maintenance" && !group.entries.length ? <div className={styles.maintenanceBand}><strong>Maintenance hold</strong><span>Court unavailable</span></div> : null}
+                </div>
+              ))}
+            </div>
+            <div className={styles.boardFooter}><span><Clock3 aria-hidden="true" size={14} /> {timezone}</span><p role="status" aria-live="polite">{resultCount} {resultCount === 1 ? "schedule entry" : "schedule entries"}</p></div>
+          </section>
+          <section className={styles.scheduleSummary} aria-label="Schedule totals">
+            <article><span>Booked court hours</span><strong>{(bookedMinutes / 60).toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{bookingCount} confirmed booking{bookingCount === 1 ? "" : "s"}</small></article>
+            <article><span>Paid booking value</span><strong>{amountLabel(paidRevenue, currency)}</strong><small>Server-returned paid bookings</small></article>
+            <article><span>Open inventory</span><strong>{openCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>Before court-block overlap</small></article>
+            <button type="button" onClick={onOpenBlocks} disabled={!canBlock}><span><Ban aria-hidden="true" size={17} /></span><strong>Block court time</strong><small>Take a court out of inventory</small></button>
+          </section>
+        </>
+      ) : groups.length ? (
+        <div className={styles.courtBoard} aria-label={`Court agenda for ${dateHeading}`}>
+          {groups.map((group) => <section className={`${styles.courtCard} ${group.global ? styles.globalCourtCard : ""}`} key={group.key}><header className={styles.courtHeader}><div><h3>{group.name}</h3><p>{group.detail}</p></div><div className={styles.courtMeta}><span className={`${styles.courtStatus} ${styles[`court_${group.status}`]}`}>{courtStatusLabel(group.status)}</span><strong>{group.entries.length} {group.entries.length === 1 ? "entry" : "entries"}</strong></div></header>{group.entries.length ? <div className={styles.agendaList}>{group.entries.map((entry) => entry.kind === "booking" ? <BookingAgendaItem key={`booking-${entry.booking.bookingId}`} booking={entry.booking} selectedDate={selectedDate} currency={currency} /> : <BlockAgendaItem key={`block-${entry.block.id}`} block={entry.block} selectedDate={selectedDate} />)}</div> : <p className={styles.courtEmpty}>No bookings or blocks returned for this court.</p>}</section>)}
         </div>
       ) : (
-        <div className={styles.courtBoard} aria-label={`Court agenda for ${dateHeading}`}>
-          {groups.map((group) => (
-            <section
-              className={`${styles.courtCard} ${group.global ? styles.globalCourtCard : ""}`}
-              key={group.key}
-              aria-labelledby={`court-group-${group.key}`}
-            >
-              <header className={styles.courtHeader}>
-                <div>
-                  <h3 id={`court-group-${group.key}`}>{group.name}</h3>
-                  <p>{group.detail}</p>
-                </div>
-                <div className={styles.courtMeta}>
-                  <span className={`${styles.courtStatus} ${styles[`court_${group.status}`]}`}>
-                    {courtStatusLabel(group.status)}
-                  </span>
-                  <strong>{group.entries.length} {group.entries.length === 1 ? "entry" : "entries"}</strong>
-                </div>
-              </header>
-              {group.entries.length ? (
-                <div className={styles.agendaList}>
-                  {group.entries.map((entry) =>
-                    entry.kind === "booking" ? (
-                      <BookingAgendaItem
-                        key={`booking-${entry.booking.bookingId}`}
-                        booking={entry.booking}
-                        selectedDate={selectedDate}
-                        currency={currency}
-                      />
-                    ) : (
-                      <BlockAgendaItem
-                        key={`block-${entry.block.id}`}
-                        block={entry.block}
-                        selectedDate={selectedDate}
-                      />
-                    ),
-                  )}
-                </div>
-              ) : (
-                <p className={styles.courtEmpty}>No bookings or blocks returned for this court.</p>
-              )}
-            </section>
-          ))}
-        </div>
+        <div className={styles.emptyState}><CalendarDays aria-hidden="true" size={28} /><strong>No courts returned</strong><p>The live court inventory is unavailable for this day.</p></div>
       )}
     </section>
   );

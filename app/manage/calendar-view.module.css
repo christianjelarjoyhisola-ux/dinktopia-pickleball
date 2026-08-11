@@ -271,6 +271,178 @@
   font-weight: 750;
 }
 
+/* RallyOS operational schedule */
+.calendar {
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.calendarHeader {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 17px;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.dateControl,
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.dateControl > button,
+.refreshButton {
+  display: inline-grid;
+  min-width: 40px;
+  min-height: 40px;
+  place-items: center;
+  border: 1px solid var(--line, #dedfd9);
+  border-radius: 11px;
+  background: var(--paper, #fffefa);
+  cursor: pointer;
+}
+
+.dateLabel {
+  position: relative;
+  display: block;
+  min-width: 174px;
+  cursor: pointer;
+}
+
+.dateLabel span,
+.dateLabel strong { display: block; }
+.dateLabel span { color: #6558e8; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.dateLabel strong { margin-top: 3px; color: #14231e; font-size: 14px; font-weight: 720; }
+.dateLabel input { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+
+.segmented {
+  display: flex;
+  border: 1px solid var(--line, #dedfd9);
+  border-radius: 11px;
+  background: #f4f3ee;
+  padding: 3px;
+}
+
+.segmented button {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #7b8580;
+  padding: 0 13px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.segmented button.active { background: #fffefa; color: #14231e; box-shadow: 0 1px 4px rgba(18, 33, 29, .08); }
+.toolbarActions .blockButton { min-height: 40px; border-radius: 11px; background: #fffefa; color: #14231e; box-shadow: none; }
+.toolbarActions .refreshButton { display: inline-flex; min-width: 40px; padding: 0 13px; }
+
+.scheduleBoard {
+  overflow: hidden;
+  border: 1px solid var(--line, #dedfd9);
+  border-radius: 16px;
+  background: #fffefa;
+  box-shadow: 0 12px 30px rgba(20, 35, 30, .05);
+}
+
+.boardMeta {
+  display: flex;
+  min-height: 65px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-bottom: 1px solid var(--line, #dedfd9);
+  padding: 0 19px;
+}
+
+.boardMeta > div:first-child { display: flex; align-items: center; gap: 12px; white-space: nowrap; }
+.boardMeta > div:first-child strong { font-size: 12px; }
+.liveMark { display: inline-flex; align-items: center; gap: 6px; color: #16845b; font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.liveMark i { width: 7px; height: 7px; border-radius: 50%; background: #16845b; box-shadow: 0 0 0 3px #e3f6ef; }
+
+.scheduleLegend { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 13px; color: #7a847f; font-size: 10px; }
+.scheduleLegend span { display: flex; align-items: center; gap: 5px; }
+.scheduleLegend i { width: 8px; height: 8px; border-radius: 3px; }
+.scheduleLegend i.playing { background: #16845b; }
+.scheduleLegend i.reserved { background: #6558e8; }
+.scheduleLegend i.review { background: #d59b17; }
+.scheduleLegend i.blocked { background: #d35b49; }
+
+.courtFilter { display: flex; align-items: center; gap: 7px; color: #7a847f; font-size: 10px; }
+.courtFilter select { min-height: 34px; border: 1px solid var(--line, #dedfd9); border-radius: 9px; background: #fff; padding: 0 28px 0 10px; font-size: 11px; }
+.boardScroll { width: 100%; overflow-x: auto; background: #fff; scrollbar-color: #c9cbc5 transparent; }
+
+.timeHeader,
+.scheduleRow { position: relative; display: grid; min-width: 1020px; }
+.timeHeader { min-height: 44px; align-items: center; border-bottom: 1px solid var(--line, #dedfd9); background: #fbfaf6; }
+.timeHeader > span { padding-left: 18px; color: #7a847f; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.timeHeader time { z-index: 1; padding-left: 8px; color: #7a847f; font-size: 9px; }
+
+.scheduleRow {
+  min-height: 82px;
+  align-items: center;
+  border-bottom: 1px solid var(--line, #dedfd9);
+  background-image: repeating-linear-gradient(to right, transparent 0, transparent 30px, rgba(222, 223, 217, .48) 30px, rgba(222, 223, 217, .48) 31px);
+  background-position: 112px 0;
+}
+.scheduleRow:last-child { border-bottom: 0; }
+
+.rowCourt { z-index: 4; display: flex; height: 100%; align-items: center; gap: 9px; border-right: 1px solid var(--line, #dedfd9); background: #fbfaf6; padding: 0 12px; }
+.rowCourt > span { display: grid; width: 29px; height: 35px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: #10271f; color: #fff; font-size: 10px; font-weight: 750; }
+.rowCourt div { min-width: 0; }
+.rowCourt strong,
+.rowCourt small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rowCourt strong { font-size: 11px; }
+.rowCourt small { margin-top: 3px; color: #7a847f; font-size: 9px; }
+
+.bookingBlock { grid-column: var(--slot) / span var(--span); z-index: 3; min-width: 0; height: 57px; overflow: hidden; margin: 0 3px; border: 1px solid transparent; border-radius: 9px; padding: 8px 9px; text-align: left; }
+.bookingBlock strong,
+.bookingBlock span,
+.bookingBlock small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bookingBlock strong { font-size: 10px; }
+.bookingBlock span { margin-top: 4px; font-size: 9px; opacity: .72; }
+.bookingBlock small { margin-top: 3px; font-size: 9px; opacity: .72; }
+.playingBlock { border-color: #add9c9; background: #e5f6f0; color: #126948; }
+.reservedBlock { border-color: #d1cdf7; background: #efedff; color: #4d42bd; }
+.reviewBlock { border-color: #ead59b; background: #fff4d7; color: #8d6515; }
+.blockedBlock { border-color: #efb7ae; background: #fff0ec; color: #a54734; }
+.maintenance .bookingBlock { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #d35b49; }
+.maintenanceBand { grid-column: 2 / -1; z-index: 2; display: flex; height: 57px; align-items: center; gap: 9px; margin: 0 4px; border: 1px dashed #dc8e82; border-radius: 9px; background: rgba(255, 240, 236, .88); color: #a54734; padding-left: 14px; }
+.maintenanceBand strong { font-size: 11px; }
+.maintenanceBand span { font-size: 10px; opacity: .72; }
+
+.boardFooter { display: flex; min-height: 47px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line, #dedfd9); background: #fbfaf6; padding: 0 19px; }
+.boardFooter span { display: flex; align-items: center; gap: 7px; color: #53635c; font-size: 10px; font-weight: 700; }
+.boardFooter p { margin: 0; color: #7a847f; font-size: 10px; }
+
+.scheduleSummary { display: grid; grid-template-columns: repeat(3, 1fr) 1.18fr; gap: 10px; margin-top: 13px; }
+.scheduleSummary > * { min-height: 104px; border: 1px solid var(--line, #dedfd9); border-radius: 13px; background: #fffefa; padding: 17px; }
+.scheduleSummary article span,
+.scheduleSummary article strong,
+.scheduleSummary article small { display: block; }
+.scheduleSummary article span { color: #7a847f; font-size: 10px; }
+.scheduleSummary article strong { margin-top: 7px; color: #14231e; font-size: 19px; font-weight: 650; letter-spacing: -.045em; }
+.scheduleSummary article small { margin-top: 5px; color: #7a847f; font-size: 10px; }
+.scheduleSummary > button { display: grid; grid-template-columns: 36px 1fr; align-content: center; column-gap: 10px; border: 0; background: #10271f; color: #fff; text-align: left; cursor: pointer; }
+.scheduleSummary > button > span { display: grid; width: 36px; height: 36px; grid-row: span 2; place-items: center; border-radius: 10px; background: rgba(125, 215, 184, .13); color: #7dd7b8; }
+.scheduleSummary > button strong { font-size: 11px; }
+.scheduleSummary > button small { margin-top: 3px; color: rgba(255, 255, 255, .55); font-size: 9px; }
+.scheduleSummary > button:disabled { cursor: not-allowed; opacity: .5; }
+
 .courtBoard {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
@@ -808,6 +980,30 @@
     align-items: center;
     justify-content: space-between;
   }
+}
+
+@media (max-width: 760px) {
+  .calendarHeader { display: grid; gap: 12px; }
+  .dateControl { width: 100%; }
+  .dateLabel { min-width: 0; flex: 1; }
+  .toolbarActions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .segmented { grid-column: 1 / -1; order: 3; }
+  .segmented button { flex: 1; justify-content: center; }
+  .toolbarActions .blockButton,
+  .toolbarActions .refreshButton { width: 100%; }
+  .boardMeta { display: grid; gap: 10px; padding-block: 13px; }
+  .scheduleLegend { justify-content: flex-start; }
+  .courtFilter { grid-row: 1; justify-self: end; }
+  .scheduleSummary { grid-template-columns: 1fr 1fr; }
+  .scheduleSummary > * { min-height: 94px; }
+}
+
+@media (max-width: 430px) {
+  .scheduleSummary { grid-template-columns: 1fr; }
+  .scheduleSummary > * { min-height: 84px; }
+  .boardMeta > div:first-child strong { display: none; }
+  .scheduleLegend { gap: 9px; }
+  .courtFilter span { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
