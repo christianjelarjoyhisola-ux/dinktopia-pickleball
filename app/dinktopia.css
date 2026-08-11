@@ -6111,12 +6111,38 @@
   transform: none;
   border-color: rgba(255, 255, 255, 0.24);
   border-radius: 28px;
-  background: linear-gradient(145deg, #234d7f, #173d68);
+  background: linear-gradient(145deg, #3489c8, #2777b8);
   box-shadow: 0 35px 85px rgba(0, 0, 0, 0.32);
 }
-.home-route .court-art::after {
-  background: linear-gradient(145deg, transparent, rgba(13, 40, 32, 0.25));
+.home-route .court-art::before {
+  border-color: rgba(255, 255, 255, 0.9);
+  background: linear-gradient(
+    to bottom,
+    #4b4b52 0%,
+    #4b4b52 38%,
+    #c94132 38%,
+    #c94132 62%,
+    #4b4b52 62%,
+    #4b4b52 100%
+  );
+  box-shadow: inset 0 0 0 1px rgba(16, 26, 35, 0.2);
 }
+.home-route .court-art::after {
+  background: linear-gradient(145deg, transparent, rgba(8, 24, 45, 0.22));
+}
+.home-route .court-net {
+  height: 6px;
+  border-top-color: rgba(255, 255, 255, 0.88);
+  border-bottom-color: #05080b;
+  background: #121820;
+  box-shadow: 0 3px 7px rgba(0, 0, 0, 0.26);
+}
+.home-route .court-service-line-one { top: 38%; }
+.home-route .court-service-line-two { bottom: 38%; }
+.home-route .court-center-line-one { top: 18px; height: calc(38% - 18px); }
+.home-route .court-center-line-two { bottom: 18px; height: calc(38% - 18px); }
+.home-route .court-service-line,
+.home-route .court-center-line { background: rgba(255, 255, 255, 0.9); }
 .home-route .court-player { width: 52px; height: 52px; border-width: 6px; }
 .home-route .hero-visual-note {
   position: absolute;
