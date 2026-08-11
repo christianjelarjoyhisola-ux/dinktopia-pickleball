@@ -6888,11 +6888,11 @@
   .home-route .hero-lede { margin-top: 18px; }
   .home-route .hero-lede,
   .home-route .hero-location,
-  .home-route .hero-actions,
-  .home-route .hero-proof {
+  .home-route .hero-actions {
     position: relative;
-    top: 12px;
+    top: 24px;
   }
+  .home-route .hero-proof { position: relative; top: 12px; }
   .home-route .hero-location {
     min-height: 66px;
     grid-template-columns: 38px minmax(0, 1fr) auto;
