@@ -430,6 +430,33 @@
 .reservedBlock { border-color: #d1cdf7; background: #efedff; color: #4d42bd; }
 .reviewBlock { border-color: #ead59b; background: #fff4d7; color: #8d6515; }
 .blockedBlock { border-color: #efb7ae; background: #fff0ec; color: #a54734; }
+.venueWideBlock {
+  z-index: 4;
+  margin-right: 5px;
+  margin-left: 5px;
+  border-radius: 0;
+  background: linear-gradient(90deg, #fff0ec 0%, #ffebe6 100%);
+  box-shadow: none;
+}
+.venueWideBlock:hover { transform: none; box-shadow: none; }
+.venueWideFirst {
+  margin-top: 4px;
+  margin-bottom: -1px;
+  border-bottom-color: transparent;
+  border-radius: 10px 10px 0 0;
+}
+.venueWideMiddle {
+  margin-top: -1px;
+  margin-bottom: -1px;
+  border-top-color: transparent;
+  border-bottom-color: transparent;
+}
+.venueWideLast {
+  margin-top: -1px;
+  margin-bottom: 4px;
+  border-top-color: transparent;
+  border-radius: 0 0 10px 10px;
+}
 .maintenance .bookingBlock { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #d35b49; }
 .maintenanceBand { grid-column: 2 / -1; z-index: 2; display: flex; height: auto; grid-row: 1; align-items: center; gap: 9px; margin: 4px; border: 1px dashed #dc8e82; border-radius: 9px; background: rgba(255, 240, 236, .88); color: #a54734; padding-left: 14px; }
 .maintenanceBand strong { font-size: 11px; }

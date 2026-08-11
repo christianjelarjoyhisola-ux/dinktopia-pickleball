@@ -651,7 +651,7 @@ export function CalendarView({
                 <span className={styles.cornerLabel}>Court</span>
                 {timeline.hours.map((hour, index) => <div className={`${styles.hourHeader} ${currentHour === hour ? styles.currentHour : ""}`} key={hour} style={{ gridColumn: index + 2 }}><time>{shortTime(hour)}</time><small>to {shortTime(hour + 60)}</small></div>)}
               </div>
-              {groups.map((group) => (
+              {groups.map((group, groupIndex) => (
                 <div className={`${styles.scheduleRow} ${group.status === "maintenance" ? styles.maintenance : ""}`} style={timelineGridStyle} key={group.key}>
                   <div className={styles.rowCourt}><span>{group.global ? "ALL" : group.name.match(/\d+/)?.[0] ?? group.name.slice(0, 2).toUpperCase()}</span><div><strong>{group.name}</strong><small>{group.detail}</small></div></div>
                   {timeline.hours.map((hour, index) => <span className={`${styles.hourCell} ${currentHour === hour ? styles.currentHourCell : ""}`} style={{ gridColumn: index + 2 }} aria-hidden="true" key={`${group.key}-${hour}`} />)}
@@ -660,7 +660,17 @@ export function CalendarView({
                       <strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small>
                     </button>
                   ) : (
-                    <div key={entry.block.id} className={`${styles.bookingBlock} ${styles.blockedBlock}`} style={timelineEntryStyle(entry)} title={entry.block.publicLabel}><strong>{entry.block.publicLabel}</strong><span>{entry.block.time}</span></div>
+                    <div
+                      key={entry.block.id}
+                      className={`${styles.bookingBlock} ${styles.blockedBlock} ${isAllCourtBlock(entry.block) && effectiveCourtFilter === "all" && groups.length > 1 ? `${styles.venueWideBlock} ${groupIndex === 0 ? styles.venueWideFirst : groupIndex === groups.length - 1 ? styles.venueWideLast : styles.venueWideMiddle}` : ""}`}
+                      style={timelineEntryStyle(entry)}
+                      title={`${entry.block.publicLabel} · ${entry.block.time}`}
+                      aria-label={`${entry.block.publicLabel}, all courts, ${entry.block.time}`}
+                    >
+                      {!isAllCourtBlock(entry.block) || effectiveCourtFilter !== "all" || groups.length === 1 || groupIndex === 0 ? (
+                        <><strong>{isAllCourtBlock(entry.block) && effectiveCourtFilter === "all" ? `All courts · ${entry.block.publicLabel}` : entry.block.publicLabel}</strong><span>{entry.block.time}</span></>
+                      ) : null}
+                    </div>
                   ))}
                   {group.status === "maintenance" && !group.entries.length ? <div className={styles.maintenanceBand}><strong>Maintenance hold</strong><span>Court unavailable</span></div> : null}
                 </div>
