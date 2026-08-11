@@ -6143,6 +6143,29 @@
 .home-route .court-center-line-two { bottom: 18px; height: calc(38% - 18px); }
 .home-route .court-service-line,
 .home-route .court-center-line { background: rgba(255, 255, 255, 0.9); }
+.home-route .court-kitchen-brand {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  width: min(72%, 320px);
+  color: rgba(255, 255, 255, 0.94);
+  font-family: var(--font-display), sans-serif;
+  font-size: clamp(0.66rem, 1.05vw, 0.9rem);
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  text-align: center;
+  text-shadow: 0 1px 3px rgba(42, 12, 8, 0.28);
+  pointer-events: none;
+}
+.home-route .court-kitchen-brand-one {
+  top: 41.8%;
+  transform: translateX(-50%) rotate(180deg);
+}
+.home-route .court-kitchen-brand-two {
+  bottom: 41.8%;
+  transform: translateX(-50%);
+}
 .home-route .court-player { width: 52px; height: 52px; border-width: 6px; }
 .home-route .hero-visual-note {
   position: absolute;

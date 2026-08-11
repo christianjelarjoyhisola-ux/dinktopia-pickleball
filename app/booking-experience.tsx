@@ -2633,6 +2633,8 @@ export function BookingExperience({
                 <div className="court-service-line court-service-line-two" />
                 <div className="court-center-line court-center-line-one" />
                 <div className="court-center-line court-center-line-two" />
+                <span className="court-kitchen-brand court-kitchen-brand-one">DINKTOPIA</span>
+                <span className="court-kitchen-brand court-kitchen-brand-two">DINKTOPIA</span>
                 <div className="court-player court-player-one" />
                 <div className="court-player court-player-two" />
                 <div className="court-ball" />
