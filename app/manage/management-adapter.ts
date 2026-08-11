@@ -97,6 +97,7 @@ export type BookingSession = {
 
 export type Booking = {
   bookingId: string;
+  parentBookingId?: string;
   bookingType: "regular" | "event";
   reference: string;
   id: string;

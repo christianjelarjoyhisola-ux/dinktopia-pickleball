@@ -50,6 +50,14 @@ type CourtGroup = {
   global?: boolean;
 };
 
+type BookingPlacement = {
+  connectsAbove: boolean;
+  connectsBelow: boolean;
+  connectsLeft: boolean;
+  connectsRight: boolean;
+  isLabelAnchor: boolean;
+};
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const CLOCK_PATTERN = /^(\d{1,2}):(\d{2})/;
 const TERMINAL_HIDDEN_STATUSES = new Set<Booking["status"]>([
@@ -184,6 +192,10 @@ function amountLabel(amount: number, currency: string): string {
   }
 }
 
+function bookingGroupId(booking: Booking): string {
+  return booking.parentBookingId ?? booking.bookingId;
+}
+
 function rowsForDate(
   date: string,
   bookings: Booking[],
@@ -194,6 +206,7 @@ function rowsForDate(
     return booking.sessions.map((session) => settleElapsedBooking({
       ...booking,
       bookingId: session.key,
+      parentBookingId: booking.bookingId,
       courtId: session.courtId,
       court: session.court,
       bookingDate: session.bookingDate,
@@ -576,8 +589,62 @@ export function CalendarView({
     gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(78px, 1fr))`,
     minWidth: `${112 + timeline.slotCount * 78}px`,
   };
+  const bookingPlacements = useMemo(() => {
+    type PositionedBooking = {
+      key: string;
+      groupId: string;
+      rowIndex: number;
+      start: number;
+      end: number;
+    };
+    const positioned: PositionedBooking[] = groups.flatMap((group, rowIndex) =>
+      group.entries.flatMap((entry) => {
+        if (entry.kind !== "booking") return [];
+        const start = entry.startMinutes;
+        return [{
+          key: `${group.key}:${entry.booking.bookingId}`,
+          groupId: bookingGroupId(entry.booking),
+          rowIndex,
+          start,
+          end: start + durationMinutes(entry.booking.duration),
+        }];
+      }),
+    );
+    const byBooking = new Map<string, PositionedBooking[]>();
+    for (const item of positioned) {
+      const collection = byBooking.get(item.groupId) ?? [];
+      collection.push(item);
+      byBooking.set(item.groupId, collection);
+    }
+    const placements = new Map<string, BookingPlacement>();
+    for (const collection of byBooking.values()) {
+      const ordered = [...collection].sort((left, right) =>
+        left.rowIndex - right.rowIndex || left.start - right.start,
+      );
+      for (const item of ordered) {
+        const verticallyOverlaps = (candidate: PositionedBooking) =>
+          Math.max(item.start, candidate.start) < Math.min(item.end, candidate.end);
+        placements.set(item.key, {
+          connectsAbove: collection.some((candidate) =>
+            candidate.rowIndex === item.rowIndex - 1 && verticallyOverlaps(candidate),
+          ),
+          connectsBelow: collection.some((candidate) =>
+            candidate.rowIndex === item.rowIndex + 1 && verticallyOverlaps(candidate),
+          ),
+          connectsLeft: collection.some((candidate) =>
+            candidate.rowIndex === item.rowIndex && candidate.end === item.start,
+          ),
+          connectsRight: collection.some((candidate) =>
+            candidate.rowIndex === item.rowIndex && candidate.start === item.end,
+          ),
+          isLabelAnchor: ordered[0]?.key === item.key,
+        });
+      }
+    }
+    return placements;
+  }, [groups]);
   const selectedTimelineBooking = selectedBookingId
-    ? visibleBookings.find((booking) => booking.bookingId === selectedBookingId) ?? null
+    ? visibleBookings.find((booking) => bookingGroupId(booking) === selectedBookingId) ?? null
     : null;
   const currentHour = selectedDate === today
     ? Number(new Intl.DateTimeFormat("en", { hour: "numeric", hourCycle: "h23", timeZone: timezone }).format(new Date())) * 60
@@ -715,11 +782,23 @@ export function CalendarView({
                 <div className={`${styles.scheduleRow} ${group.status === "maintenance" ? styles.maintenance : ""}`} style={timelineGridStyle} key={group.key}>
                   <div className={styles.rowCourt}><span>{group.global ? "ALL" : group.name.match(/\d+/)?.[0] ?? group.name.slice(0, 2).toUpperCase()}</span><div><strong>{group.name}</strong><small>{group.detail}</small></div></div>
                   {timeline.hours.map((hour, index) => <span className={`${styles.hourCell} ${currentHour === hour ? styles.currentHourCell : ""}`} style={{ gridColumn: index + 2 }} aria-hidden="true" key={`${group.key}-${hour}`} />)}
-                  {group.entries.map((entry) => entry.kind === "booking" ? (
-                    <button type="button" key={entry.booking.bookingId} className={`${styles.bookingBlock} ${selectedBookingId === entry.booking.bookingId ? styles.selectedBlock : ""} ${entry.booking.status === "completed" ? styles.completedBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`} onClick={() => setSelectedBookingId(entry.booking.bookingId)}>
-                      <strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small>
-                    </button>
-                  ) : (
+                  {group.entries.map((entry) => entry.kind === "booking" ? (() => {
+                    const groupId = bookingGroupId(entry.booking);
+                    const placement = bookingPlacements.get(`${group.key}:${entry.booking.bookingId}`);
+                    return (
+                      <button
+                        type="button"
+                        key={entry.booking.bookingId}
+                        className={`${styles.bookingBlock} ${styles.groupedBookingBlock} ${selectedBookingId === groupId ? styles.selectedBlock : ""} ${entry.booking.status === "completed" ? styles.completedBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock} ${placement?.connectsAbove ? styles.connectsAbove : ""} ${placement?.connectsBelow ? styles.connectsBelow : ""} ${placement?.connectsLeft ? styles.connectsLeft : ""} ${placement?.connectsRight ? styles.connectsRight : ""}`}
+                        style={timelineEntryStyle(entry)}
+                        title={`${entry.booking.customer} · ${entry.booking.time}`}
+                        aria-label={`${entry.booking.customer}, ${group.name}, ${entry.booking.time}, ${entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}`}
+                        onClick={() => setSelectedBookingId(groupId)}
+                      >
+                        {placement?.isLabelAnchor !== false ? <><strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small></> : <span className={styles.connectedFill} aria-hidden="true" />}
+                      </button>
+                    );
+                  })() : (
                     <div
                       key={entry.block.id}
                       className={`${styles.bookingBlock} ${styles.blockedBlock} ${isAllCourtBlock(entry.block) && effectiveCourtFilter === "all" && groups.length > 1 ? `${styles.venueWideBlock} ${groupIndex === 0 ? styles.venueWideFirst : groupIndex === groups.length - 1 ? styles.venueWideLast : styles.venueWideMiddle}` : ""}`}

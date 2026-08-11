@@ -440,6 +440,19 @@
 .reservedBlock { border-color: #d1cdf7; background: #efedff; color: #4d42bd; }
 .reviewBlock { border-color: #ead59b; background: #fff4d7; color: #8d6515; }
 .blockedBlock { border-color: #efb7ae; background: #fff0ec; color: #a54734; }
+.groupedBookingBlock { isolation: isolate; }
+.groupedBookingBlock.connectsAbove { margin-top: -1px; border-top-color: transparent; border-radius: 0 0 10px 10px; }
+.groupedBookingBlock.connectsBelow { margin-bottom: -1px; border-bottom-color: transparent; border-radius: 10px 10px 0 0; }
+.groupedBookingBlock.connectsAbove.connectsBelow { border-radius: 0; }
+.groupedBookingBlock.connectsLeft { margin-left: -1px; border-left-color: transparent; border-radius: 0 10px 10px 0; }
+.groupedBookingBlock.connectsRight { margin-right: -1px; border-right-color: transparent; border-radius: 10px 0 0 10px; }
+.groupedBookingBlock.connectsLeft.connectsRight { border-radius: 0; }
+.groupedBookingBlock.connectsAbove.connectsLeft { border-top-left-radius: 0; }
+.groupedBookingBlock.connectsAbove.connectsRight { border-top-right-radius: 0; }
+.groupedBookingBlock.connectsBelow.connectsLeft { border-bottom-left-radius: 0; }
+.groupedBookingBlock.connectsBelow.connectsRight { border-bottom-right-radius: 0; }
+.groupedBookingBlock:hover { z-index: 5; }
+.connectedFill { min-height: 1px; }
 .venueWideBlock {
   z-index: 4;
   margin-right: 5px;
