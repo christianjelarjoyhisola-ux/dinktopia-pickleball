@@ -387,21 +387,24 @@
 .boardScroll { width: 100%; overflow-x: auto; background: #fff; scrollbar-color: #c9cbc5 transparent; }
 
 .timeHeader,
-.scheduleRow { position: relative; display: grid; min-width: 1020px; }
-.timeHeader { min-height: 44px; align-items: center; border-bottom: 1px solid var(--line, #dedfd9); background: #fbfaf6; }
-.timeHeader > span { padding-left: 18px; color: #7a847f; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
-.timeHeader time { z-index: 1; padding-left: 8px; color: #7a847f; font-size: 9px; }
+.scheduleRow { position: relative; display: grid; }
+.timeHeader { min-height: 58px; align-items: stretch; border-bottom: 1px solid var(--line, #dedfd9); background: #fbfaf6; }
+.cornerLabel { position: sticky; left: 0; z-index: 8; display: flex; align-items: center; border-right: 1px solid #d8dad4; background: #fbfaf6; padding-left: 18px; color: #7a847f; font-size: 9px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; box-shadow: 8px 0 16px rgba(20, 35, 30, .025); }
+.hourHeader { position: relative; display: grid; place-content: center; gap: 3px; border-left: 1px solid #d8dad4; text-align: center; }
+.hourHeader:last-child { border-right: 1px solid #d8dad4; }
+.hourHeader time { color: #24352f; font-size: 10px; font-weight: 750; }
+.hourHeader small { color: #929a96; font-size: 8px; }
+.hourHeader.currentHour::before { position: absolute; top: 0; right: 10px; left: 10px; height: 3px; border-radius: 0 0 3px 3px; background: #16845b; content: ""; }
 
 .scheduleRow {
   min-height: 82px;
   align-items: center;
   border-bottom: 1px solid var(--line, #dedfd9);
-  background-image: repeating-linear-gradient(to right, transparent 0, transparent 30px, rgba(222, 223, 217, .48) 30px, rgba(222, 223, 217, .48) 31px);
-  background-position: 112px 0;
+  background: #fff;
 }
 .scheduleRow:last-child { border-bottom: 0; }
 
-.rowCourt { z-index: 4; display: flex; height: 100%; align-items: center; gap: 9px; border-right: 1px solid var(--line, #dedfd9); background: #fbfaf6; padding: 0 12px; }
+.rowCourt { position: sticky; left: 0; z-index: 7; display: flex; height: 100%; align-items: center; gap: 9px; border-right: 1px solid #d8dad4; background: #fbfaf6; padding: 0 12px; box-shadow: 8px 0 16px rgba(20, 35, 30, .025); }
 .rowCourt > span { display: grid; width: 29px; height: 35px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: #10271f; color: #fff; font-size: 10px; font-weight: 750; }
 .rowCourt div { min-width: 0; }
 .rowCourt strong,
@@ -409,7 +412,14 @@
 .rowCourt strong { font-size: 11px; }
 .rowCourt small { margin-top: 3px; color: #7a847f; font-size: 9px; }
 
-.bookingBlock { grid-column: var(--slot) / span var(--span); z-index: 3; min-width: 0; height: 57px; overflow: hidden; margin: 0 3px; border: 1px solid transparent; border-radius: 9px; padding: 8px 9px; text-align: left; }
+.hourCell { z-index: 1; align-self: stretch; border-left: 1px solid #e0e2dc; background: transparent; }
+.hourCell:last-of-type { border-right: 1px solid #e0e2dc; }
+.currentHourCell { background: linear-gradient(180deg, rgba(22, 132, 91, .055), rgba(22, 132, 91, .018)); }
+
+.bookingBlock { grid-column: var(--slot) / span var(--span); z-index: 3; min-width: 0; height: 60px; align-self: center; overflow: hidden; margin: 0 5px; border: 1px solid transparent; border-radius: 10px; padding: 9px 10px; text-align: left; cursor: pointer; box-shadow: 0 4px 12px rgba(20, 35, 30, .045); transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease; }
+.bookingBlock:hover { transform: translateY(-1px); box-shadow: 0 8px 18px rgba(20, 35, 30, .09); }
+.bookingBlock:focus-visible { outline: 2px solid #10271f; outline-offset: 2px; }
+.selectedBlock { border-color: currentColor; box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor; }
 .bookingBlock strong,
 .bookingBlock span,
 .bookingBlock small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -424,6 +434,19 @@
 .maintenanceBand { grid-column: 2 / -1; z-index: 2; display: flex; height: 57px; align-items: center; gap: 9px; margin: 0 4px; border: 1px dashed #dc8e82; border-radius: 9px; background: rgba(255, 240, 236, .88); color: #a54734; padding-left: 14px; }
 .maintenanceBand strong { font-size: 11px; }
 .maintenanceBand span { font-size: 10px; opacity: .72; }
+
+.bookingPreview { display: grid; grid-template-columns: minmax(180px, .8fr) minmax(0, 2fr) auto; align-items: center; gap: 22px; border-top: 1px solid var(--line, #dedfd9); background: #f7f6f1; padding: 14px 19px; }
+.bookingPreview > div span,
+.bookingPreview > div strong,
+.bookingPreview > div small { display: block; }
+.bookingPreview > div span { color: #6558e8; font-size: 9px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.bookingPreview > div strong { margin-top: 4px; font-size: 13px; }
+.bookingPreview > div small { margin-top: 2px; color: #7a847f; font-size: 9px; }
+.bookingPreview dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0; }
+.bookingPreview dl > div { min-width: 0; border-left: 1px solid #d8dad4; padding: 0 14px; }
+.bookingPreview dt { color: #7a847f; font-size: 9px; }
+.bookingPreview dd { overflow: hidden; margin: 4px 0 0; color: #24352f; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.bookingPreview > button { min-height: 36px; border: 1px solid #d1d4ce; border-radius: 9px; background: #fffefa; padding: 0 13px; color: #53635c; font-size: 10px; font-weight: 700; cursor: pointer; }
 
 .boardFooter { display: flex; min-height: 47px; align-items: center; justify-content: space-between; border-top: 1px solid var(--line, #dedfd9); background: #fbfaf6; padding: 0 19px; }
 .boardFooter span { display: flex; align-items: center; gap: 7px; color: #53635c; font-size: 10px; font-weight: 700; }
@@ -996,6 +1019,9 @@
   .courtFilter { grid-row: 1; justify-self: end; }
   .scheduleSummary { grid-template-columns: 1fr 1fr; }
   .scheduleSummary > * { min-height: 94px; }
+  .bookingPreview { grid-template-columns: 1fr auto; gap: 12px; }
+  .bookingPreview dl { grid-column: 1 / -1; grid-row: 2; }
+  .bookingPreview dl > div:first-child { border-left: 0; padding-left: 0; }
 }
 
 @media (max-width: 430px) {
@@ -1004,6 +1030,9 @@
   .boardMeta > div:first-child strong { display: none; }
   .scheduleLegend { gap: 9px; }
   .courtFilter span { display: none; }
+  .bookingPreview { padding: 13px 14px; }
+  .bookingPreview dl { grid-template-columns: 1fr 1fr; gap: 10px 0; }
+  .bookingPreview dl > div:nth-child(3) { border-left: 0; padding-left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {

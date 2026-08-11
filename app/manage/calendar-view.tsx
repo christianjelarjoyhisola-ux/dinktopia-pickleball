@@ -407,6 +407,7 @@ export function CalendarView({
   const [errorMessage, setErrorMessage] = useState("");
   const [refreshKey, setRefreshKey] = useState(0);
   const [viewMode, setViewMode] = useState<"courts" | "agenda">("courts");
+  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const loadDayRef = useRef(loadDay);
   const requestSequence = useRef(0);
 
@@ -489,10 +490,10 @@ export function CalendarView({
     const entryEnds = groups.flatMap((group) => group.entries.map((entry) => entry.kind === "booking"
       ? entry.startMinutes + durationMinutes(entry.booking.duration)
       : displayTimeRange(entry.block.time)?.end ?? entry.startMinutes + 60));
-    const start = Math.floor(Math.min(8 * 60, ...courtOpenings, ...entryStarts) / 30) * 30;
-    const end = Math.ceil(Math.max(22 * 60, ...courtClosings, ...entryEnds) / 30) * 30;
-    const slotCount = Math.max(2, (end - start) / 30);
-    const hours = Array.from({ length: Math.ceil((end - start) / 60) }, (_, index) => start + index * 60);
+    const start = Math.floor(Math.min(8 * 60, ...courtOpenings, ...entryStarts) / 60) * 60;
+    const end = Math.ceil(Math.max(22 * 60, ...courtClosings, ...entryEnds) / 60) * 60;
+    const slotCount = Math.max(1, (end - start) / 60);
+    const hours = Array.from({ length: slotCount }, (_, index) => start + index * 60);
     return { start, end, slotCount, hours };
   }, [courts, groups]);
   const bookedMinutes = visibleBookings.reduce((sum, booking) => sum + durationMinutes(booking.duration), 0);
@@ -505,13 +506,23 @@ export function CalendarView({
     const rawEnd = entry.kind === "block"
       ? displayTimeRange(entry.block.time)?.end ?? timeline.end
       : rawStart + durationMinutes(entry.booking.duration);
-    const start = Math.max(timeline.start, Math.min(rawStart, timeline.end - 30));
-    const end = Math.max(start + 30, Math.min(rawEnd, timeline.end));
+    const start = Math.max(timeline.start, Math.min(rawStart, timeline.end - 60));
+    const end = Math.max(start + 60, Math.min(rawEnd, timeline.end));
     return {
-      "--slot": Math.floor((start - timeline.start) / 30) + 2,
-      "--span": Math.max(1, Math.ceil((end - start) / 30)),
+      "--slot": Math.floor((start - timeline.start) / 60) + 2,
+      "--span": Math.max(1, Math.ceil((end - start) / 60)),
     } as CSSProperties;
   };
+  const timelineGridStyle: CSSProperties = {
+    gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(78px, 1fr))`,
+    minWidth: `${112 + timeline.slotCount * 78}px`,
+  };
+  const selectedTimelineBooking = selectedBookingId
+    ? visibleBookings.find((booking) => booking.bookingId === selectedBookingId) ?? null
+    : null;
+  const currentHour = selectedDate === today
+    ? Number(new Intl.DateTimeFormat("en", { hour: "numeric", hourCycle: "h23", timeZone: timezone }).format(new Date())) * 60
+    : null;
 
   const moveDate = (days: number) => {
     setPhase("loading");
@@ -628,17 +639,18 @@ export function CalendarView({
               <label className={styles.courtFilter}><span>Show</span><select value={effectiveCourtFilter} onChange={(event) => setCourtFilter(event.target.value)}><option value="all">All courts</option>{[...courts].sort((left, right) => left.sortOrder - right.sortOrder).map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}</select></label>
             </div>
             <div className={styles.boardScroll} tabIndex={0} aria-label="Scroll horizontally through court times">
-              <div className={styles.timeHeader} style={{ gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(31px, 1fr))` }}>
-                <span>Court</span>
-                {timeline.hours.map((hour) => <time key={hour} style={{ gridColumn: `${Math.floor((hour - timeline.start) / 30) + 2} / span 2` }}>{shortTime(hour)}</time>)}
+              <div className={styles.timeHeader} style={timelineGridStyle}>
+                <span className={styles.cornerLabel}>Court</span>
+                {timeline.hours.map((hour, index) => <div className={`${styles.hourHeader} ${currentHour === hour ? styles.currentHour : ""}`} key={hour} style={{ gridColumn: index + 2 }}><time>{shortTime(hour)}</time><small>to {shortTime(hour + 60)}</small></div>)}
               </div>
               {groups.map((group) => (
-                <div className={`${styles.scheduleRow} ${group.status === "maintenance" ? styles.maintenance : ""}`} style={{ gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(31px, 1fr))` }} key={group.key}>
+                <div className={`${styles.scheduleRow} ${group.status === "maintenance" ? styles.maintenance : ""}`} style={timelineGridStyle} key={group.key}>
                   <div className={styles.rowCourt}><span>{group.global ? "ALL" : group.name.match(/\d+/)?.[0] ?? group.name.slice(0, 2).toUpperCase()}</span><div><strong>{group.name}</strong><small>{group.detail}</small></div></div>
+                  {timeline.hours.map((hour, index) => <span className={`${styles.hourCell} ${currentHour === hour ? styles.currentHourCell : ""}`} style={{ gridColumn: index + 2 }} aria-hidden="true" key={`${group.key}-${hour}`} />)}
                   {group.entries.map((entry) => entry.kind === "booking" ? (
-                    <div key={entry.booking.bookingId} className={`${styles.bookingBlock} ${entry.booking.status === "checked_in" ? styles.playingBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`}>
+                    <button type="button" key={entry.booking.bookingId} className={`${styles.bookingBlock} ${selectedBookingId === entry.booking.bookingId ? styles.selectedBlock : ""} ${entry.booking.status === "checked_in" ? styles.playingBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`} onClick={() => setSelectedBookingId(entry.booking.bookingId)}>
                       <strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small>
-                    </div>
+                    </button>
                   ) : (
                     <div key={entry.block.id} className={`${styles.bookingBlock} ${styles.blockedBlock}`} style={timelineEntryStyle(entry)} title={entry.block.publicLabel}><strong>{entry.block.publicLabel}</strong><span>{entry.block.time}</span></div>
                   ))}
@@ -646,6 +658,7 @@ export function CalendarView({
                 </div>
               ))}
             </div>
+            {selectedTimelineBooking ? <aside className={styles.bookingPreview} aria-label="Selected booking details"><div><span>Selected booking</span><strong>{selectedTimelineBooking.customer}</strong><small>{selectedTimelineBooking.reference}</small></div><dl><div><dt>Court</dt><dd>{selectedTimelineBooking.court}</dd></div><div><dt>Time</dt><dd>{selectedTimelineBooking.time}</dd></div><div><dt>Payment</dt><dd>{PAYMENT_LABEL[selectedTimelineBooking.payment]}</dd></div><div><dt>Amount</dt><dd>{amountLabel(selectedTimelineBooking.amount, currency)}</dd></div></dl><button type="button" onClick={() => setSelectedBookingId(null)}>Close</button></aside> : null}
             <div className={styles.boardFooter}><span><Clock3 aria-hidden="true" size={14} /> {timezone}</span><p role="status" aria-live="polite">{resultCount} {resultCount === 1 ? "schedule entry" : "schedule entries"}</p></div>
           </section>
           <section className={styles.scheduleSummary} aria-label="Schedule totals">
