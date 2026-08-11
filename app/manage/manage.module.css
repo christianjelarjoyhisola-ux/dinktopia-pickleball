@@ -121,7 +121,9 @@
 .rallySectionHeading h2 { margin:0;font-size:1.1rem;letter-spacing:-.03em; }.rallySectionHeading p { margin:4px 0 0;color:var(--muted);font-size:.78rem; }
 .rallySectionHeading button { min-height: 32px; display:flex;align-items:center;gap:5px;border:0;background:none;color:var(--blue);font-size:.69rem;font-weight:700; }.rallySectionHeading button svg{width:13px}
 .rallyCourtGrid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px; }
-.rallyCourtCard { min-width:0;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:13px;border:1px solid var(--line);border-radius:13px;padding:13px; }
+.rallyCourtCard { width:100%;min-width:0;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:13px;border:1px solid var(--line);border-radius:13px;background:var(--surface);padding:13px;color:inherit;text-align:left;cursor:pointer;transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease; }
+.rallyCourtCard:hover { border-color:var(--line-dark);box-shadow:0 8px 22px rgba(18,33,29,.07);transform:translateY(-1px); }
+.rallyCourtCard:focus-visible { outline:3px solid color-mix(in srgb,var(--blue) 24%,transparent);outline-offset:2px; }
 .rallyCourtVisual { position:relative;width:58px;height:58px;display:grid;place-items:center;overflow:hidden;border:1px solid #afdccc;border-radius:10px;background:#e4f7f0; }
 .rallyCourtVisual::after { content:"";position:absolute;inset:8px;border:1px solid currentColor;opacity:.25 }.rallyCourtVisual span{position:relative;z-index:1;width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:white;font-size:.7rem}
 .rallyCourtCopy { min-width:0 }.rallyCourtCopy > span { display:block;overflow:hidden;color:var(--muted);font-size:.59rem;text-overflow:ellipsis;white-space:nowrap }.rallyCourtCopy h3{margin:3px 0 2px;font-size:.82rem}.rallyCourtCopy p{margin:0;overflow:hidden;color:var(--muted);font-size:.63rem;text-overflow:ellipsis;white-space:nowrap}

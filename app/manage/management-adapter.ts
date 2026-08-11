@@ -97,6 +97,7 @@ export type Booking = {
   courtId: string;
   bookingDate: string | null;
   startTime: string | null;
+  endTime?: string | null;
   paymentEvidence?: PaymentEvidence | null;
 };
 
@@ -186,7 +187,7 @@ export type RegularBookingReport = {
     inclusive: true;
     basis: "local_booking_date";
   };
-  courtId: string | null;
+  courtId?: string | null;
   currency: string;
   complete: boolean;
   completeness: {
@@ -500,10 +501,13 @@ export type ScheduleSlot = {
 
 export type CourtBlock = {
   id: string;
+  courtId: string | null;
   court: string;
   date: string;
   dateValue: string | null;
   time: string;
+  startTime?: string | null;
+  endTime?: string | null;
   reason: string;
   publicLabel: string;
   internalReason: string | null;
@@ -3555,6 +3559,7 @@ function mapLiveBooking(
       ? value(row, ["local_booking_date"])
       : null,
     startTime: startsAt ? formatManilaClock(startsAt) : null,
+    endTime: endsAt ? formatManilaClock(endsAt) : null,
     paymentEvidence,
   };
 }
@@ -3592,12 +3597,15 @@ function mapLiveBlock(
   const internalReason = value(row, ["internal_reason"]);
   return {
     id,
+    courtId: UUID_PATTERN.test(courtId) ? courtId : null,
     court: courtLabel(courtId, courtNames, "All courts"),
     date: date ? formatManilaDate(date) : "Date unavailable",
     dateValue: DATE_PATTERN.test(blockedOn) ? blockedOn : null,
     time: start && end
       ? `${formatManilaTime(start)}–${formatManilaTime(end)}`
       : "All day",
+    startTime: start ? formatManilaClock(start) : null,
+    endTime: end ? formatManilaClock(end) : null,
     reason: publicLabel,
     publicLabel,
     internalReason: internalReason || null,

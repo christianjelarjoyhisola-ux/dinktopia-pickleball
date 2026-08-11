@@ -633,39 +633,84 @@ function RallyOverview({
   const paidSales = todayBookings
     .filter((booking) => booking.payment === "paid")
     .reduce((total, booking) => total + booking.amount, 0);
-  const bookedMinutes = snapshot.schedule.filter((slot) => slot.kind !== "block").reduce((total, slot) => {
-    const start = clockMinutes(slot.start);
-    const end = clockMinutes(slot.end);
-    return total + (start !== null && end !== null ? Math.max(0, end - start) : 0);
-  }, 0);
   const availableMinutes = snapshot.courts.reduce((total, court) => {
     const start = clockMinutes(court.opensAt) ?? 6 * 60;
     const end = clockMinutes(court.closesAt) ?? 22 * 60;
     return total + Math.max(60, end - start);
   }, 0);
+  const timedBookings = todayBookings
+    .map((booking) => {
+      const start = clockMinutes(booking.startTime);
+      const rawEnd = clockMinutes(booking.endTime ?? null);
+      const end = start !== null && rawEnd !== null
+        ? rawEnd <= start ? rawEnd + 24 * 60 : rawEnd
+        : start !== null ? start + 60 : null;
+      return { booking, start, end };
+    })
+    .sort((left, right) => (left.start ?? 10_000) - (right.start ?? 10_000));
+  const bookedMinutes = timedBookings.reduce(
+    (total, entry) => total + (entry.start !== null && entry.end !== null ? Math.max(0, entry.end - entry.start) : 0),
+    0,
+  );
   const occupancy = availableMinutes ? Math.min(100, Math.round(bookedMinutes / availableMinutes * 100)) : 0;
-  const upcoming = [...todayBookings]
-    .map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))
-    .filter((entry) => entry.minutes === null || entry.minutes + 60 >= currentMinutes)
-    .sort((left, right) => (left.minutes ?? 10_000) - (right.minutes ?? 10_000));
-  const arrivals = (upcoming.length ? upcoming : activeBookings.map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))).slice(0, 4);
+  const upcoming = timedBookings.filter((entry) => entry.end === null || entry.end > currentMinutes);
+  const arrivals = upcoming
+    .filter((entry) => entry.start === null || entry.start >= currentMinutes)
+    .filter((entry) => entry.start === null || entry.start <= currentMinutes + 150)
+    .slice(0, 4);
+  const todayBlocks = snapshot.blocks.filter((block) => block.dateValue === today);
+  const timedBlock = (block: (typeof todayBlocks)[number]) => {
+    const start = clockMinutes(block.startTime ?? null) ?? 0;
+    const rawEnd = clockMinutes(block.endTime ?? null) ?? 24 * 60;
+    return { block, start, end: rawEnd <= start ? rawEnd + 24 * 60 : rawEnd };
+  };
   const courtStatus = snapshot.courts.map((court) => {
     const courtBookings = upcoming.filter((entry) => entry.booking.courtId === court.id);
-    const next = courtBookings[0]?.booking ?? null;
-    const inProgress = courtBookings.find((entry) => entry.minutes !== null && entry.minutes <= currentMinutes && entry.minutes + 60 > currentMinutes)?.booking ?? null;
+    const currentBooking = courtBookings.find((entry) =>
+      entry.start !== null && entry.end !== null && entry.start <= currentMinutes && entry.end > currentMinutes
+    ) ?? null;
+    const nextBooking = courtBookings.find((entry) => entry.start === null || entry.start > currentMinutes) ?? null;
+    const courtBlocks = todayBlocks
+      .filter((block) => block.courtId === court.id || (!block.courtId && block.court === "All courts"))
+      .map(timedBlock)
+      .sort((left, right) => left.start - right.start);
+    const currentBlock = courtBlocks.find((entry) => entry.start <= currentMinutes && entry.end > currentMinutes) ?? null;
+    const nextBlock = courtBlocks.find((entry) => entry.start > currentMinutes) ?? null;
     const isUnavailable = court.status !== "active";
+    const currentIsHold = currentBooking && (
+      currentBooking.booking.status === "awaiting_receipt" ||
+      currentBooking.booking.status === "receipt_processing" ||
+      currentBooking.booking.status === "payment_review"
+    );
+    const state = isUnavailable
+      ? court.status === "maintenance" ? "Maintenance" : "Closed"
+      : currentBlock ? currentBlock.block.publicLabel || "Blocked"
+        : currentIsHold ? "Payment hold"
+          : currentBooking ? currentBooking.booking.status === "checked_in" ? "In play" : "Reserved now"
+            : nextBooking ? (nextBooking.start ?? 10_000) <= currentMinutes + 90 ? "Up next" : "Scheduled"
+              : nextBlock ? "Block later" : "Available";
+    const tone = isUnavailable || currentBlock
+      ? "danger"
+      : currentIsHold || currentBooking ? "warning"
+        : nextBooking ? "info" : "success";
+    const note = isUnavailable
+      ? court.description || "Court is unavailable"
+      : currentBlock ? `${currentBlock.block.publicLabel} until ${formatClockLabel(currentBlock.block.endTime ?? "") || "closing"}`
+        : currentBooking ? `${currentBooking.booking.customer} · ${currentBooking.booking.time}`
+          : nextBooking ? `Next: ${nextBooking.booking.customer} · ${nextBooking.booking.time}`
+            : nextBlock ? `${nextBlock.block.publicLabel} at ${formatClockLabel(nextBlock.block.startTime ?? "")}`
+              : "No more reservations today";
+    const hours = currentBlock
+      ? "Unavailable now"
+      : currentBooking ? `Ends ${formatClockLabel(currentBooking.booking.endTime ?? "")}`
+        : nextBooking ? `Starts ${formatClockLabel(nextBooking.booking.startTime ?? "")}`
+          : court.closesAt ? `Open until ${formatClockLabel(court.closesAt)}` : "Open inventory";
     return {
       court,
-      state: isUnavailable ? (court.status === "maintenance" ? "Maintenance" : "Closed") : inProgress ? "In play" : next ? "Ready" : "Available",
-      tone: isUnavailable ? "danger" : inProgress ? "warning" : next ? "info" : "success",
-      note: isUnavailable
-        ? court.description || "Court is unavailable"
-        : inProgress
-          ? `${inProgress.customer} is on court now`
-          : next
-            ? `Next: ${next.customer} at ${next.time.split(/[–-]/)[0].trim()}`
-            : "No upcoming reservation",
-      hours: courtBookings.length ? `${courtBookings.length} booking${courtBookings.length === 1 ? "" : "s"} today` : "Open inventory",
+      state,
+      tone,
+      note,
+      hours,
     };
   });
   const dateLine = new Intl.DateTimeFormat("en-PH", {
@@ -703,11 +748,17 @@ function RallyOverview({
           <div className={styles.rallySectionHeading}><div><h2>Live court status</h2><p>A fast read on every playing surface</p></div><button type="button" onClick={() => goTo("schedule")}>Open full schedule <ArrowRight /></button></div>
           <div className={styles.rallyCourtGrid}>
             {courtStatus.map(({ court, state, tone, note, hours }, index) => (
-              <article className={cx(styles.rallyCourtCard, styles[`rallyTone_${tone}`])} key={court.id}>
+              <button
+                type="button"
+                className={cx(styles.rallyCourtCard, styles[`rallyTone_${tone}`])}
+                key={court.id}
+                onClick={() => goTo("schedule")}
+                aria-label={`Open schedule for ${court.name}. ${state}. ${note}`}
+              >
                 <div className={styles.rallyCourtVisual}><span>{index + 1}</span><i /><i /></div>
                 <div className={styles.rallyCourtCopy}><span>{court.description || court.surface || "Court"}</span><h3>{court.name}</h3><p>{note}</p></div>
                 <div className={styles.rallyCourtState}><span>{state}</span><small>{hours}</small></div>
-              </article>
+              </button>
             ))}
           </div>
         </section>
