@@ -2,6 +2,24 @@
 
 import Image from "next/image";
 import {
+  ArrowRight,
+  Bell,
+  CalendarDays,
+  ChartNoAxesColumnIncreasing,
+  CircleCheck,
+  CircleDollarSign,
+  Clock3,
+  LayoutDashboard,
+  MapPin,
+  Plus,
+  Search,
+  Settings2,
+  Sparkles,
+  SquareActivity,
+  Users,
+  WalletCards,
+} from "lucide-react";
+import {
   useCallback,
   useEffect,
   useMemo,
@@ -96,17 +114,31 @@ type ToastState = {
 };
 
 const NAV_ITEMS: { id: View; label: string; short: string }[] = [
-  { id: "overview", label: "Overview", short: "OV" },
-  { id: "bookings", label: "Bookings", short: "BK" },
-  { id: "schedule", label: "Calendar", short: "CA" },
-  { id: "blocks", label: "Court blocks", short: "BL" },
+  { id: "overview", label: "Today", short: "OV" },
+  { id: "schedule", label: "Schedule", short: "CA" },
+  { id: "bookings", label: "Play", short: "BK" },
+  { id: "blocks", label: "Court issues", short: "BL" },
   { id: "customers", label: "Customers", short: "CU" },
-  { id: "reports", label: "Analytics", short: "AN" },
-  { id: "finance", label: "Finance", short: "FN" },
-  { id: "settings", label: "Venue settings", short: "ST" },
+  { id: "finance", label: "Money", short: "FN" },
+  { id: "reports", label: "Insights", short: "AN" },
+  { id: "settings", label: "Venue & settings", short: "ST" },
   { id: "launch", label: "Launch", short: "GO" },
   { id: "access", label: "Team & access", short: "AC" },
 ];
+
+function NavIcon({ view }: { view: View }) {
+  const Icon = view === "overview" ? LayoutDashboard
+    : view === "schedule" ? CalendarDays
+      : view === "bookings" ? SquareActivity
+        : view === "blocks" ? MapPin
+          : view === "customers" ? Users
+            : view === "finance" ? CircleDollarSign
+              : view === "reports" ? ChartNoAxesColumnIncreasing
+                : view === "launch" ? Sparkles
+                  : view === "access" ? Users
+                    : Settings2;
+  return <Icon aria-hidden="true" />;
+}
 
 const VIEW_CAPABILITY: Partial<Record<View, ManagementCapability>> = {
   customers: "customer:view",
@@ -548,6 +580,154 @@ function PermissionPanel({
   );
 }
 
+function RallyOverview({
+  snapshot,
+  can,
+  goTo,
+  openNeedsReview,
+}: {
+  snapshot: ManagementSnapshot;
+  can: (capability: ManagementCapability) => boolean;
+  goTo: (view: View) => void;
+  openNeedsReview: () => void;
+}) {
+  const today = manilaCalendarDate();
+  const nowParts = new Intl.DateTimeFormat("en-PH", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone: activeTenant.identity.timezone,
+  }).formatToParts(new Date());
+  const currentMinutes = Number(nowParts.find((part) => part.type === "hour")?.value ?? 0) * 60 +
+    Number(nowParts.find((part) => part.type === "minute")?.value ?? 0);
+  const clockMinutes = (value: string | null) => {
+    const match = /^(\d{1,2}):(\d{2})/.exec(value ?? "");
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  };
+  const activeBookings = snapshot.bookings.filter(
+    (booking) => booking.status !== "cancelled" && booking.status !== "expired",
+  );
+  const todayBookings = activeBookings.filter((booking) => booking.bookingDate === today);
+  const paymentReviews = snapshot.bookings.filter(
+    (booking) => booking.paymentEvidence?.reviewable === true || booking.status === "payment_attention",
+  );
+  const paidSales = todayBookings
+    .filter((booking) => booking.payment === "paid")
+    .reduce((total, booking) => total + booking.amount, 0);
+  const bookedMinutes = snapshot.schedule.filter((slot) => slot.kind !== "block").reduce((total, slot) => {
+    const start = clockMinutes(slot.start);
+    const end = clockMinutes(slot.end);
+    return total + (start !== null && end !== null ? Math.max(0, end - start) : 0);
+  }, 0);
+  const availableMinutes = snapshot.courts.reduce((total, court) => {
+    const start = clockMinutes(court.opensAt) ?? 6 * 60;
+    const end = clockMinutes(court.closesAt) ?? 22 * 60;
+    return total + Math.max(60, end - start);
+  }, 0);
+  const occupancy = availableMinutes ? Math.min(100, Math.round(bookedMinutes / availableMinutes * 100)) : 0;
+  const upcoming = [...todayBookings]
+    .map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))
+    .filter((entry) => entry.minutes === null || entry.minutes + 60 >= currentMinutes)
+    .sort((left, right) => (left.minutes ?? 10_000) - (right.minutes ?? 10_000));
+  const arrivals = (upcoming.length ? upcoming : activeBookings.map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))).slice(0, 4);
+  const courtStatus = snapshot.courts.map((court) => {
+    const courtBookings = upcoming.filter((entry) => entry.booking.courtId === court.id);
+    const next = courtBookings[0]?.booking ?? null;
+    const inProgress = courtBookings.find((entry) => entry.minutes !== null && entry.minutes <= currentMinutes && entry.minutes + 60 > currentMinutes)?.booking ?? null;
+    const isUnavailable = court.status !== "active";
+    return {
+      court,
+      state: isUnavailable ? (court.status === "maintenance" ? "Maintenance" : "Closed") : inProgress ? "In play" : next ? "Ready" : "Available",
+      tone: isUnavailable ? "danger" : inProgress ? "warning" : next ? "info" : "success",
+      note: isUnavailable
+        ? court.description || "Court is unavailable"
+        : inProgress
+          ? `${inProgress.customer} is on court now`
+          : next
+            ? `Next: ${next.customer} at ${next.time.split(/[–-]/)[0].trim()}`
+            : "No upcoming reservation",
+      hours: courtBookings.length ? `${courtBookings.length} booking${courtBookings.length === 1 ? "" : "s"} today` : "Open inventory",
+    };
+  });
+  const dateLine = new Intl.DateTimeFormat("en-PH", {
+    weekday: "long",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone: activeTenant.identity.timezone,
+  }).format(new Date());
+  const checkedInCount = todayBookings.filter((booking) => booking.status === "checked_in").length;
+  const attentionCourts = snapshot.courts.filter((court) => court.status !== "active");
+
+  return (
+    <div className={styles.rallyToday}>
+      <section className={styles.rallyHero}>
+        <div>
+          <span>{dateLine} · {snapshot.tenant.venueLabel}</span>
+          <h2>The club is moving well.</h2>
+          <p>{paymentReviews.length || attentionCourts.length ? `${paymentReviews.length + attentionCourts.length} item${paymentReviews.length + attentionCourts.length === 1 ? "" : "s"} need a quick decision.` : "Today’s court operations are clear and up to date."}</p>
+        </div>
+        <div className={styles.rallyHeroActions}>
+          <button type="button" onClick={() => goTo("blocks")} disabled={!can("schedule:block")}><Settings2 /> Court issue</button>
+          <button type="button" className={styles.rallyPrimary} onClick={() => goTo("schedule")} disabled={!can("booking:create")}><Plus /> New booking</button>
+        </div>
+      </section>
+
+      <section className={styles.rallyMetrics} aria-label="Today's key metrics">
+        <article><div><span>Net sales</span><i className={styles.metricMint}><WalletCards /></i></div><strong>{formatPeso(paidSales)}</strong><p>Paid bookings recorded today</p></article>
+        <article><div><span>Occupancy</span><i className={styles.metricViolet}><ChartNoAxesColumnIncreasing /></i></div><strong>{occupancy}%</strong><p>{bookedMinutes ? `${Math.round(bookedMinutes / 60)} booked court hours` : "No booked hours today"}</p><b><span style={{ width: `${occupancy}%` }} /></b></article>
+        <article><div><span>Bookings</span><i className={styles.metricCoral}><CalendarDays /></i></div><strong>{todayBookings.length}</strong><p>{checkedInCount} arrival{checkedInCount === 1 ? "" : "s"} checked in</p></article>
+        <article><div><span>Payment review</span><i className={styles.metricAmber}><CircleCheck /></i></div><strong>{paymentReviews.length}</strong><p>{paymentReviews.length ? `${formatPeso(paymentReviews.reduce((sum, item) => sum + item.amount, 0))} awaiting approval` : "Everything is reconciled"}</p></article>
+      </section>
+
+      <div className={styles.rallyDashboardGrid}>
+        <section className={cx(styles.rallySurface, styles.rallyCourtsPanel)}>
+          <div className={styles.rallySectionHeading}><div><h2>Live court status</h2><p>A fast read on every playing surface</p></div><button type="button" onClick={() => goTo("schedule")}>Open full schedule <ArrowRight /></button></div>
+          <div className={styles.rallyCourtGrid}>
+            {courtStatus.map(({ court, state, tone, note, hours }, index) => (
+              <article className={cx(styles.rallyCourtCard, styles[`rallyTone_${tone}`])} key={court.id}>
+                <div className={styles.rallyCourtVisual}><span>{index + 1}</span><i /><i /></div>
+                <div className={styles.rallyCourtCopy}><span>{court.description || court.surface || "Court"}</span><h3>{court.name}</h3><p>{note}</p></div>
+                <div className={styles.rallyCourtState}><span>{state}</span><small>{hours}</small></div>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <aside className={cx(styles.rallySurface, styles.rallyArrivalsPanel)}>
+          <div className={styles.rallySectionHeading}><div><h2>Next arrivals</h2><p>The next 150 minutes</p></div><span className={styles.rallyLive}><i /> Live</span></div>
+          <div className={styles.rallyArrivalList}>
+            {arrivals.length ? arrivals.map(({ booking }, index) => (
+              <div className={styles.rallyArrival} key={booking.bookingId}>
+                <div className={styles.rallyTimeRail}><strong>{booking.time.split(/[–-]/)[0].trim()}</strong><i className={index % 2 ? styles.railMint : styles.railBlue} />{index < arrivals.length - 1 && <span />}</div>
+                <div><strong>{booking.customer}</strong><p>{booking.court}</p></div>
+                <StatusPill status={booking.status} />
+              </div>
+            )) : <div className={styles.rallyEmpty}><Clock3 /><strong>No upcoming arrivals</strong><span>New bookings will appear here.</span></div>}
+          </div>
+          <button type="button" className={styles.rallyWideButton} onClick={() => goTo("schedule")}>Manage arrivals</button>
+        </aside>
+      </div>
+
+      <div className={styles.rallyLowerGrid}>
+        <section className={cx(styles.rallySurface, styles.rallyAttentionPanel)}>
+          <div className={styles.rallySectionHeading}><div><h2>Needs attention</h2><p>Clear these before the next rush</p></div></div>
+          <button type="button" onClick={() => paymentReviews.length ? openNeedsReview() : goTo("finance")}><i className={styles.attentionAmber}><WalletCards /></i><span><strong>{paymentReviews.length || "No"} payment{paymentReviews.length === 1 ? "" : "s"} to review</strong><small>{paymentReviews.length ? "Proof uploaded and ready for review" : "All uploaded proofs have been resolved"}</small></span><ArrowRight /></button>
+          <button type="button" onClick={() => goTo("blocks")}><i className={styles.attentionBlue}><Settings2 /></i><span><strong>{attentionCourts.length || "No"} court issue{attentionCourts.length === 1 ? "" : "s"}</strong><small>{attentionCourts.length ? attentionCourts.map((court) => court.name).join(", ") : "Every active court is available"}</small></span><ArrowRight /></button>
+        </section>
+
+        <section className={styles.rallyQuickCard}>
+          <div><span>Front desk shortcuts</span><h2>Keep the queue moving.</h2><p>Common actions stay synchronized across the team.</p></div>
+          <div className={styles.rallyQuickActions}>
+            <button type="button" onClick={() => goTo("schedule")} disabled={!can("booking:create")}><Plus /><span><strong>Add booking</strong><small>Walk-in or phone</small></span></button>
+            <button type="button" onClick={() => goTo("customers")} disabled={!can("customer:view")}><Users /><span><strong>Find player</strong><small>Visits and notes</small></span></button>
+            <button type="button" onClick={() => goTo("finance")} disabled={!can("finance:view")}><WalletCards /><span><strong>Review payments</strong><small>{paymentReviews.length} waiting</small></span></button>
+          </div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
 function OverviewView({
   snapshot,
   can,
@@ -563,6 +743,9 @@ function OverviewView({
   request: (action: ConfirmAction) => void;
   loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
 }) {
+  return <RallyOverview snapshot={snapshot} can={can} goTo={goTo} openNeedsReview={openNeedsReview} />;
+  /* Legacy dashboard markup is retained below temporarily while the remaining
+     management views continue to share its payment-review workspace. */
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const paymentInboxHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -3093,7 +3276,7 @@ export default function ManagePage() {
   const runtimeMode = platformMode();
   const isPreview = runtimeMode === "preview";
   const [view, setView] = useState<View>("overview");
-  const [role, setRole] = useState<TenantRole>("owner");
+  const [role] = useState<TenantRole>("owner");
   const [previewState, setPreviewState] = useState<PreviewState>("ready");
   const [snapshot, setSnapshot] = useState<ManagementSnapshot | null>(null);
   const [loadError, setLoadError] = useState(false);
@@ -3418,6 +3601,9 @@ export default function ManagePage() {
   const requiredCapability = VIEW_CAPABILITY[view];
   const viewPermitted = !requiredCapability || can(requiredCapability);
   const completedSetup = snapshot?.setup.filter((item) => item.complete).length ?? 0;
+  const paymentReviewCount = snapshot?.bookings.filter((booking) =>
+    booking.paymentEvidence?.reviewable === true || booking.status === "payment_attention"
+  ).length ?? 0;
   const visibleNavItems = NAV_ITEMS.filter((item) =>
     item.id !== "launch" || snapshot?.session.isSystemOwner === true
   );
@@ -3509,17 +3695,24 @@ export default function ManagePage() {
           {isPreview && <b aria-hidden="true">⌄</b>}
         </div>
         <nav className={styles.desktopNav} aria-label="Management navigation">
-          <p>Workspace</p>
-          {visibleNavItems.slice(0, 7).map((item) => (
+          <p>Operations</p>
+          {visibleNavItems.slice(0, 5).map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true">{item.short}</span>{item.label}
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
-          <p>Manage</p>
-          {visibleNavItems.slice(7).map((item) => (
+          <p>Business</p>
+          {visibleNavItems.slice(5, 8).map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true">{item.short}</span>{item.label}
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
+              {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
+            </button>
+          ))}
+          {visibleNavItems.length > 8 && <p>Platform</p>}
+          {visibleNavItems.slice(8).map((item) => (
+            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
               {VIEW_CAPABILITY[item.id] && !can(VIEW_CAPABILITY[item.id]!) && <i aria-label="Limited by role">•</i>}
             </button>
           ))}
@@ -3584,41 +3777,39 @@ export default function ManagePage() {
         <nav className={styles.mobileNav} aria-label="Mobile management navigation">
           {visibleNavItems.map((item) => (
             <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true">{item.short}</span>{item.label}
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
             </button>
           ))}
         </nav>
 
         <div className={styles.topbar}>
-          <div className={styles.statusLine}>
-            <span className={styles.previewMode}><i aria-hidden="true" /> {isPreview ? "Preview" : "Live"}</span>
-            <span>{isPreview ? "Bookings are not public" : snapshot ? "Tenant data" : "Connecting"}</span>
-            <span className={styles.syncText}>{snapshot ? `Synced ${snapshot.tenant.lastSynced}` : "Sync pending"}</span>
+          <div className={styles.topbarTitle}>
+            <span>{view === "overview" ? "Today’s operations" : "Dinktopia operations"}</span>
+            <h1>{view === "overview" ? "Today" : selectedCopy.title}</h1>
           </div>
-          {isPreview ? (
-            <div className={styles.previewControls} aria-label="Non-authoritative preview controls">
-              <span className={styles.previewControlsLabel}>UI preview only</span>
-              <label><span>Role</span><select value={role} onChange={(event) => setRole(event.target.value as TenantRole)}>{(Object.keys(ROLE_LABEL) as TenantRole[]).map((item) => <option value={item} key={item}>{ROLE_LABEL[item]}</option>)}</select></label>
-              <label><span>State</span><select value={previewState} onChange={(event) => setPreviewState(event.target.value as PreviewState)}><option value="ready">Ready</option><option value="loading">Loading</option><option value="empty">Empty</option><option value="error">Error</option><option value="restricted">Restricted</option></select></label>
-            </div>
-          ) : (
-            <div className={styles.liveSyncControls}>
+          <div className={styles.rallyTopActions}>
+            <button type="button" className={styles.rallySearch} onClick={() => navigateTo("bookings")} aria-label="Search bookings and players"><Search /><span>Search anything</span><kbd>⌘ K</kbd></button>
+            <button type="button" className={styles.rallyTopIcon} onClick={() => paymentReviewCount ? openNeedsReview() : navigateTo("bookings")} aria-label="Notifications"><Bell />{paymentReviewCount > 0 && <span>{paymentReviewCount}</span>}</button>
+            {!isPreview && (
               <button
                 type="button"
-                className={styles.syncButton}
+                className={styles.rallyTopIcon}
                 aria-label="Refresh live tenant data"
                 disabled={syncPending}
                 onClick={() => void refreshWorkspace(true)}
               >
                 <span aria-hidden="true">↻</span>
-                {syncPending ? "Refreshing…" : "Refresh"}
               </button>
+            )}
+            <div className={styles.rallyRoleCard}>
+              <span>{snapshot?.session.isSystemOwner ? "SO" : "CO"}</span>
+              <div><small>Viewing as</small><strong>{snapshot?.session.isSystemOwner ? "System owner" : "Court owner"}</strong></div>
             </div>
-          )}
+          </div>
         </div>
 
         <main id="main-content" className={styles.main} tabIndex={-1}>
-          <header className={styles.pageHeader}>
+          {view !== "overview" && <header className={styles.pageHeader}>
             <div>
               <h1>{selectedCopy.title}</h1>
               <p>{selectedCopy.description}</p>
@@ -3636,7 +3827,7 @@ export default function ManagePage() {
                 </ActionButton>
               )}
             </div>
-          </header>
+          </header>}
 
           {renderView()}
         </main>

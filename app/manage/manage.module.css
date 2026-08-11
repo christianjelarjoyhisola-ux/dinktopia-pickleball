@@ -33,6 +33,122 @@
   line-height: 1.45;
 }
 
+/* RallyOS operations dashboard — connected to the live management snapshot. */
+.manageShell {
+  --ink: #12211d;
+  --ink-2: #20302b;
+  --paper: #f6f4ee;
+  --paper-deep: #f0eee7;
+  --brand-surface: #fffefa;
+  --surface: #fffefa;
+  --white: #fffefa;
+  --blue: #6558e8;
+  --blue-soft: #ebe9ff;
+  --citrus: #7dd7b8;
+  --coral: #ff6b55;
+  --muted: #71807a;
+  --line: #dedfd9;
+  --admin-sidebar: 258px;
+  --admin-gutter: clamp(24px, 3vw, 48px);
+}
+
+.sidebar {
+  gap: 14px;
+  padding: 24px 17px 18px;
+  background: var(--surface);
+}
+
+.brandContext { display: none; }
+.sidebar .brandLogo { width: 150px; }
+.tenantSwitcher { margin: 7px 0 2px; min-height: 60px; border-radius: 14px; background: var(--paper); }
+.tenantSwitcher > span { width: 36px; height: 36px; background: var(--ink); color: white; }
+.desktopNav p { margin: 14px 11px 6px; color: #98a39e; font-size: .61rem; letter-spacing: .13em; }
+.desktopNav button { min-height: 42px; border-radius: 11px; color: #43534d; font-size: .82rem; }
+.desktopNav button > span { width: 20px; height: 20px; border: 0; border-radius: 0; }
+.desktopNav button > span svg { width: 17px; height: 17px; }
+.desktopNav .navActive { background: var(--ink); color: white; box-shadow: 0 8px 18px rgba(18,33,29,.14); }
+.desktopNav .navActive > span { color: var(--citrus); }
+.modeCard { border: 0; border-radius: 17px; background: var(--ink); color: white; }
+.modeCard p { color: rgba(255,255,255,.62); }
+.miniProgress { background: rgba(255,255,255,.12); }
+.userCard { border-top: 1px solid var(--line); padding-top: 10px; }
+
+.topbar {
+  position: sticky;
+  top: 0;
+  min-height: 92px;
+  padding: 0 var(--admin-gutter);
+  background: rgba(246,244,238,.92);
+  backdrop-filter: blur(16px);
+}
+.topbarTitle > span { display: block; color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.topbarTitle h1 { margin: 2px 0 0; font-size: 1.55rem; letter-spacing: -.045em; line-height: 1.05; }
+.rallyTopActions { display: flex; align-items: center; gap: 10px; }
+.rallySearch { width: min(260px, 21vw); height: 42px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); padding: 0 11px; color: var(--muted); font-size: .78rem; }
+.rallySearch svg { width: 16px; }
+.rallySearch span { min-width: 0; flex: 1; text-align: left; }
+.rallySearch kbd { border: 1px solid var(--line); border-radius: 5px; background: var(--paper); padding: 3px 5px; font-size: .58rem; }
+.rallyTopIcon { position: relative; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.rallyTopIcon svg { width: 18px; }
+.rallyTopIcon > span:not(:only-child) { position: absolute; right: -3px; top: -4px; min-width: 17px; height: 17px; display: grid; place-items: center; border: 2px solid var(--paper); border-radius: 50%; background: var(--coral); color: white; font-size: .54rem; font-weight: 800; }
+.rallyRoleCard { min-width: 148px; height: 48px; display: grid; grid-template-columns: 31px 1fr; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 0 10px; }
+.rallyRoleCard > span { width: 31px; height: 31px; display: grid; place-items: center; border-radius: 9px; background: var(--blue); color: white; font-size: .63rem; font-weight: 800; }
+.rallyRoleCard small { display: block; color: var(--muted); font-size: .58rem; }
+.rallyRoleCard strong { display: block; margin-top: 1px; font-size: .72rem; }
+
+.main { max-width: 1460px; margin-inline: auto; padding: 42px var(--admin-gutter) 90px; }
+.rallyToday { display: grid; gap: 15px; }
+.rallyHero { position: relative; min-height: 164px; display: flex; align-items: center; justify-content: space-between; gap: 28px; overflow: hidden; border-radius: 22px; background: linear-gradient(130deg,#10261f,#173b30); color: white; padding: 32px 36px; }
+.rallyHero::before,.rallyHero::after { content: ""; position: absolute; border: 1px solid rgba(125,215,184,.16); border-radius: 50%; }
+.rallyHero::before { width: 250px; height: 250px; right: 105px; top: -180px; }
+.rallyHero::after { width: 145px; height: 145px; right: -40px; bottom: -100px; }
+.rallyHero > * { position: relative; z-index: 1; }
+.rallyHero > div:first-child > span,.rallyQuickCard > div:first-child > span { color: #72e4bc; font-size: .68rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.rallyHero h2 { margin: 6px 0 7px; font-size: clamp(1.65rem,2.3vw,2.15rem); font-weight: 650; letter-spacing: -.055em; line-height: 1.08; }
+.rallyHero p { margin: 0; color: rgba(255,255,255,.7); font-size: .82rem; }
+.rallyHeroActions { display: flex; gap: 9px; }
+.rallyHeroActions button { min-height: 44px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 12px; background: rgba(255,255,255,.07); color: white; padding: 0 17px; font-size: .78rem; font-weight: 700; }
+.rallyHeroActions button svg { width: 17px; }
+.rallyHeroActions .rallyPrimary { border-color: var(--blue); background: var(--blue); }
+
+.rallyMetrics { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.rallyMetrics article { position: relative; min-height: 138px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); padding: 19px 21px 17px; box-shadow: 0 1px 2px rgba(18,33,29,.04),0 8px 24px rgba(18,33,29,.04); }
+.rallyMetrics article::after { content: ""; position: absolute; right: -30px; bottom: -42px; width: 80px; height: 80px; border-radius: 50%; background: #e4f7f0; }
+.rallyMetrics article:nth-child(2)::after { background: #ebe9ff; }.rallyMetrics article:nth-child(3)::after { background: #fff0ec; }.rallyMetrics article:nth-child(4)::after { background: #fff6df; }
+.rallyMetrics article > div { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: .65rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.rallyMetrics article i { width: 29px; height: 29px; display: grid; place-items: center; border-radius: 8px; font-style: normal; }
+.rallyMetrics article i svg { width: 15px; }.metricMint { background:#e4f7f0;color:#16845b }.metricViolet { background:#ebe9ff;color:#6558e8 }.metricCoral { background:#fff0ec;color:#d5443d }.metricAmber { background:#fff6df;color:#9a6410 }
+.rallyMetrics article > strong { display: block; margin-top: 8px; font-size: 1.95rem; letter-spacing: -.06em; line-height: 1; }
+.rallyMetrics article p { margin: 7px 0 0; color: var(--muted); font-size: .69rem; }
+.rallyMetrics article > b { position: absolute; left: 21px; right: 21px; bottom: 15px; height: 5px; overflow: hidden; border-radius: 99px; background: var(--paper-deep); }
+.rallyMetrics article > b span { display:block;height:100%;border-radius:inherit;background:var(--blue); }
+
+.rallyDashboardGrid { display: grid; grid-template-columns: minmax(0,2.25fr) minmax(290px,.95fr); gap: 15px; }
+.rallySurface { border: 1px solid var(--line); border-radius: 16px; background: var(--surface); padding: 21px 23px; box-shadow: 0 1px 2px rgba(18,33,29,.04),0 8px 24px rgba(18,33,29,.04); }
+.rallySectionHeading { display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:18px; }
+.rallySectionHeading h2 { margin:0;font-size:1.1rem;letter-spacing:-.03em; }.rallySectionHeading p { margin:4px 0 0;color:var(--muted);font-size:.78rem; }
+.rallySectionHeading button { min-height: 32px; display:flex;align-items:center;gap:5px;border:0;background:none;color:var(--blue);font-size:.69rem;font-weight:700; }.rallySectionHeading button svg{width:13px}
+.rallyCourtGrid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px; }
+.rallyCourtCard { min-width:0;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:13px;border:1px solid var(--line);border-radius:13px;padding:13px; }
+.rallyCourtVisual { position:relative;width:58px;height:58px;display:grid;place-items:center;overflow:hidden;border:1px solid #afdccc;border-radius:10px;background:#e4f7f0; }
+.rallyCourtVisual::after { content:"";position:absolute;inset:8px;border:1px solid currentColor;opacity:.25 }.rallyCourtVisual span{position:relative;z-index:1;width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:white;font-size:.7rem}
+.rallyCourtCopy { min-width:0 }.rallyCourtCopy > span { display:block;overflow:hidden;color:var(--muted);font-size:.59rem;text-overflow:ellipsis;white-space:nowrap }.rallyCourtCopy h3{margin:3px 0 2px;font-size:.82rem}.rallyCourtCopy p{margin:0;overflow:hidden;color:var(--muted);font-size:.63rem;text-overflow:ellipsis;white-space:nowrap}
+.rallyCourtState{align-self:stretch;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between}.rallyCourtState>span{min-height:25px;display:inline-flex;align-items:center;gap:6px;border-radius:99px;background:#e4f7f0;color:#16845b;padding:0 9px;font-size:.61rem;font-weight:700}.rallyCourtState>span::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}.rallyCourtState small{color:var(--muted);font-size:.58rem}
+.rallyTone_warning .rallyCourtVisual,.rallyTone_warning .rallyCourtState>span{background:#fff6df;color:#9a6410;border-color:#f1d899}.rallyTone_info .rallyCourtVisual,.rallyTone_info .rallyCourtState>span{background:#eaf2ff;color:#315fc0;border-color:#bdd3fb}.rallyTone_danger .rallyCourtVisual,.rallyTone_danger .rallyCourtState>span{background:#fff0ec;color:#d5443d;border-color:#f1bdb5}
+.rallyArrivalsPanel{display:flex;flex-direction:column}.rallyLive{display:flex;align-items:center;gap:5px;color:#16845b;font-size:.63rem;font-weight:700}.rallyLive i{width:6px;height:6px;border-radius:50%;background:#16845b}.rallyArrivalList{display:grid;flex:1}.rallyArrival{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:60px}.rallyArrival>div:nth-child(2){min-width:0}.rallyArrival>div:nth-child(2) strong{font-size:.7rem}.rallyArrival>div:nth-child(2) p{margin:2px 0 0;color:var(--muted);font-size:.61rem}.rallyTimeRail{position:relative;align-self:stretch;display:flex;align-items:center;gap:8px}.rallyTimeRail strong{font-size:.62rem}.rallyTimeRail>i{width:6px;height:6px;flex:0 0 auto;border-radius:50%}.railBlue{background:#4f8df7}.railMint{background:#16845b}.rallyTimeRail>span{position:absolute;left:49px;top:36px;width:1px;height:40px;background:var(--line)}.rallyArrival .statusPill{font-size:.55rem;padding:4px 7px}.rallyWideButton{width:100%;min-height:42px;border:1px solid var(--line);border-radius:11px;background:transparent;font-size:.72rem;font-weight:700}.rallyEmpty{min-height:180px;display:grid;place-items:center;align-content:center;gap:4px;color:var(--muted);text-align:center}.rallyEmpty svg{width:22px}.rallyEmpty strong{color:var(--ink);font-size:.75rem}.rallyEmpty span{font-size:.65rem}
+.rallyLowerGrid{display:grid;grid-template-columns:minmax(0,.82fr) minmax(0,1.18fr);gap:15px}.rallyAttentionPanel>button{width:100%;display:grid;grid-template-columns:36px minmax(0,1fr) 18px;align-items:center;gap:11px;border:0;border-top:1px solid var(--line);background:none;padding:13px 0;text-align:left}.rallyAttentionPanel>button>i{width:34px;height:34px;display:grid;place-items:center;border-radius:9px}.rallyAttentionPanel>button>i svg{width:16px}.attentionAmber{background:#fff6df;color:#9a6410}.attentionBlue{background:#eaf2ff;color:#315fc0}.rallyAttentionPanel>button span{display:grid}.rallyAttentionPanel>button strong{font-size:.72rem}.rallyAttentionPanel>button small{margin-top:2px;color:var(--muted);font-size:.62rem}.rallyAttentionPanel>button>svg{width:15px;color:var(--muted)}
+.rallyQuickCard{display:grid;grid-template-columns:.72fr 1.28fr;align-items:center;gap:24px;border-radius:16px;background:var(--ink);color:white;padding:25px 27px}.rallyQuickCard h2{margin:5px 0 5px;font-size:1.12rem}.rallyQuickCard p{margin:0;color:rgba(255,255,255,.58);font-size:.67rem;line-height:1.5}.rallyQuickActions{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.rallyQuickActions button{min-height:80px;display:grid;grid-template-columns:18px 1fr;align-content:center;gap:8px;border:1px solid rgba(255,255,255,.13);border-radius:11px;background:rgba(255,255,255,.05);color:white;padding:11px;text-align:left}.rallyQuickActions button>svg{width:16px;color:#7dd7b8}.rallyQuickActions button span{display:grid}.rallyQuickActions strong{font-size:.67rem}.rallyQuickActions small{margin-top:3px;color:rgba(255,255,255,.52);font-size:.57rem}
+
+@media (max-width: 1180px) {
+  .rallyDashboardGrid,.rallyLowerGrid{grid-template-columns:1fr}.rallyMetrics{grid-template-columns:repeat(2,minmax(0,1fr))}.rallyArrivalsPanel{min-height:360px}
+}
+@media (max-width: 900px) {
+  .topbar{position:static;min-height:76px}.rallySearch{display:none}.main{padding:22px 18px 80px}.rallyHero{min-height:150px;padding:27px}.rallyCourtGrid{grid-template-columns:1fr}.rallyRoleCard{min-width:auto}.rallyRoleCard div{display:none}
+}
+@media (max-width: 680px) {
+  .topbar{flex-direction:row;align-items:center;padding:0 15px}.topbarTitle h1{font-size:1.15rem}.rallyTopIcon:nth-of-type(2){display:none}.rallyMetrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.rallyMetrics article{min-height:122px;padding:15px}.rallyMetrics article>strong{font-size:1.55rem}.rallyHero{align-items:flex-start;flex-direction:column}.rallyHeroActions{width:100%}.rallyHeroActions button{flex:1}.rallySurface{padding:17px 15px}.rallyCourtCard{grid-template-columns:50px minmax(0,1fr)}.rallyCourtVisual{width:50px;height:50px}.rallyCourtState{grid-column:2;flex-direction:row;align-items:center}.rallyQuickCard{grid-template-columns:1fr}.rallyQuickActions{grid-template-columns:1fr}.rallyQuickActions button{min-height:58px}.rallySectionHeading{align-items:flex-start}.rallySectionHeading button{max-width:120px;text-align:right}.rallyArrival{grid-template-columns:58px minmax(0,1fr) auto}.rallyTimeRail>span{left:43px}
+}
+
 .manageShell *,
 .manageShell *::before,
 .manageShell *::after {
@@ -2029,3 +2145,15 @@
   .panel, .metricCard, .customerMetrics > div, .dataTable tr, .bookingRecord { border-color: var(--muted); }
   .button, .iconButton, .rowAction, .miniButton, .moreButton, .bookingFilterButton { border-width: 2px; }
 }
+
+/* Keep the RallyOS shell overrides after the legacy management rules. */
+.manageShell .sidebar { gap:14px;padding:24px 17px 18px;background:var(--surface) }
+.manageShell .brandContext{display:none}.manageShell .sidebar .brandLogo{width:150px}
+.manageShell .tenantSwitcher{margin:7px 0 2px;min-height:60px;border-radius:14px;background:var(--paper)}.manageShell .tenantSwitcher>span{width:36px;height:36px;background:var(--ink);color:white}
+.manageShell .desktopNav p{margin:14px 11px 6px;color:#98a39e;font-size:.61rem;letter-spacing:.13em}.manageShell .desktopNav button{min-height:42px;border-radius:11px;color:#43534d;font-size:.82rem}.manageShell .desktopNav button>span{width:20px;height:20px;border:0;border-radius:0}.manageShell .desktopNav button>span svg{width:17px;height:17px}.manageShell .desktopNav .navActive{background:var(--ink);color:white;box-shadow:0 8px 18px rgba(18,33,29,.14)}.manageShell .desktopNav .navActive>span{color:var(--citrus)}
+.manageShell .modeCard{border:0;border-radius:17px;background:var(--ink);color:white}.manageShell .modeCard p{color:rgba(255,255,255,.62)}.manageShell .miniProgress{background:rgba(255,255,255,.12)}.manageShell .userCard{border-top:1px solid var(--line);padding-top:10px}
+.manageShell .topbar{position:sticky;top:0;min-height:92px;padding:0 var(--admin-gutter);background:rgba(246,244,238,.92);backdrop-filter:blur(16px)}
+.manageShell .main{max-width:1460px;margin-inline:auto;padding:42px var(--admin-gutter) 90px}
+.manageShell .mobileNav button span svg{width:15px;height:15px}
+@media (max-width:900px){.manageShell .topbar{position:static;min-height:76px}.manageShell .main{padding:22px 18px 80px}}
+@media (max-width:680px){.manageShell .topbar{flex-direction:row;align-items:center;padding:0 15px}}
