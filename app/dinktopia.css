@@ -5888,14 +5888,21 @@
 .offer-spotlight-head .offer-center-mark { width: 44px; height: 44px; border-radius: 13px; }
 .offer-spotlight-head p { margin: 0 0 3px; color: #a8cd79; font-size: .58rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .offer-spotlight-head h2 { margin: 0; color: #fff; font: 650 1.02rem/1.2 var(--font-display), sans-serif; letter-spacing: -.03em; }
-.offer-spotlight-body { display: grid; gap: 12px; padding: 18px; }
-.offer-spotlight-body > strong { color: #5546d7; font: 700 1.5rem/1 var(--font-display), sans-serif; letter-spacing: -.04em; }
-.offer-spotlight-body > p { margin: -4px 0 0; color: #5f6e68; font-size: .73rem; line-height: 1.45; }
-.offer-spotlight-body dl { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 0; border-top: 1px solid #e8e5de; padding-top: 12px; }
+.offer-spotlight-body { display: grid; gap: 11px; padding: 15px; }
+.offer-spotlight-intro { margin: 0; color: #5f6e68; font-size: .7rem; line-height: 1.45; }
+.offer-spotlight-list { display: grid; max-height: min(48dvh, 360px); gap: 8px; overflow-y: auto; scrollbar-width: thin; }
+.offer-spotlight-card { display: grid; gap: 7px; border: 1px solid #d8e9df; border-radius: 14px; background: linear-gradient(145deg, #fbfffc, #f5faf7); padding: 11px 12px; color: #102a43; text-decoration: none; box-shadow: 0 6px 18px rgba(10, 37, 31, .04); transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.offer-spotlight-card:hover { transform: translateY(-1px); border-color: #9ecdb4; box-shadow: 0 10px 24px rgba(10, 37, 31, .09); }
+.offer-spotlight-card:focus-visible { outline: 3px solid rgba(168, 205, 121, .72); outline-offset: 2px; }
+.offer-spotlight-card.is-unavailable { opacity: .68; }
+.offer-spotlight-card-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.offer-spotlight-card-top span { border-radius: 99px; background: #e4f7ee; padding: 4px 7px; color: #16845b; font-size: .49rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.offer-spotlight-card-top strong { color: #5546d7; font-size: .68rem; }
+.offer-spotlight-card h3 { margin: 0; color: #102a43; font: 650 .82rem/1.25 var(--font-display), sans-serif; letter-spacing: -.02em; }
+.offer-spotlight-card dl { display: grid; grid-template-columns: 1fr 1.25fr; gap: 10px; margin: 0; border-top: 1px solid #e8eee9; padding-top: 7px; }
 .offer-spotlight-body dt { color: #7a8681; font-size: .5rem; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; }
 .offer-spotlight-body dd { margin: 3px 0 0; color: #24352f; font-size: .66rem; font-weight: 650; }
-.offer-spotlight-action { display: flex; min-height: 44px; align-items: center; justify-content: space-between; border-radius: 11px; background: #6558e8; padding: 0 14px; color: #fff; font-size: .72rem; font-weight: 750; text-decoration: none; box-shadow: 0 10px 22px rgba(101, 88, 232, .18); }
-.offer-spotlight-action svg { width: 15px; height: 15px; }
+.offer-spotlight-card > small { color: #527064; font-size: .57rem; font-weight: 650; }
 .offer-countdown { display: grid; gap: 6px; }
 .offer-countdown > span { display: block; height: 3px; overflow: hidden; border-radius: 99px; background: #eceae4; }
 .offer-countdown > span::after { display: block; width: var(--countdown-progress); height: 100%; border-radius: inherit; background: #a8cd79; content: ""; transition: width .2s linear; }
@@ -6106,6 +6113,16 @@
   .offer-center-backdrop.is-spotlight { place-items: center; padding: 16px; }
   .offer-center-dialog { display: grid; width: 100%; max-height: min(94dvh, 760px); grid-template-rows: auto minmax(0, auto) auto; border-width: 1px 0 0; border-radius: 22px 22px 0 0; }
   .offer-center-dialog.offer-spotlight-dialog { width: min(390px, 100%); max-height: none; border-width: 1px; border-radius: 20px; }
+  .offer-spotlight-head { grid-template-columns: 38px minmax(0, 1fr) 36px; gap: 10px; padding: 13px; }
+  .offer-spotlight-head .offer-center-mark { width: 38px; height: 38px; border-radius: 11px; }
+  .offer-spotlight-head h2 { font-size: .9rem; }
+  .offer-spotlight-body { gap: 9px; padding: 11px; }
+  .offer-spotlight-intro { font-size: .63rem; }
+  .offer-spotlight-list { max-height: min(52dvh, 390px); gap: 6px; }
+  .offer-spotlight-card { gap: 5px; border-radius: 12px; padding: 8px 9px; }
+  .offer-spotlight-card h3 { font-size: .73rem; }
+  .offer-spotlight-card dl { gap: 7px; padding-top: 5px; }
+  .offer-spotlight-body dd { font-size: .58rem; }
   .offer-center-hero { grid-template-columns: 38px minmax(0, 1fr) 38px; gap: 10px; padding: 14px 14px 13px; }
   .offer-center-mark { width: 38px; height: 38px; border-radius: 11px; }
   .offer-center-mark svg { width: 20px; height: 20px; }

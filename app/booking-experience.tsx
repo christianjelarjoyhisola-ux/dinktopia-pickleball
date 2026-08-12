@@ -2934,24 +2934,34 @@ export function BookingExperience({
           aria-labelledby="offer-center-title"
           aria-describedby="offer-center-description"
         >
-          {offerSpotlight ? (() => {
-            const promotion = livePromotions[0];
-            const bookingDate = promotionBookingDate(promotion, dates);
-            return <>
+          {offerSpotlight ? <>
               <div className="offer-spotlight-head">
                 <span className="offer-center-mark" aria-hidden="true"><BadgePercent /></span>
-                <div><p>Special offer</p><h2 id="offer-center-title">{promotion.name}</h2></div>
-                <button ref={offerCloseRef} type="button" className="offer-center-close" aria-label="Close special offer" onClick={() => { setOfferCenterOpen(false); setOfferSpotlight(false); }}><X aria-hidden="true" /></button>
+                <div><p>Special offers</p><h2 id="offer-center-title">Choose your better hour.</h2></div>
+                <button ref={offerCloseRef} type="button" className="offer-center-close" aria-label="Close special offers" onClick={() => { setOfferCenterOpen(false); setOfferSpotlight(false); }}><X aria-hidden="true" /></button>
               </div>
               <div className="offer-spotlight-body">
-                <strong>{promotionDiscountLabel(promotion)}</strong>
-                <p id="offer-center-description">Tap this card to view discounted court times.</p>
-                <dl><div><dt>When</dt><dd>{promotionScheduleLabel(promotion)}</dd></div><div><dt>Valid</dt><dd>{promotionValidityLabel(promotion)}</dd></div></dl>
-                {bookingDate && <Link className="offer-spotlight-action" href={`/book?offer=${encodeURIComponent(promotion.id)}&date=${bookingDate}`} onClick={() => { setOfferCenterOpen(false); setOfferSpotlight(false); }}>See available times <ArrowUpRight aria-hidden="true" /></Link>}
+                <p id="offer-center-description" className="offer-spotlight-intro">{livePromotions.length} active {livePromotions.length === 1 ? "offer" : "offers"}. Tap any card to see its discounted court times.</p>
+                <div className="offer-spotlight-list">
+                  {livePromotions.map((promotion) => {
+                    const bookingDate = promotionBookingDate(promotion, dates);
+                    const content = <>
+                      <div className="offer-spotlight-card-top"><span>Live now</span><strong>{promotionDiscountLabel(promotion)}</strong></div>
+                      <h3>{promotion.name}</h3>
+                      <dl><div><dt>When</dt><dd>{promotionScheduleLabel(promotion)}</dd></div><div><dt>Valid</dt><dd>{promotionValidityLabel(promotion)}</dd></div></dl>
+                      <small>{bookingDate ? "Tap to view matching times" : "No eligible date in the current booking window"}</small>
+                    </>;
+                    return bookingDate ? <Link
+                      className="offer-spotlight-card"
+                      href={`/book?offer=${encodeURIComponent(promotion.id)}&date=${bookingDate}`}
+                      key={promotion.id}
+                      onClick={() => { setOfferCenterOpen(false); setOfferSpotlight(false); }}
+                    >{content}</Link> : <article className="offer-spotlight-card is-unavailable" key={promotion.id}>{content}</article>;
+                  })}
+                </div>
                 <div className="offer-countdown" role="timer" aria-live="off"><span style={{ "--countdown-progress": `${(offerCountdown / 6) * 100}%` } as CSSProperties} /><small>Closing in {offerCountdown}s</small></div>
               </div>
-            </>;
-          })() : <>
+            </> : <>
           <div className="offer-center-hero">
             <span className="offer-center-mark" aria-hidden="true"><BadgePercent /></span>
             <div>

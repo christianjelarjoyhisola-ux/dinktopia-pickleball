@@ -59,7 +59,11 @@ test("auto-opens a centered six-second offer spotlight", () => {
   assert.match(booking, /setOfferCountdown\(6\)/);
   assert.match(booking, /Date\.now\(\) \+ 6000/);
   assert.match(booking, /Closing in \{offerCountdown\}s/);
-  assert.match(booking, /Tap this card to view discounted court times\./);
+  assert.match(booking, /livePromotions\.map\(\(promotion\) =>/);
+  assert.match(booking, /Tap any card to see its discounted court times\./);
+  assert.match(booking, /className="offer-spotlight-card"/);
+  assert.doesNotMatch(booking, /See available times/);
+  assert.doesNotMatch(css, /\.offer-spotlight-action/);
   assert.match(css, /\.offer-center-backdrop\.is-spotlight\s*\{[^}]*place-items:\s*center/s);
   assert.match(css, /\.offer-spotlight-dialog\s*\{[^}]*width:\s*min\(420px, 100%\)/s);
 });
