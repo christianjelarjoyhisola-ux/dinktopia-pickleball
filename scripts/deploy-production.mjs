@@ -4,14 +4,16 @@ import path from "node:path";
 
 const root = process.cwd();
 const wranglerRoot = path.join(root, ".wrangler");
-const executable = process.platform === "win32" ? "npm.cmd" : "npm";
+const executable = "npm";
 
 function run(args) {
   const result = spawnSync(executable, args, {
     cwd: root,
     env: process.env,
+    shell: process.platform === "win32",
     stdio: "inherit",
   });
+  if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
