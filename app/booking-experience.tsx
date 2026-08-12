@@ -2936,7 +2936,6 @@ export function BookingExperience({
                   onClick={() => setOfferCenterOpen(false)}
                 >
                   {cardContent}
-                  <span className="offer-card-action">View discounted times <ArrowUpRight aria-hidden="true" /></span>
                 </Link>
               ) : (
                 <article className={`offer-center-card${isPromotionLive ? " is-live" : ""}`} key={promotion.id}>

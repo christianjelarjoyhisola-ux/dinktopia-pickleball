@@ -37,7 +37,7 @@ test("compacts mobile offers so players can compare without excessive scrolling"
 
 test("takes each offer to its eligible date and highlights matching court-hours", () => {
   assert.match(booking, /href=\{`\/book\?offer=\$\{encodeURIComponent\(promotion\.id\)\}&date=\$\{bookingDate\}`\}/);
-  assert.match(booking, /View discounted times/);
+  assert.match(booking, /className=\{`offer-center-card offer-center-card-link/);
   assert.match(booking, /dateRailDates\.map/);
   assert.match(booking, /slot\?\.promotionId === targetOfferId \? " offer-target"/);
   assert.match(booking, /scrollIntoView\(\{ behavior: "smooth", block: "center", inline: "center" \}\)/);
