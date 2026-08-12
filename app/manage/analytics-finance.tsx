@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type CSSProperties } from "react";
+import { formatClockRange12 } from "../lib/display-time";
 
 import type {
   Booking,
@@ -478,7 +479,7 @@ export function AnalyticsView({
           <div className={styles.opportunityList}>{recommendedActions.map((action) => {
             const openHours = Math.round(Math.max(0, 100 - action.utilization) / 100 * Math.max(selectedCourtCount, 1) * 3);
             const opportunityValue = openHours * revenuePerHour;
-            return <article key={`${action.weekday}-${action.startsAt}`}><span className={styles.opportunityTime}>{weekdayNames[action.weekday]} / {action.startsAt}-{action.endsAt}</span><div><strong>{action.label}</strong><p>{action.utilization}% utilized / about {openHours} open court-hours</p></div><span className={styles.opportunityValue}>{money(opportunityValue, report.currency)}</span><button type="button" onClick={() => openOffer(action)} disabled={!promotions?.canCreate || !onCreatePromotion}>Create offer</button></article>;
+            return <article key={`${action.weekday}-${action.startsAt}`}><span className={styles.opportunityTime}>{weekdayNames[action.weekday]} / {formatClockRange12(action.startsAt, action.endsAt)}</span><div><strong>{action.label}</strong><p>{action.utilization}% utilized / about {openHours} open court-hours</p></div><span className={styles.opportunityValue}>{money(opportunityValue, report.currency)}</span><button type="button" onClick={() => openOffer(action)} disabled={!promotions?.canCreate || !onCreatePromotion}>Create offer</button></article>;
           })}</div>
           {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer publishing will unlock after the Dinktopia promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Publishing is reserved for the System Owner or this tenant&apos;s court owner.</p> : <p className={styles.opportunityNote}>Opportunity values use open hours and the current recorded revenue per booked court-hour; they are not guaranteed revenue.</p>}
           {publishedOffers.length > 0 && (
@@ -500,7 +501,7 @@ export function AnalyticsView({
                         <strong>{offerDiscount(offer)}</strong>
                       </div>
                       <h5>{offer.name}</h5>
-                      <p>{offer.weekdays.map((day) => weekdayNames[day]).join(", ")} · {offer.startsAt.slice(0, 5)}–{offer.endsAt.slice(0, 5)}</p>
+                      <p>{offer.weekdays.map((day) => weekdayNames[day]).join(", ")} · {formatClockRange12(offer.startsAt, offer.endsAt)}</p>
                       <div className={styles.offerCardMeta}><span>{localDate(offer.validFrom)}–{localDate(offer.validUntil)}</span><span>{offer.courtIds.length} {offer.courtIds.length === 1 ? "court" : "courts"}</span></div>
                       <footer><span>{usage}</span><small>Applied automatically to matching slots</small></footer>
                     </article>
@@ -539,7 +540,7 @@ export function AnalyticsView({
               <label><span>Starts</span><input type="date" value={offerDraft.validFrom} onChange={(event) => setOfferDraft({ ...offerDraft, validFrom: event.target.value })} /></label>
               <label><span>Ends</span><input type="date" value={offerDraft.validUntil} onChange={(event) => setOfferDraft({ ...offerDraft, validUntil: event.target.value })} /></label>
               <label><span>Maximum redemptions</span><input type="number" min="1" max="10000" value={offerDraft.maxRedemptions ?? ""} onChange={(event) => setOfferDraft({ ...offerDraft, maxRedemptions: Number(event.target.value) || null })} /></label>
-              <div className={styles.offerScope}><span>Applies to</span><strong>{weekdayNames[offerDraft.weekdays[0]]} - {offerDraft.startsAt}-{offerDraft.endsAt} - {offerDraft.courtIds.length} {offerDraft.courtIds.length === 1 ? "court" : "courts"}</strong></div>
+              <div className={styles.offerScope}><span>Applies to</span><strong>{weekdayNames[offerDraft.weekdays[0]]} · {formatClockRange12(offerDraft.startsAt, offerDraft.endsAt)} · {offerDraft.courtIds.length} {offerDraft.courtIds.length === 1 ? "court" : "courts"}</strong></div>
             </div>
             {offerError && <p className={styles.offerError} role="alert">{offerError}</p>}
             <footer>

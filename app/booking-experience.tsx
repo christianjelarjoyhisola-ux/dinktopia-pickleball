@@ -28,6 +28,7 @@ import {
 } from "react";
 import { TransitionLink as Link } from "./transition-link";
 import { activeTenant } from "./tenants/registry";
+import { formatClockRange12 } from "./lib/display-time";
 import {
   formatClockLabel,
   logicalBandForHour,
@@ -686,7 +687,7 @@ function promotionScheduleLabel(promotion: PublicPromotion) {
     .map((day) => promotionWeekdayNames[day])
     .filter(Boolean)
     .join(", ");
-  return `${days || "Selected days"} · ${promotion.startsAt.slice(0, 5)}–${promotion.endsAt.slice(0, 5)}`;
+  return `${days || "Selected days"} · ${formatClockRange12(promotion.startsAt, promotion.endsAt)}`;
 }
 
 function promotionValidityLabel(promotion: PublicPromotion) {
@@ -1541,6 +1542,7 @@ export function BookingExperience({
   const offerDialogRef = useRef<HTMLDivElement>(null);
   const offerCloseRef = useRef<HTMLButtonElement>(null);
   const offerRestoreFocusRef = useRef<HTMLElement | null>(null);
+  const floatingOfferRef = useRef<HTMLButtonElement | null>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -2067,8 +2069,12 @@ export function BookingExperience({
       window.clearTimeout(focusTimer);
       document.body.style.overflow = previousOverflow;
       document.removeEventListener("keydown", onKeyDown);
-      offerRestoreFocusRef.current?.focus();
-      offerRestoreFocusRef.current = null;
+      const restoreTarget = offerRestoreFocusRef.current;
+      window.setTimeout(() => {
+        if (restoreTarget?.isConnected) restoreTarget.focus();
+        else floatingOfferRef.current?.focus();
+        offerRestoreFocusRef.current = null;
+      }, 0);
     };
   }, [offerCenterOpen]);
 
@@ -2870,6 +2876,22 @@ export function BookingExperience({
           </div>
         </div>
       </div>}
+      {!offerCenterOpen && publicPromotions.length > 0 && <button
+        ref={floatingOfferRef}
+        type="button"
+        className={`floating-offer-pill${livePromotions.length > 0 ? " is-live" : " is-upcoming"}`}
+        aria-label={livePromotions.length > 0
+          ? `Open special offers. ${promotionDiscountLabel(livePromotions[0])} available now.`
+          : `${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer is" : "offers are"} coming soon.`}
+        onClick={(event) => {
+          offerRestoreFocusRef.current = event.currentTarget;
+          setOfferCenterOpen(true);
+        }}
+      >
+        <span className="floating-offer-medallion" aria-hidden="true"><BadgePercent /></span>
+        <span><small>{livePromotions.length > 0 ? "Special offer" : "Coming soon"}</small><strong>{livePromotions.length > 0 ? promotionDiscountLabel(livePromotions[0]) : `${publicPromotions.length} upcoming`}</strong></span>
+        {publicPromotions.length > 1 && <b>{publicPromotions.length}</b>}
+      </button>}
 
       <main id="main-content" className={isHome ? undefined : isBookingPage && mode === "book" ? "route-main rallyos-main-content" : "route-main"}>
         {isHome && <section className="hero" id="top">

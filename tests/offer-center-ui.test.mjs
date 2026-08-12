@@ -17,11 +17,19 @@ test("keeps the offer center accessible and reopenable", () => {
   assert.match(booking, /role="dialog"/);
   assert.match(booking, /aria-modal="true"/);
   assert.match(booking, /event\.key === "Escape"/);
-  assert.match(booking, /offerRestoreFocusRef\.current\?\.focus\(\)/);
+  assert.match(booking, /restoreTarget\?\.isConnected/);
+  assert.match(booking, /floatingOfferRef\.current\?\.focus\(\)/);
 });
 
 test("uses a premium mobile sheet with reduced-motion support", () => {
   assert.match(css, /\.offer-center-backdrop\s*\{[^}]*position:\s*fixed/s);
   assert.match(css, /@media \(max-width:\s*779\.98px\)[\s\S]*?\.offer-center-dialog\s*\{[^}]*border-radius:\s*24px 24px 0 0/s);
-  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.offer-center-dialog\s*\{\s*animation:\s*none/s);
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.offer-center-dialog[\s\S]*?\{\s*animation:\s*none/s);
+});
+
+test("keeps a visible premium offer entry point while players scroll", () => {
+  assert.match(booking, /className=\{`floating-offer-pill/);
+  assert.match(booking, /Special offer/);
+  assert.match(css, /\.floating-offer-pill\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*70/s);
+  assert.match(css, /\.booking-route:has\(\.slot-step-footer \.button:not\(:disabled\)\) \.floating-offer-pill\s*\{[^}]*bottom:\s*calc\(92px \+ env\(safe-area-inset-bottom\)\)/s);
 });
