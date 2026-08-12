@@ -2871,7 +2871,7 @@ export function BookingExperience({
             })}
           </div>
           <div className="offer-center-footer">
-            <span><Check aria-hidden="true" /> No code needed. The best eligible offer is applied automatically.</span>
+            <span><Check aria-hidden="true" /> Eligible discounts apply automatically.</span>
             <Link className="button offer-center-cta" href="/book" onClick={() => setOfferCenterOpen(false)}>View offer times <ArrowUpRight aria-hidden="true" /></Link>
           </div>
         </div>

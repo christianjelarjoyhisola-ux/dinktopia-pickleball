@@ -31,6 +31,8 @@ test("compacts mobile offers so players can compare without excessive scrolling"
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-dialog\s*\{[^}]*max-height:\s*min\(94dvh,\s*760px\)/s);
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-card\s*\{[^}]*padding:\s*9px 10px 10px/s);
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-card dl\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.35fr\) minmax\(0,\s*1fr\) auto/s);
+  assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-cta\s*\{[^}]*width:\s*100%[^}]*justify-self:\s*stretch/s);
+  assert.match(booking, /Eligible discounts apply automatically\./);
 });
 
 test("keeps a visible premium offer entry point while players scroll", () => {
