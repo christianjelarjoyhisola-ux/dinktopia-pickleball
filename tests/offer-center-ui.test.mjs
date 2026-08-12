@@ -31,8 +31,17 @@ test("compacts mobile offers so players can compare without excessive scrolling"
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-dialog\s*\{[^}]*max-height:\s*min\(94dvh,\s*760px\)/s);
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-card\s*\{[^}]*padding:\s*9px 10px 10px/s);
   assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-card dl\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1\.35fr\) minmax\(0,\s*1fr\) auto/s);
-  assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-cta\s*\{[^}]*width:\s*100%[^}]*justify-self:\s*stretch/s);
+  assert.match(css, /@media \(max-width:\s*760px\)[\s\S]*?\.offer-center-footer\s*\{\s*display:\s*none;/s);
   assert.match(booking, /Eligible discounts apply automatically\./);
+});
+
+test("takes each offer to its eligible date and highlights matching court-hours", () => {
+  assert.match(booking, /href=\{`\/book\?offer=\$\{encodeURIComponent\(promotion\.id\)\}&date=\$\{bookingDate\}`\}/);
+  assert.match(booking, /View discounted times/);
+  assert.match(booking, /dateRailDates\.map/);
+  assert.match(booking, /slot\?\.promotionId === targetOfferId \? " offer-target"/);
+  assert.match(booking, /scrollIntoView\(\{ behavior: "smooth", block: "center", inline: "center" \}\)/);
+  assert.match(css, /\.availability-cell\.offer-target:not\(\.busy\):not\(\.selected\)/);
 });
 
 test("keeps a visible premium offer entry point while players scroll", () => {

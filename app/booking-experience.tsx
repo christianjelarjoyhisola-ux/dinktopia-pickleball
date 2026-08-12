@@ -182,6 +182,8 @@ export type BookingExperienceProps = {
   surface?: "home" | "courts" | "booking";
   initialCourtSlug?: string;
   initialMode?: "book" | "manage";
+  initialOfferId?: string;
+  initialDate?: string;
 };
 
 const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => ({
@@ -698,6 +700,19 @@ function promotionValidityLabel(promotion: PublicPromotion) {
     timeZone: "UTC",
   });
   return `${formatter.format(new Date(`${promotion.validFrom}T12:00:00Z`))}–${formatter.format(new Date(`${promotion.validUntil}T12:00:00Z`))}`;
+}
+
+function promotionMatchesDate(promotion: PublicPromotion, date: string) {
+  const parsedDate = new Date(`${date}T00:00:00Z`);
+  if (!Number.isFinite(parsedDate.getTime())) return false;
+  const weekday = (parsedDate.getUTCDay() + 6) % 7;
+  return date >= promotion.validFrom &&
+    date <= promotion.validUntil &&
+    promotion.weekdays.includes(weekday);
+}
+
+function promotionBookingDate(promotion: PublicPromotion, dates: ReturnType<typeof getDateOptions>) {
+  return dates.slice(1).find((date) => promotionMatchesDate(promotion, date.iso))?.iso ?? null;
 }
 
 function promotedHourlyPrice(
@@ -1529,6 +1544,8 @@ export function BookingExperience({
   surface = "home",
   initialCourtSlug,
   initialMode = "book",
+  initialOfferId,
+  initialDate,
 }: BookingExperienceProps) {
   const isLive = platformMode() === "live";
   const isHome = surface === "home";
@@ -1549,7 +1566,12 @@ export function BookingExperience({
   const [offerCenterOpen, setOfferCenterOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
+  const [selectedDate, setSelectedDate] = useState(() =>
+    initialDate && dates.some((date) => date.iso === initialDate)
+      ? initialDate
+      : dates[1]?.iso ?? "",
+  );
+  const [targetOfferId, setTargetOfferId] = useState(initialOfferId ?? "");
   const [, setSelectedCourtId] = useState(() => {
     if (isLive) return previewCourts[0].id;
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
@@ -1622,6 +1644,10 @@ export function BookingExperience({
     const today = manilaDateNow();
     return publicPromotions.filter((promotion) => promotion.validFrom <= today && promotion.validUntil >= today);
   }, [publicPromotions]);
+  const targetPromotion = useMemo(
+    () => publicPromotions.find((promotion) => promotion.id === targetOfferId) ?? null,
+    [publicPromotions, targetOfferId],
+  );
   const offerSignature = useMemo(() => publicPromotions
     .map((promotion) => `${promotion.id}:${promotion.validFrom}:${promotion.validUntil}:${promotion.discountValue}`)
     .sort()
@@ -1678,6 +1704,16 @@ export function BookingExperience({
       name: slot.promotionName ?? "Court offer",
     }])).values());
   }, [schedule]);
+  const targetedOfferVisible = Boolean(
+    targetPromotion && visiblePromotions.some((promotion) => promotion.id === targetPromotion.id),
+  );
+  const dateRailDates = useMemo(() => {
+    const standardDates = dates.slice(1, 7);
+    const selected = dates.find((date) => date.iso === selectedDate);
+    return selected && !standardDates.some((date) => date.iso === selected.iso)
+      ? [...standardDates.slice(0, 5), selected]
+      : standardDates;
+  }, [dates, selectedDate]);
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
   const atomicMultiSessionBooking =
@@ -1968,6 +2004,7 @@ export function BookingExperience({
 
       bookingAttemptIdRef.current = pointer.clientRequestId;
       bookingOwnsSelectionRef.current = true;
+      setTargetOfferId("");
       setSelectedDate(restored.date);
       setSelectedCourtId(restored.courtId);
       dispatchSelection({
@@ -2025,6 +2062,7 @@ export function BookingExperience({
 
   useEffect(() => {
     if (!isLive || bootstrapState !== "ready" || !offerSignature || livePromotions.length === 0) return;
+    if (isBookingPage && initialOfferId) return;
     const storageKey = `dinktopia:offer-center:${activeTenant.slug}:${offerSignature}`;
     try {
       if (sessionStorage.getItem(storageKey)) return;
@@ -2034,7 +2072,7 @@ export function BookingExperience({
     }
     const openTimer = window.setTimeout(() => setOfferCenterOpen(true), 0);
     return () => window.clearTimeout(openTimer);
-  }, [bootstrapState, isLive, livePromotions.length, offerSignature]);
+  }, [bootstrapState, initialOfferId, isBookingPage, isLive, livePromotions.length, offerSignature]);
 
   useEffect(() => {
     if (!offerCenterOpen) return;
@@ -2083,6 +2121,26 @@ export function BookingExperience({
     const intervalId = window.setInterval(() => setHoldNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [pendingBooking?.expiresAt]);
+
+  useEffect(() => {
+    if (
+      !isBookingPage ||
+      step !== 1 ||
+      visibleAvailabilityState !== "ready" ||
+      !targetPromotion ||
+      !targetedOfferVisible
+    ) return;
+    const frame = window.requestAnimationFrame(() => {
+      const mobile = window.matchMedia("(max-width: 760px)").matches;
+      const target = document.querySelector<HTMLElement>(
+        mobile
+          ? ".mobile-availability-cell.offer-target"
+          : ".availability-scroll .availability-cell.offer-target",
+      );
+      target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [isBookingPage, step, targetPromotion, targetedOfferVisible, visibleAvailabilityState]);
 
   useEffect(() => {
     if (step !== 3 || !pendingBooking) return;
@@ -2215,6 +2273,7 @@ export function BookingExperience({
 
   function chooseDate(date: string) {
     if (date === selectedDate) return;
+    setTargetOfferId("");
     const nextDate = dates.find((candidate) => candidate.iso === date);
     const resetMessage = selectedSlots.length
       ? `${nextDate?.long ?? date} selected. Your previous court-hours were cleared.`
@@ -2856,7 +2915,8 @@ export function BookingExperience({
           <div className="offer-center-list">
             {publicPromotions.map((promotion) => {
               const isPromotionLive = livePromotions.some((candidate) => candidate.id === promotion.id);
-              return <article className={`offer-center-card${isPromotionLive ? " is-live" : ""}`} key={promotion.id}>
+              const bookingDate = promotionBookingDate(promotion, dates);
+              const cardContent = <>
                 <div className="offer-center-card-top">
                   <span className={`offer-status${isPromotionLive ? " is-live" : ""}`}>{isPromotionLive ? "Live now" : "Upcoming"}</span>
                   <strong>{promotionDiscountLabel(promotion)}</strong>
@@ -2867,7 +2927,23 @@ export function BookingExperience({
                   <div><dt>Valid</dt><dd>{promotionValidityLabel(promotion)}</dd></div>
                   <div><dt>Courts</dt><dd>{promotion.courtIds.length} {promotion.courtIds.length === 1 ? "court" : "courts"}</dd></div>
                 </dl>
-              </article>;
+              </>;
+              return bookingDate ? (
+                <Link
+                  className={`offer-center-card offer-center-card-link${isPromotionLive ? " is-live" : ""}`}
+                  href={`/book?offer=${encodeURIComponent(promotion.id)}&date=${bookingDate}`}
+                  key={promotion.id}
+                  onClick={() => setOfferCenterOpen(false)}
+                >
+                  {cardContent}
+                  <span className="offer-card-action">View discounted times <ArrowUpRight aria-hidden="true" /></span>
+                </Link>
+              ) : (
+                <article className={`offer-center-card${isPromotionLive ? " is-live" : ""}`} key={promotion.id}>
+                  {cardContent}
+                  <span className="offer-card-unavailable">No matching date in the current booking window</span>
+                </article>
+              );
             })}
           </div>
           <div className="offer-center-footer">
@@ -3168,7 +3244,7 @@ export function BookingExperience({
                         <legend className="sr-only">Select a date</legend>
                         <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Next 6 days</span></div>
                         <div className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
-                          {dates.slice(1, 7).map((date, index) => (
+                          {dateRailDates.map((date, index) => (
                             <button
                               type="button"
                               key={date.iso}
@@ -3216,9 +3292,15 @@ export function BookingExperience({
                         </div>
 
                         {visibleAvailabilityState === "ready" && visiblePromotions.length > 0 && (
-                          <section className="booking-offers-strip" aria-label="Offers available for the selected date">
+                          <section className={`booking-offers-strip${targetedOfferVisible ? " is-targeted" : ""}`} aria-label="Offers available for the selected date">
                             <div className="booking-offers-icon" aria-hidden="true">%</div>
-                            <div><span>Offers available</span><strong>{visiblePromotions.map((promotion) => promotion.name).join(" · ")}</strong><small>Discounts apply automatically to marked court-hours.</small></div>
+                            <div><span>{targetedOfferVisible ? "Your selected offer" : "Offers available"}</span><strong>{visiblePromotions.map((promotion) => promotion.name).join(" · ")}</strong><small>{targetedOfferVisible ? "Matching discounted times are highlighted below." : "Discounts apply automatically to marked court-hours."}</small></div>
+                          </section>
+                        )}
+                        {visibleAvailabilityState === "ready" && targetPromotion && !targetedOfferVisible && (
+                          <section className="booking-offers-strip offer-target-empty" role="status">
+                            <div className="booking-offers-icon" aria-hidden="true">%</div>
+                            <div><span>Offer times unavailable</span><strong>{targetPromotion.name}</strong><small>No matching court-hour is open on this date. Choose another eligible offer date.</small></div>
                           </section>
                         )}
 
@@ -3299,10 +3381,10 @@ export function BookingExperience({
                                           <button
                                             type="button"
                                             key={`${court.id}-${hour}`}
-                                            className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
+                                            className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}${slot?.promotionId === targetOfferId ? " offer-target" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={busy}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && slot ? slot.promotionName ? `, ${slot.promotionName}, regular price ${peso(slot.originalPrice ?? slot.price)}, offer price ${peso(slot.price)}` : `, ${peso(slot.price)} per court-hour` : ""}`}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && slot ? slot.promotionName ? `, ${slot.promotionName}, regular price ${peso(slot.originalPrice ?? slot.price)}, offer price ${peso(slot.price)}` : `, ${peso(slot.price)} per court-hour` : ""}${slot?.promotionId === targetOfferId ? ", highlighted offer time" : ""}`}
                                             onClick={() => slot && !busy && chooseSlot(court, slot)}
                                           ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : slot?.promotionName ? "Offer" : "Open"}</small>{!busy && slot && <em className={`slot-price${slot.promotionName ? " has-offer" : ""}`}>{slot.promotionName && <s>{peso(slot.originalPrice ?? slot.price)}</s>}<b>{peso(slot.price)}</b></em>}</button>
                                         );
@@ -3337,10 +3419,10 @@ export function BookingExperience({
                                         <button
                                           type="button"
                                           key={`${court.id}-${hour}`}
-                                          className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
+                                          className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}${slot?.promotionId === targetOfferId ? " offer-target" : ""}`}
                                           aria-pressed={isSelected}
                                           disabled={busy}
-                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && slot ? slot.promotionName ? `, ${slot.promotionName}, regular price ${peso(slot.originalPrice ?? slot.price)}, offer price ${peso(slot.price)}` : `, ${peso(slot.price)} per court-hour` : ""}`}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && slot ? slot.promotionName ? `, ${slot.promotionName}, regular price ${peso(slot.originalPrice ?? slot.price)}, offer price ${peso(slot.price)}` : `, ${peso(slot.price)} per court-hour` : ""}${slot?.promotionId === targetOfferId ? ", highlighted offer time" : ""}`}
                                           onClick={() => slot && !busy && chooseSlot(court, slot)}
                                         ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : slot?.promotionName ? "Offer" : "Open"}</small>{!busy && slot && <em className={`slot-price${slot.promotionName ? " has-offer" : ""}`}>{slot.promotionName && <s>{peso(slot.originalPrice ?? slot.price)}</s>}<b>{peso(slot.price)}</b></em>}</button>
                                       );

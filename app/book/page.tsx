@@ -29,13 +29,23 @@ export default async function BookPage({ searchParams }: BookPageProps) {
       ? requestedCourt
       : undefined;
   const initialMode = params.mode === "manage" ? "manage" : "book";
+  const requestedOffer = typeof params.offer === "string" ? params.offer.trim() : undefined;
+  const initialOfferId = requestedOffer && /^[a-z0-9][a-z0-9_-]{0,99}$/i.test(requestedOffer)
+    ? requestedOffer
+    : undefined;
+  const requestedDate = typeof params.date === "string" ? params.date.trim() : undefined;
+  const initialDate = requestedDate && /^\d{4}-\d{2}-\d{2}$/.test(requestedDate)
+    ? requestedDate
+    : undefined;
 
   return (
     <BookingExperience
-      key={`${initialMode}:${courtSlug ?? "default"}`}
+      key={`${initialMode}:${courtSlug ?? "default"}:${initialOfferId ?? "no-offer"}:${initialDate ?? "default-date"}`}
       surface="booking"
       initialCourtSlug={courtSlug}
       initialMode={initialMode}
+      initialOfferId={initialOfferId}
+      initialDate={initialDate}
     />
   );
 }
