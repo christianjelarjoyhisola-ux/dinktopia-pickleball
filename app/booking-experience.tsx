@@ -2130,16 +2130,22 @@ export function BookingExperience({
       !targetPromotion ||
       !targetedOfferVisible
     ) return;
+    let clearTimer: number | undefined;
     const frame = window.requestAnimationFrame(() => {
       const mobile = window.matchMedia("(max-width: 760px)").matches;
+      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const target = document.querySelector<HTMLElement>(
         mobile
           ? ".mobile-availability-cell.offer-target"
           : ".availability-scroll .availability-cell.offer-target",
       );
       target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
+      clearTimer = window.setTimeout(() => setTargetOfferId(""), reducedMotion ? 700 : 2700);
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      if (clearTimer) window.clearTimeout(clearTimer);
+    };
   }, [isBookingPage, step, targetPromotion, targetedOfferVisible, visibleAvailabilityState]);
 
   useEffect(() => {
