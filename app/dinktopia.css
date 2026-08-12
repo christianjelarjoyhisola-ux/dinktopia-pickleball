@@ -5969,7 +5969,7 @@
 .booking-route .availability-corner,
 .booking-route .availability-time,
 .booking-route .availability-court,
-.booking-route .availability-cell { min-height: 52px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.booking-route .availability-cell { min-height: 60px; border: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .booking-route .availability-corner { padding: 12px; position: sticky; top: 0; left: 0; z-index: 5; display: grid; align-content: center; gap: 4px; background: var(--ink); color: white; }
 .booking-route .availability-corner strong,
 .booking-route .availability-corner small { display: block; }
@@ -5985,7 +5985,7 @@
 .booking-route .availability-court strong { font-size: 0.65rem; }
 .booking-route .availability-court small { margin-top: 2px; color: var(--muted); font-size: 0.52rem; }
 .booking-route .availability-court em { min-height: 0.72rem; grid-column: 2; color: var(--violet-dark); font-size: 0.56rem; font-style: normal; font-weight: 800; }
-.booking-route .availability-cell { padding: 5px 3px; display: grid; place-items: center; align-content: center; gap: 5px; background: white; color: var(--muted); cursor: pointer; transition: none; }
+.booking-route .availability-cell { padding: 5px 3px; display: grid; place-items: center; align-content: center; gap: 3px; background: white; color: var(--muted); cursor: pointer; transition: none; }
 .booking-route .availability-cell > span { width: 7px; height: 7px; border: 1px solid #a9b8b2; border-radius: 50%; background: #eff8f4; }
 .booking-route .availability-cell small { font-size: 0.6rem; font-weight: 750; }
 .booking-route .availability-cell:not(.selected):hover:not(:disabled) { position: relative; z-index: 1; background: var(--mint-soft); color: var(--success); box-shadow: inset 0 0 0 1px rgba(22, 132, 91, 0.22); }
@@ -6000,16 +6000,21 @@
 .booking-route .booking-offers-strip span { color: #5546d7; font-size: .59rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
 .booking-route .booking-offers-strip strong { overflow: hidden; color: var(--ink); font-size: .72rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .booking-route .booking-offers-strip small { color: var(--muted); font-size: .62rem; }
-.booking-route .slot-offer-price { display: flex; align-items: center; gap: 3px; color: inherit; font-size: .5rem; font-style: normal; line-height: 1; }
-.booking-route .slot-offer-price s { opacity: .58; }
-.booking-route .slot-offer-price b { font-size: .54rem; font-weight: 850; }
-.booking-route .availability-cell.selected .slot-offer-price s { opacity: .7; }
+.booking-route .slot-price { display: grid; min-height: .72rem; justify-items: center; gap: 1px; color: var(--ink); font-style: normal; font-variant-numeric: tabular-nums; line-height: 1; white-space: nowrap; }
+.booking-route .slot-price b { font-size: .59rem; font-weight: 850; letter-spacing: -.015em; }
+.booking-route .slot-price s { color: var(--muted); font-size: .47rem; font-weight: 650; opacity: .72; text-decoration-thickness: 1px; }
+.booking-route .slot-price.has-offer b { color: #16845b; }
+.booking-route .availability-cell.selected .slot-price,
+.booking-route .availability-cell.selected .slot-price b,
+.booking-route .availability-cell.selected .slot-price s { color: white; }
+.booking-route .availability-cell.selected .slot-price s { opacity: .72; }
 .booking-route .summary-offer-saving small, .booking-route .summary-offer-saving strong { color: #16845b !important; }
 @media (max-width: 640px) {
   .booking-route .booking-offers-strip { grid-template-columns: 34px minmax(0, 1fr); padding: 10px; }
   .booking-route .booking-offers-icon { width: 34px; height: 34px; }
   .booking-route .booking-offers-strip strong { font-size: .68rem; }
-  .booking-route .slot-offer-price { display: grid; justify-items: center; gap: 1px; }
+  .booking-route .slot-price b { font-size: .56rem; }
+  .booking-route .slot-price s { font-size: .44rem; }
 }
 
 @media (max-width: 760px) {
