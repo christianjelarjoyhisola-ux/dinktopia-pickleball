@@ -840,18 +840,37 @@
 .trendLabels text { fill: var(--insights-muted); font: 10px var(--font-body), "DM Sans", Arial, sans-serif; }
 
 .opportunityList { display: grid; }
-.opportunityList article { display: grid; min-height: 77px; grid-template-columns: 85px minmax(0, 1fr) auto; align-items: center; gap: 10px 12px; border-top: 1px solid var(--insights-line); }
+.peakGuardrail { display: flex; align-items: center; gap: 10px; margin: -4px 0 9px; border: 1px solid #cde8dc; border-radius: 12px; background: #eefaf5; padding: 10px 12px; }
+.peakGuardrail > span { display: grid; width: 25px; height: 25px; flex: 0 0 auto; place-items: center; border-radius: 8px; background: #d8f3e7; color: #087452; font-size: .7rem; font-weight: 900; }
+.peakGuardrail strong, .peakGuardrail p { display: block; }
+.peakGuardrail strong { color: #123b30; font-size: .66rem; }
+.peakGuardrail p { margin: 2px 0 0; color: #527267; font-size: .58rem; line-height: 1.4; }
+.protectedWindows { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
+.protectedWindows span { flex: 0 0 auto; border: 1px solid #dce8e2; border-radius: 999px; background: #fbfdfc; padding: 6px 8px; color: #557067; font-size: .54rem; white-space: nowrap; }
+.protectedWindows b { color: #173b31; }
+.opportunityList article { display: grid; min-height: 116px; grid-template-columns: 98px minmax(0, 1fr) minmax(118px, auto); align-items: center; gap: 8px 12px; border-top: 1px solid var(--insights-line); padding: 12px 0; }
 .opportunityList article:first-child { border-top: 0; }
 .opportunityTime { color: var(--insights-violet-dark); font-size: .62rem; font-weight: 800; }
+.opportunityTime small { display: block; margin-top: 4px; color: var(--insights-muted); font-size: .56rem; font-weight: 650; }
 .opportunityList article div { min-width: 0; }
-.opportunityList article div strong, .opportunityList article div p { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opportunityList article div strong, .opportunityList article div p { display: block; }
 .opportunityList article div strong { font-size: .71rem; }
 .opportunityList article div p { margin: 3px 0 0; color: var(--insights-muted); font-size: .61rem; }
-.opportunityValue { text-align: right; font-size: .68rem; font-weight: 800; }
-.opportunityList button { grid-column: 2 / -1; justify-self: start; margin-top: -8px; border: 0; background: none; padding: 0; color: var(--insights-violet-dark); font-size: .62rem; font-weight: 800; cursor: pointer; }
+.opportunityList article div > small { display: block; margin-top: 5px; color: #74817c; font-size: .57rem; line-height: 1.4; }
+.opportunityValue { text-align: right; font-size: .68rem; font-weight: 800; white-space: nowrap; }
+.opportunityValue small { display: block; margin-top: 4px; color: var(--insights-muted); font-size: .5rem; font-weight: 600; white-space: normal; }
+.signalMeta { display: flex; grid-column: 2 / -1; align-items: center; gap: 8px; color: var(--insights-muted); font-size: .56rem; }
+.demandState { border-radius: 999px; padding: 4px 7px; font-weight: 800; white-space: nowrap; }
+.state_persistent_vacancy { background: #fff0ec; color: #a63d2b; }
+.state_underused { background: #fff5dc; color: #855f18; }
+.state_watch { background: #eeedff; color: #5546d7; }
+.opportunityList button { grid-column: 2 / -1; justify-self: start; border: 0; background: none; padding: 0; color: var(--insights-violet-dark); font-size: .62rem; font-weight: 800; cursor: pointer; }
 .opportunityList button:disabled { color: #a4aaa7; cursor: not-allowed; }
 .opportunityList button:not(:disabled):hover { text-decoration: underline; text-underline-offset: 3px; }
 .opportunityNote { margin: 13px 0 0; border-top: 1px solid var(--insights-line); padding-top: 11px; color: var(--insights-muted); font-size: .59rem; line-height: 1.45; }
+.noRecommendation { border: 1px dashed var(--insights-line); border-radius: 12px; padding: 15px; text-align: center; }
+.noRecommendation strong { font-size: .7rem; }
+.noRecommendation p { margin: 4px 0 0; color: var(--insights-muted); font-size: .61rem; }
 
 .roiCard { margin-top: 18px; border-color: var(--insights-line); border-radius: 18px; background: var(--insights-paper); padding: clamp(20px, 3vw, 30px); box-shadow: 0 8px 26px rgba(18, 33, 29, .045); }
 .roiHeading { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; }
@@ -914,9 +933,13 @@
   .insightMetrics article:first-child { border-top: 0; }
   .insightPanelHeading { align-items: flex-start; flex-direction: column; }
   .heatLegend { align-self: flex-end; }
-  .opportunityList article { grid-template-columns: 80px minmax(0, 1fr); padding-block: 12px; }
-  .opportunityValue { grid-column: 1; grid-row: 2; text-align: left; }
-  .opportunityList button { grid-column: 2; grid-row: 2; margin: 0; }
+  .peakGuardrail { align-items: flex-start; }
+  .opportunityList article { grid-template-columns: 1fr; gap: 8px; padding-block: 14px; }
+  .opportunityTime { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .opportunityTime small { margin: 0; }
+  .opportunityValue { grid-column: 1; grid-row: auto; text-align: left; white-space: normal; }
+  .signalMeta { grid-column: 1; align-items: flex-start; flex-direction: column; }
+  .opportunityList button { grid-column: 1; grid-row: auto; min-height: 38px; border: 1px solid #d8d3ff; border-radius: 9px; background: #f2f0ff; padding: 0 11px; }
   .roiForm { grid-template-columns: 1fr; }
   .roiHeading > span { white-space: normal; }
   .roiOutput > div { align-items: flex-start; flex-direction: column; }

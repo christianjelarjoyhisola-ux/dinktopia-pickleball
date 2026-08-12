@@ -3908,7 +3908,7 @@ export default function ManagePage() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"courts" | "gallery" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
+  const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("30d");
   const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
   const [insights, setInsights] = useState<ManagementInsights | null>(null);
   const [insightsPending, setInsightsPending] = useState(false);
@@ -4386,6 +4386,7 @@ export default function ManagePage() {
         promotions={insights?.promotions ?? null}
         onCreatePromotion={publishRecommendedOffer}
         bookings={snapshot.bookings}
+        blocks={snapshot.blocks}
         loading={insightsPending}
         error={insightsError}
         onRetry={retryInsights}

@@ -2,9 +2,11 @@
 
 import { useState, type CSSProperties } from "react";
 import { formatClockRange12 } from "../lib/display-time";
+import { buildDemandSignals, prioritizeDemandSignals, type DemandSignal } from "./demand-intelligence";
 
 import type {
   Booking,
+  CourtBlock,
   ManagementInsights,
   PromotionCreateInput,
   RegularBookingReport,
@@ -31,6 +33,7 @@ export type AnalyticsViewProps = LoadingState & {
   promotions?: ManagementInsights["promotions"] | null;
   onCreatePromotion?: (input: PromotionCreateInput) => Promise<void>;
   bookings?: Booking[];
+  blocks?: CourtBlock[];
 };
 
 export type FinanceViewProps = LoadingState & {
@@ -320,6 +323,7 @@ export function AnalyticsView({
   promotions = null,
   onCreatePromotion,
   bookings = [],
+  blocks = [],
   loading = false,
   error = null,
   onRetry,
@@ -348,55 +352,25 @@ export function AnalyticsView({
   }
 
   const { summary } = report;
-  const recommendationWindows = [
-    { startsAt: "12:00", endsAt: "15:00", label: "Lunch rally offer" },
-    { startsAt: "06:00", endsAt: "09:00", label: "Early-bird package" },
-    { startsAt: "09:00", endsAt: "12:00", label: "Morning court saver" },
-  ];
   const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const weekdayPerformance = Array.from({ length: 7 }, (_, weekday) => {
-    const days = report.breakdowns.daily.filter((entry) => {
-      const date = new Date(`${entry.date}T00:00:00Z`);
-      return (date.getUTCDay() + 6) % 7 === weekday;
-    });
-    return {
-      weekday,
-      bookedHours: days.reduce((sum, day) => sum + day.bookedHours, 0),
-      observations: days.length,
-    };
-  }).filter((item) => item.observations > 0)
-    .sort((left, right) => left.bookedHours / left.observations - right.bookedHours / right.observations)
-    .slice(0, 3);
   const validFrom = new Date().toISOString().slice(0, 10);
   const validUntilDate = new Date();
   validUntilDate.setUTCDate(validUntilDate.getUTCDate() + 28);
   const validUntil = validUntilDate.toISOString().slice(0, 10);
   const publishedOffers = promotions?.items ?? [];
-  const recommendedActions = weekdayPerformance.map((item, index) => {
-    const window = recommendationWindows[index];
-    const availableHours = item.observations * Math.max(courts.length, 1) * 3;
-    return {
-      weekday: item.weekday,
-      utilization: availableHours > 0
-        ? Math.min(100, Math.round(item.bookedHours / availableHours * 100))
-        : 0,
-      ...window,
-    };
-  });
-
-  const openOffer = (action: typeof recommendedActions[number]) => {
+  const openOffer = (action: DemandSignal) => {
     setOfferError(null);
     setOfferDraft({
-      name: action.label,
+      name: `${weekdayNames[action.weekday]} ${formatClockRange12(action.window.startsAt, action.window.endsAt)} occupancy test`,
       discountType: "percentage",
-      discountValue: 15,
+      discountValue: 10,
       weekdays: [action.weekday],
-      startsAt: action.startsAt,
-      endsAt: action.endsAt,
+      startsAt: action.window.startsAt,
+      endsAt: action.window.endsAt,
       validFrom,
       validUntil,
-      courtIds: courtId ? [courtId] : courts.map((court) => court.id),
-      maxRedemptions: 40,
+      courtIds: [action.courtId],
+      maxRedemptions: 20,
     });
   };
 
@@ -424,6 +398,19 @@ export function AnalyticsView({
   const revenuePerHour = summary.bookedHours > 0
     ? summary.venueSalesPaid / summary.bookedHours
     : 0;
+  const demandSignals = buildDemandSignals({
+    bookings,
+    blocks,
+    courts: courtId ? courts.filter((court) => court.id === courtId) : courts,
+    dateFrom: report.range.dateFrom,
+    dateTo: report.range.dateTo,
+    revenuePerHour,
+  });
+  const recommendedActions = prioritizeDemandSignals(demandSignals, 5);
+  const protectedSignals = demandSignals.filter((signal) => signal.protectedFromDiscounts);
+  const strongestProtectedSignals = [...protectedSignals]
+    .sort((left, right) => right.utilization - left.utilization || right.observations - left.observations)
+    .slice(0, 3);
   const heatValues = utilizationMatrix(report, bookings, selectedCourtCount, courtId);
   const weakestCell = heatValues.flatMap((row, window) => row.map((value, day) => ({ value, day, window })))
     .sort((left, right) => left.value - right.value)[0];
@@ -475,13 +462,20 @@ export function AnalyticsView({
         </section>
 
         <section className={`${styles.panel} ${styles.insightPanel} ${styles.opportunityPanel}`} aria-labelledby="opportunities-title">
-          <div className={styles.insightPanelHeading}><div><p className={styles.eyebrow}>Recommended actions</p><h3 id="opportunities-title">Underused slots</h3></div><span className={styles.periodChip}>{recommendedActions.length} opportunities</span></div>
-          <div className={styles.opportunityList}>{recommendedActions.map((action) => {
-            const openHours = Math.round(Math.max(0, 100 - action.utilization) / 100 * Math.max(selectedCourtCount, 1) * 3);
-            const opportunityValue = openHours * revenuePerHour;
-            return <article key={`${action.weekday}-${action.startsAt}`}><span className={styles.opportunityTime}>{weekdayNames[action.weekday]} / {formatClockRange12(action.startsAt, action.endsAt)}</span><div><strong>{action.label}</strong><p>{action.utilization}% utilized / about {openHours} open court-hours</p></div><span className={styles.opportunityValue}>{money(opportunityValue, report.currency)}</span><button type="button" onClick={() => openOffer(action)} disabled={!promotions?.canCreate || !onCreatePromotion}>Create offer</button></article>;
-          })}</div>
-          {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer publishing will unlock after the Dinktopia promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Publishing is reserved for the System Owner or this tenant&apos;s court owner.</p> : <p className={styles.opportunityNote}>Opportunity values use open hours and the current recorded revenue per booked court-hour; they are not guaranteed revenue.</p>}
+          <div className={styles.insightPanelHeading}><div><p className={styles.eyebrow}>Demand intelligence</p><h3 id="opportunities-title">Protect peaks. Build weak hours.</h3></div><span className={styles.periodChip}>{recommendedActions.length} actions</span></div>
+          <div className={styles.peakGuardrail}><span aria-hidden="true">✓</span><div><strong>{protectedSignals.length} peak or healthy windows protected</strong><p>Regular pricing stays untouched where natural demand is already strong.</p></div></div>
+          {strongestProtectedSignals.length > 0 && <div className={styles.protectedWindows} aria-label="Strongest protected demand windows">{strongestProtectedSignals.map((signal) => <span key={signal.key}><b>{signal.courtName}</b> · {weekdayNames[signal.weekday]} {formatClockRange12(signal.window.startsAt, signal.window.endsAt)} · {signal.utilization}%</span>)}</div>}
+          <div className={styles.opportunityList}>{recommendedActions.map((action) => (
+            <article key={action.key}>
+              <span className={styles.opportunityTime}>{weekdayNames[action.weekday]} / {formatClockRange12(action.window.startsAt, action.window.endsAt)}<small>{action.courtName}</small></span>
+              <div><strong>{action.actionLabel}</strong><p>{action.utilization}% occupied · {action.bookedCourtHours} of {action.availableCourtHours} sellable hours · {action.observations} comparable {action.observations === 1 ? "day" : "days"}</p><small>{action.hypothesis}</small></div>
+              <span className={styles.opportunityValue}>{money(action.inventoryValueLow, report.currency)}–{money(action.inventoryValueHigh, report.currency)}<small>4-week unsold inventory value</small></span>
+              <div className={styles.signalMeta}><span className={`${styles.demandState} ${styles[`state_${action.state}`]}`}>{action.state === "persistent_vacancy" ? "Persistently vacant" : action.state === "underused" ? "Underused" : "Watch"}</span><span>{action.expectedOccupancyLow}%–{action.expectedOccupancyHigh}% expected occupancy · {action.confidence} confidence</span></div>
+              <button type="button" onClick={() => openOffer(action)} disabled={!promotions?.canCreate || !onCreatePromotion || action.confidence === "insufficient"}>Review controlled price test</button>
+            </article>
+          ))}</div>
+          {recommendedActions.length === 0 && <div className={styles.noRecommendation}><strong>No weak inventory qualifies for action.</strong><p>The engine will abstain when demand is healthy or comparable history is insufficient.</p></div>}
+          {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer drafting will unlock after the Dinktopia promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Drafting is reserved for the System Owner or this tenant&apos;s court owner.</p> : <p className={styles.opportunityNote}>Ranges show the value of inventory likely to remain unsold at the current recorded revenue per booked court-hour—not guaranteed incremental profit. Every test still requires owner review.</p>}
           {publishedOffers.length > 0 && (
             <section className={styles.offerPortfolio} aria-labelledby="published-offers-title">
               <header>
