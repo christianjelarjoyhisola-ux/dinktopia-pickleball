@@ -6071,16 +6071,26 @@
   .public-mobile-offer-trigger { display: grid; }
   .booking-offer-trigger { display: none; }
   .offer-center-backdrop { align-items: end; padding: 0; }
-  .offer-center-dialog { width: 100%; max-height: min(88dvh, 760px); border-width: 1px 0 0; border-radius: 24px 24px 0 0; }
-  .offer-center-hero { grid-template-columns: 44px minmax(0, 1fr) 40px; gap: 12px; padding: 21px 18px 19px; }
-  .offer-center-mark { width: 44px; height: 44px; border-radius: 13px; }
-  .offer-center-list { max-height: calc(88dvh - 260px); padding: 15px 16px; }
-  .offer-center-card { padding: 14px; }
-  .offer-center-card dl { grid-template-columns: 1fr 1fr; }
-  .offer-center-card dl > div:last-child { grid-column: 1 / -1; }
-  .offer-center-footer { position: sticky; bottom: 0; display: grid; gap: 12px; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .offer-center-dialog { display: grid; width: 100%; max-height: min(94dvh, 760px); grid-template-rows: auto minmax(0, auto) auto; border-width: 1px 0 0; border-radius: 22px 22px 0 0; }
+  .offer-center-hero { grid-template-columns: 38px minmax(0, 1fr) 38px; gap: 10px; padding: 14px 14px 13px; }
+  .offer-center-mark { width: 38px; height: 38px; border-radius: 11px; }
+  .offer-center-mark svg { width: 20px; height: 20px; }
+  .offer-center-hero p { margin-block: 0 2px; font-size: .57rem; }
+  .offer-center-hero h2 { font-size: 1.04rem; line-height: 1.12; }
+  .offer-center-hero span:not(.offer-center-mark) { margin-top: 4px; font-size: .62rem; line-height: 1.35; }
+  .offer-center-close { width: 36px; height: 36px; border-radius: 10px; }
+  .offer-center-list { max-height: calc(94dvh - 198px); gap: 7px; overflow-y: auto; padding: 10px 12px; }
+  .offer-center-card { border-radius: 13px; padding: 9px 10px 10px; }
+  .offer-status { padding: 3px 7px; font-size: .5rem; }
+  .offer-center-card-top > strong { font-size: .7rem; }
+  .offer-center-card h3 { margin: 6px 0 7px; font-size: .78rem; }
+  .offer-center-card dl { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr) auto; gap: 8px; }
+  .offer-center-card dt { font-size: .46rem; }
+  .offer-center-card dd { margin-top: 2px; font-size: .55rem; line-height: 1.25; white-space: normal; }
+  .offer-center-footer { position: sticky; bottom: 0; display: grid; gap: 8px; padding: 8px 12px calc(10px + env(safe-area-inset-bottom)); }
   .offer-center-footer > span { max-width: none; }
-  .offer-center-cta { width: 100%; }
+  .offer-center-footer > span { font-size: .55rem; line-height: 1.3; }
+  .offer-center-cta { width: 100%; min-height: 38px; font-size: .7rem; }
   .floating-offer-pill { right: 14px; bottom: calc(16px + env(safe-area-inset-bottom)); min-width: 148px; min-height: 54px; grid-template-columns: 40px minmax(0, 1fr) auto; border-radius: 15px; }
   .floating-offer-medallion { width: 40px; height: 40px; }
   .booking-route:has(.slot-step-footer .button:not(:disabled)) .floating-offer-pill { bottom: calc(92px + env(safe-area-inset-bottom)); }
