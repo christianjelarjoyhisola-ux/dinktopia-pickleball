@@ -440,6 +440,9 @@
 .reservedBlock { border-color: #d1cdf7; background: #efedff; color: #4d42bd; }
 .reviewBlock { border-color: #ead59b; background: #fff4d7; color: #8d6515; }
 .blockedBlock { border-color: #efb7ae; background: #fff0ec; color: #a54734; }
+.blockedBlock.block_maintenance { border-color: #ebcb8b; background: #fff7e8; color: #8a5b05; }
+.blockedBlock.block_openPlay { border-color: #b9d3f6; background: #eef5ff; color: #245e9b; }
+.blockedBlock.block_closure { border-color: #e7aaa3; background: #fff0ee; color: #a43e34; }
 .groupedBookingBlock { isolation: isolate; }
 .groupedBookingBlock.connectsAbove { margin-top: -1px; border-top-color: transparent; border-radius: 0 0 10px 10px; }
 .groupedBookingBlock.connectsBelow { margin-bottom: -1px; border-bottom-color: transparent; border-radius: 10px 10px 0 0; }
@@ -458,7 +461,7 @@
   margin-right: 5px;
   margin-left: 5px;
   border-radius: 0;
-  background: linear-gradient(90deg, #fff0ec 0%, #ffebe6 100%);
+  background: inherit;
   box-shadow: none;
 }
 .venueWideBlock:hover { transform: none; box-shadow: none; }
@@ -480,8 +483,8 @@
   border-top-color: transparent;
   border-radius: 0 0 10px 10px;
 }
-.maintenance .bookingBlock { box-shadow: 0 0 0 2px #fff, 0 0 0 3px #d35b49; }
-.maintenanceBand { grid-column: 2 / -1; z-index: 2; display: flex; height: auto; grid-row: 1; align-items: center; gap: 9px; margin: 4px; border: 1px dashed #dc8e82; border-radius: 9px; background: rgba(255, 240, 236, .88); color: #a54734; padding-left: 14px; }
+.maintenance .bookingBlock { box-shadow: none; }
+.maintenanceBand { grid-column: 2 / -1; z-index: 2; display: flex; height: auto; grid-row: 1; align-items: center; gap: 9px; margin: 4px; border: 1px solid #ebcb8b; border-radius: 9px; background: #fff7e8; color: #8a5b05; padding-left: 14px; }
 .maintenanceBand strong { font-size: 11px; }
 .maintenanceBand span { font-size: 10px; opacity: .72; }
 
@@ -610,8 +613,8 @@
 
 .court_maintenance,
 .court_all {
-  background: #fcedea;
-  color: #8b3022;
+  background: #fff1d6;
+  color: #8a5b05;
 }
 
 .court_inactive,
@@ -733,6 +736,11 @@
   background: #fcedea;
   color: #8b3022;
 }
+.blockItem.block_maintenance::before { background: #d59b17; }
+.blockItem.block_maintenance .kindLabel { background: #fff1d6; color: #8a5b05; }
+.blockItem.block_openPlay::before { background: #3b82c4; }
+.blockItem.block_openPlay .kindLabel { background: #e7f1ff; color: #245e9b; }
+.blockItem.block_closure::before { background: #c95a4a; }
 
 .secondaryKind {
   background: var(--paper-deep, #eaf0f6);

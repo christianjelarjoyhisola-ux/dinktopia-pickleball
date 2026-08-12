@@ -140,6 +140,13 @@ function isAllCourtBlock(block: CourtBlock): boolean {
   return normalized(block.court) === "all courts";
 }
 
+function blockTone(block: CourtBlock): "maintenance" | "openPlay" | "closure" {
+  const description = normalized(`${block.publicLabel} ${block.reason}`);
+  if (/maintenance|repair|cleaning|resurface/.test(description)) return "maintenance";
+  if (/open play|clinic|league|tournament|event/.test(description)) return "openPlay";
+  return "closure";
+}
+
 function minutesFromClock(value: string | null): number {
   if (!value) return Number.MAX_SAFE_INTEGER;
   const match = CLOCK_PATTERN.exec(value.trim());
@@ -422,8 +429,9 @@ function BookingAgendaItem({
 }
 
 function BlockAgendaItem({ block, selectedDate }: { block: CourtBlock; selectedDate: string }) {
+  const tone = blockTone(block);
   return (
-    <article className={`${styles.agendaItem} ${styles.blockItem}`}>
+    <article className={`${styles.agendaItem} ${styles.blockItem} ${styles[`block_${tone}`]}`}>
       <div className={styles.timeColumn}>
         <time dateTime={selectedDate}>{block.time}</time>
         <span>Court block</span>
@@ -839,7 +847,7 @@ export function CalendarView({
                   })() : (
                     <div
                       key={entry.block.id}
-                      className={`${styles.bookingBlock} ${styles.blockedBlock} ${isAllCourtBlock(entry.block) && effectiveCourtFilter === "all" && groups.length > 1 ? `${styles.venueWideBlock} ${groupIndex === 0 ? styles.venueWideFirst : groupIndex === groups.length - 1 ? styles.venueWideLast : styles.venueWideMiddle}` : ""}`}
+                      className={`${styles.bookingBlock} ${styles.blockedBlock} ${styles[`block_${blockTone(entry.block)}`]} ${isAllCourtBlock(entry.block) && effectiveCourtFilter === "all" && groups.length > 1 ? `${styles.venueWideBlock} ${groupIndex === 0 ? styles.venueWideFirst : groupIndex === groups.length - 1 ? styles.venueWideLast : styles.venueWideMiddle}` : ""}`}
                       style={timelineEntryStyle(entry)}
                       title={`${entry.block.publicLabel} · ${entry.block.time}`}
                       aria-label={`${entry.block.publicLabel}, all courts, ${entry.block.time}`}
