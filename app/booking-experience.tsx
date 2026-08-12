@@ -2140,7 +2140,7 @@ export function BookingExperience({
           : ".availability-scroll .availability-cell.offer-target",
       );
       target?.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
-      clearTimer = window.setTimeout(() => setTargetOfferId(""), reducedMotion ? 700 : 2700);
+      clearTimer = window.setTimeout(() => setTargetOfferId(""), reducedMotion ? 700 : 2650);
     });
     return () => {
       window.cancelAnimationFrame(frame);

@@ -41,9 +41,9 @@ test("takes each offer to its eligible date and highlights matching court-hours"
   assert.match(booking, /dateRailDates\.map/);
   assert.match(booking, /slot\?\.promotionId === targetOfferId \? " offer-target"/);
   assert.match(booking, /scrollIntoView\(\{ behavior: "smooth", block: "center", inline: "center" \}\)/);
-  assert.match(booking, /setTimeout\(\(\) => setTargetOfferId\(""\), reducedMotion \? 700 : 2700\)/);
+  assert.match(booking, /setTimeout\(\(\) => setTargetOfferId\(""\), reducedMotion \? 700 : 2650\)/);
   assert.match(css, /\.availability-cell\.offer-target:not\(\.busy\):not\(\.selected\)/);
-  assert.match(css, /@keyframes offer-slot-glow/);
+  assert.match(css, /@keyframes offer-slot-focus/);
 });
 
 test("keeps a visible premium offer entry point while players scroll", () => {
