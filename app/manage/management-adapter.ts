@@ -7,6 +7,7 @@ import {
   cancelTenantBooking,
   checkInTenantBooking,
   createTenantPromotion,
+  endTenantPromotion,
   createManualBooking,
   currentOwnerSession,
   deleteTenantPaymentQr,
@@ -127,6 +128,7 @@ export type Booking = {
   startTime: string | null;
   endTime?: string | null;
   endsAt?: string | null;
+  createdAt?: string | null;
   sessions?: BookingSession[];
   paymentEvidence?: PaymentEvidence | null;
 };
@@ -629,6 +631,10 @@ export interface ManagementAdapter {
   createPromotion(
     context: ManagementContext,
     input: PromotionCreateInput,
+  ): Promise<TenantPromotion>;
+  endPromotion(
+    context: ManagementContext,
+    promotionId: string,
   ): Promise<TenantPromotion>;
   uploadPaymentQr(
     context: ManagementContext,
@@ -1365,6 +1371,18 @@ export const managementAdapter: ManagementAdapter = {
       throw new Error("PROMOTION_PUBLISH_ACCESS_DENIED");
     }
     const result = await createTenantPromotion(session.access_token, input);
+    return tenantPromotion(result);
+  },
+  async endPromotion(context, promotionId) {
+    assertLiveManagementPlatform();
+    assertDinktopiaContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    if (!authority.isSystemOwner && authority.membershipRole !== "owner") {
+      throw new Error("PROMOTION_END_ACCESS_DENIED");
+    }
+    const result = await endTenantPromotion(session.access_token, requiredUuid(promotionId, "PROMOTION_ID_INVALID"));
     return tenantPromotion(result);
   },
   async uploadPaymentQr(context, methodCode, file) {
@@ -3908,6 +3926,7 @@ function mapLiveBooking(
     startTime: startsAt ? formatManilaClock(startsAt) : null,
     endTime: endsAt ? formatManilaClock(endsAt) : null,
     endsAt: endsAt?.toISOString() ?? null,
+    createdAt: parsedInstant(row, ["created_at", "createdAt"])?.toISOString() ?? null,
     sessions,
     paymentEvidence,
   };

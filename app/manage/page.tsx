@@ -4103,6 +4103,12 @@ export default function ManagePage() {
     setInsightsRevision((revision) => revision + 1);
   }, [context]);
 
+  const endPublishedOffer = useCallback(async (promotionId: string) => {
+    const promotion = await managementAdapter.endPromotion(context, promotionId);
+    setToast({ message: `${promotion.name} ended. It is no longer shown to players.`, tone: "success" });
+    setInsightsRevision((revision) => revision + 1);
+  }, [context]);
+
   useEffect(() => {
     if (!snapshot || (view !== "reports" && view !== "finance")) return;
     if (isPreview) return;
@@ -4385,6 +4391,7 @@ export default function ManagePage() {
         onCourtChange={setAnalyticsCourtId}
         promotions={insights?.promotions ?? null}
         onCreatePromotion={publishRecommendedOffer}
+        onEndPromotion={endPublishedOffer}
         bookings={snapshot.bookings}
         blocks={snapshot.blocks}
         loading={insightsPending}

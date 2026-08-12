@@ -10,11 +10,24 @@ const javascript = ts.transpileModule(source, {
 }).outputText;
 const demandModule = { exports: {} };
 vm.runInNewContext(javascript, { module: demandModule, exports: demandModule.exports, Date, Math });
-const { buildDemandSignals, prioritizeDemandSignals } = demandModule.exports;
+const { buildDemandSignals, demandLearningStatus, prioritizeDemandSignals } = demandModule.exports;
 
 function booking(date, courtId, startTime, duration, status = "completed") {
-  return { bookingId: `${date}-${startTime}`, bookingType: "regular", reference: "PB-TEST", id: "PB-TEST", customer: "Player", initials: "P", phone: "+639000000000", court: courtId, date, time: "", duration: String(duration), amount: 300 * duration, status, payment: "paid", courtId, bookingDate: date, startTime };
+  return { bookingId: `${date}-${startTime}`, bookingType: "regular", reference: "PB-TEST", id: "PB-TEST", customer: "Player", initials: "P", phone: "+639000000000", court: courtId, date, time: "", duration: String(duration), amount: 300 * duration, status, payment: "paid", courtId, bookingDate: date, startTime, createdAt: `${date}T00:00:00Z` };
 }
+
+test("holds recommendations until 30 completed live-activity days", () => {
+  const learning = demandLearningStatus([booking("2026-08-10", "c1", "09:00", 1)], "2026-08-13");
+  assert.equal(learning.ready, false);
+  assert.equal(learning.completedDays, 3);
+  assert.equal(learning.analysisThrough, "2026-08-12");
+});
+
+test("unlocks after a full 30 completed days", () => {
+  const learning = demandLearningStatus([booking("2026-07-14", "c1", "09:00", 1)], "2026-08-13");
+  assert.equal(learning.ready, true);
+  assert.equal(learning.completedDays, 30);
+});
 
 test("protects naturally full windows from discount recommendations", () => {
   const mondays = ["2026-07-06", "2026-07-13", "2026-07-20", "2026-07-27"];

@@ -57,6 +57,27 @@ type DemandInput = {
   revenuePerHour: number;
 };
 
+export const MINIMUM_LEARNING_DAYS = 30;
+
+export function demandLearningStatus(bookings: Booking[], today: string) {
+  const firstActivityDate = bookings
+    .filter((booking) => !["cancelled", "expired"].includes(booking.status))
+    .map((booking) => booking.createdAt?.slice(0, 10) ?? "")
+    .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date))
+    .sort()[0] ?? null;
+  if (!firstActivityDate) return { ready: false, completedDays: 0, firstActivityDate: null, analysisThrough: null };
+  const todayTime = Date.parse(`${today}T12:00:00Z`);
+  const firstTime = Date.parse(`${firstActivityDate}T12:00:00Z`);
+  const completedDays = Math.max(0, Math.floor((todayTime - firstTime) / 86_400_000));
+  const analysisThroughDate = new Date(todayTime - 86_400_000).toISOString().slice(0, 10);
+  return {
+    ready: completedDays >= MINIMUM_LEARNING_DAYS,
+    completedDays: Math.min(completedDays, MINIMUM_LEARNING_DAYS),
+    firstActivityDate,
+    analysisThrough: analysisThroughDate >= firstActivityDate ? analysisThroughDate : null,
+  };
+}
+
 function dateValues(from: string, to: string) {
   const values: string[] = [];
   const cursor = new Date(`${from}T12:00:00Z`);

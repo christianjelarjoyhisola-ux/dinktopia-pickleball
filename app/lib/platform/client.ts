@@ -1261,6 +1261,18 @@ export async function createTenantPromotion(
   );
 }
 
+export async function endTenantPromotion(accessToken: string, promotionId: string): Promise<unknown> {
+  return rpc<unknown>(
+    "end_tenant_promotion",
+    {
+      p_tenant_slug: activeTenant.identity.slug,
+      p_hostname: managementHostname({ mutation: true }),
+      p_promotion_id: promotionId,
+    },
+    accessToken,
+  );
+}
+
 export async function getBookingFeeRemittanceDashboard(
   accessToken: string,
 ): Promise<unknown> {

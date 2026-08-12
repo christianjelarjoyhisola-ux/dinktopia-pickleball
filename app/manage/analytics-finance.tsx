@@ -2,7 +2,7 @@
 
 import { useState, type CSSProperties } from "react";
 import { formatClockRange12 } from "../lib/display-time";
-import { buildDemandSignals, prioritizeDemandSignals, type DemandSignal } from "./demand-intelligence";
+import { buildDemandSignals, demandLearningStatus, MINIMUM_LEARNING_DAYS, prioritizeDemandSignals, type DemandSignal } from "./demand-intelligence";
 
 import type {
   Booking,
@@ -32,6 +32,7 @@ export type AnalyticsViewProps = LoadingState & {
   onCourtChange?: (courtId: string | null) => void;
   promotions?: ManagementInsights["promotions"] | null;
   onCreatePromotion?: (input: PromotionCreateInput) => Promise<void>;
+  onEndPromotion?: (promotionId: string) => Promise<void>;
   bookings?: Booking[];
   blocks?: CourtBlock[];
 };
@@ -322,6 +323,7 @@ export function AnalyticsView({
   courtId = null,
   promotions = null,
   onCreatePromotion,
+  onEndPromotion,
   bookings = [],
   blocks = [],
   loading = false,
@@ -331,6 +333,7 @@ export function AnalyticsView({
   const [offerDraft, setOfferDraft] = useState<PromotionCreateInput | null>(null);
   const [offerPending, setOfferPending] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
+  const [endingOfferId, setEndingOfferId] = useState<string | null>(null);
   const [roi, setRoi] = useState({
     courts: Math.max(courts.length, 1),
     rate: 560,
@@ -398,15 +401,20 @@ export function AnalyticsView({
   const revenuePerHour = summary.bookedHours > 0
     ? summary.venueSalesPaid / summary.bookedHours
     : 0;
+  const today = new Intl.DateTimeFormat("en-CA", { timeZone: report.timezone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const learning = demandLearningStatus(bookings, today);
   const demandSignals = buildDemandSignals({
     bookings,
     blocks,
     courts: courtId ? courts.filter((court) => court.id === courtId) : courts,
-    dateFrom: report.range.dateFrom,
-    dateTo: report.range.dateTo,
+    dateFrom:
+      learning.firstActivityDate && learning.firstActivityDate > report.range.dateFrom
+        ? learning.firstActivityDate
+        : report.range.dateFrom,
+    dateTo: learning.analysisThrough ?? report.range.dateTo,
     revenuePerHour,
   });
-  const recommendedActions = prioritizeDemandSignals(demandSignals, 5);
+  const recommendedActions = learning.ready ? prioritizeDemandSignals(demandSignals, 5) : [];
   const protectedSignals = demandSignals.filter((signal) => signal.protectedFromDiscounts);
   const strongestProtectedSignals = [...protectedSignals]
     .sort((left, right) => right.utilization - left.utilization || right.observations - left.observations)
@@ -462,7 +470,8 @@ export function AnalyticsView({
         </section>
 
         <section className={`${styles.panel} ${styles.insightPanel} ${styles.opportunityPanel}`} aria-labelledby="opportunities-title">
-          <div className={styles.insightPanelHeading}><div><p className={styles.eyebrow}>Demand intelligence</p><h3 id="opportunities-title">Protect peaks. Build weak hours.</h3></div><span className={styles.periodChip}>{recommendedActions.length} actions</span></div>
+          <div className={styles.insightPanelHeading}><div><p className={styles.eyebrow}>Demand intelligence</p><h3 id="opportunities-title">{learning.ready ? "Protect peaks. Build weak hours." : "Learning demand patterns."}</h3></div><span className={styles.periodChip}>{learning.ready ? `${recommendedActions.length} actions` : `Day ${learning.completedDays} of ${MINIMUM_LEARNING_DAYS}`}</span></div>
+          {!learning.ready ? <div className={styles.learningState} role="status"><div className={styles.learningProgress}><span style={{ width: `${learning.completedDays / MINIMUM_LEARNING_DAYS * 100}%` }} /></div><strong>{MINIMUM_LEARNING_DAYS - learning.completedDays} completed days remaining</strong><p>Recommendations begin only after 30 complete days of genuine live activity. Future dates, today&apos;s incomplete activity, maintenance, cancelled bookings, and expired holds do not create recommendations.</p></div> : <>
           <div className={styles.peakGuardrail}><span aria-hidden="true">✓</span><div><strong>{protectedSignals.length} peak or healthy windows protected</strong><p>Regular pricing stays untouched where natural demand is already strong.</p></div></div>
           {strongestProtectedSignals.length > 0 && <div className={styles.protectedWindows} aria-label="Strongest protected demand windows">{strongestProtectedSignals.map((signal) => <span key={signal.key}><b>{signal.courtName}</b> · {weekdayNames[signal.weekday]} {formatClockRange12(signal.window.startsAt, signal.window.endsAt)} · {signal.utilization}%</span>)}</div>}
           <div className={styles.opportunityList}>{recommendedActions.map((action) => (
@@ -476,6 +485,7 @@ export function AnalyticsView({
           ))}</div>
           {recommendedActions.length === 0 && <div className={styles.noRecommendation}><strong>No weak inventory qualifies for action.</strong><p>The engine will abstain when demand is healthy or comparable history is insufficient.</p></div>}
           {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer drafting will unlock after the Dinktopia promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Drafting is reserved for the System Owner or this tenant&apos;s court owner.</p> : <p className={styles.opportunityNote}>Ranges show the value of inventory likely to remain unsold at the current recorded revenue per booked court-hour—not guaranteed incremental profit. Every test still requires owner review.</p>}
+          </>}
           {publishedOffers.length > 0 && (
             <section className={styles.offerPortfolio} aria-labelledby="published-offers-title">
               <header>
@@ -497,7 +507,8 @@ export function AnalyticsView({
                       <h5>{offer.name}</h5>
                       <p>{offer.weekdays.map((day) => weekdayNames[day]).join(", ")} · {formatClockRange12(offer.startsAt, offer.endsAt)}</p>
                       <div className={styles.offerCardMeta}><span>{localDate(offer.validFrom)}–{localDate(offer.validUntil)}</span><span>{offer.courtIds.length} {offer.courtIds.length === 1 ? "court" : "courts"}</span></div>
-                      <footer><span>{usage}</span><small>Applied automatically to matching slots</small></footer>
+                      <footer><span>{usage}</span><small>{offer.status === "active" ? "Applied automatically to matching slots" : "Not visible to players"}</small></footer>
+                      {offer.status === "active" && promotions?.canCreate && onEndPromotion && <button className={styles.endOffer} type="button" disabled={endingOfferId === offer.id} onClick={async () => { if (!window.confirm(`End ${offer.name}? Players will stop seeing it immediately. Booking history will be preserved.`)) return; setEndingOfferId(offer.id); try { await onEndPromotion(offer.id); } finally { setEndingOfferId(null); } }}>{endingOfferId === offer.id ? "Ending..." : "End offer"}</button>}
                     </article>
                   );
                 })}

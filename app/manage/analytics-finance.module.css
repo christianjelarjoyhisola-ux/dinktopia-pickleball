@@ -684,6 +684,9 @@
 .offerCards footer { margin-top: 2px; border-top: 1px solid var(--insights-line, #dedfd9); padding-top: 9px; }
 .offerCards footer span { color: var(--insights-ink, #12211d); font-size: .64rem; font-weight: 750; }
 .offerCards footer small { color: var(--insights-muted, #71807a); font-size: .6rem; }
+.endOffer { justify-self: start; min-height: 34px; border: 1px solid #efc8bf; border-radius: 9px; background: #fff8f6; padding: 0 11px; color: #9b3928; font-size: .62rem; font-weight: 750; cursor: pointer; }
+.endOffer:hover { border-color: #d99888; background: #fff1ed; }
+.endOffer:disabled { opacity: .55; cursor: wait; }
 .offerBackdrop { position: fixed; z-index: 250; inset: 0; display: grid; place-items: center; overflow-y: auto; background: rgba(15, 31, 26, .44); padding: 20px; backdrop-filter: blur(5px); }
 .offerDialog { width: min(620px, 100%); border: 1px solid var(--line, #dedfd9); border-radius: 18px; background: #fffefa; padding: 22px; box-shadow: 0 28px 80px rgba(18, 33, 29, .2); }
 .offerDialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -848,6 +851,11 @@
 .protectedWindows { display: flex; gap: 6px; overflow-x: auto; padding: 0 0 9px; scrollbar-width: none; }
 .protectedWindows span { flex: 0 0 auto; border: 1px solid #dce8e2; border-radius: 999px; background: #fbfdfc; padding: 6px 8px; color: #557067; font-size: .54rem; white-space: nowrap; }
 .protectedWindows b { color: #173b31; }
+.learningState { display: grid; gap: 8px; border: 1px solid #d9e4df; border-radius: 14px; background: linear-gradient(145deg, #f8fbf9, #f1f6f3); padding: 16px; }
+.learningState strong { color: #173b31; font-size: .72rem; }
+.learningState p { margin: 0; color: #60726b; font-size: .62rem; line-height: 1.5; }
+.learningProgress { height: 7px; overflow: hidden; border-radius: 999px; background: #dfe8e4; }
+.learningProgress span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #16845b, #6bcda9); transition: width .3s ease; }
 .opportunityList article { display: grid; min-height: 116px; grid-template-columns: 98px minmax(0, 1fr) minmax(118px, auto); align-items: center; gap: 8px 12px; border-top: 1px solid var(--insights-line); padding: 12px 0; }
 .opportunityList article:first-child { border-top: 0; }
 .opportunityTime { color: var(--insights-violet-dark); font-size: .62rem; font-weight: 800; }
