@@ -1564,6 +1564,8 @@ export function BookingExperience({
   const bookingOwnsSelectionRef = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [offerCenterOpen, setOfferCenterOpen] = useState(false);
+  const [offerSpotlight, setOfferSpotlight] = useState(false);
+  const [offerCountdown, setOfferCountdown] = useState(6);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(() =>
@@ -2070,9 +2072,28 @@ export function BookingExperience({
     } catch {
       // The offer remains available from the header when session storage is unavailable.
     }
-    const openTimer = window.setTimeout(() => setOfferCenterOpen(true), 0);
+    const openTimer = window.setTimeout(() => {
+      setOfferCountdown(6);
+      setOfferSpotlight(true);
+      setOfferCenterOpen(true);
+    }, 0);
     return () => window.clearTimeout(openTimer);
   }, [bootstrapState, initialOfferId, isBookingPage, isLive, livePromotions.length, offerSignature]);
+
+  useEffect(() => {
+    if (!offerCenterOpen || !offerSpotlight) return;
+    const deadline = Date.now() + 6000;
+    const countdownTimer = window.setInterval(() => {
+      const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      setOfferCountdown(remaining);
+      if (remaining === 0) {
+        window.clearInterval(countdownTimer);
+        setOfferCenterOpen(false);
+        setOfferSpotlight(false);
+      }
+    }, 200);
+    return () => window.clearInterval(countdownTimer);
+  }, [offerCenterOpen, offerSpotlight]);
 
   useEffect(() => {
     if (!offerCenterOpen) return;
@@ -2775,6 +2796,7 @@ export function BookingExperience({
               aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
               onClick={(event) => {
                 offerRestoreFocusRef.current = event.currentTarget;
+                setOfferSpotlight(false);
                 setOfferCenterOpen(true);
               }}
             ><BadgePercent aria-hidden="true" /><b>{publicPromotions.length}</b></button>}
@@ -2796,6 +2818,7 @@ export function BookingExperience({
                 aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
                 onClick={(event) => {
                   offerRestoreFocusRef.current = event.currentTarget;
+                  setOfferSpotlight(false);
                   setOfferCenterOpen(true);
                 }}
               ><BadgePercent aria-hidden="true" /><span>Offers</span><b>{publicPromotions.length}</b></button>}
@@ -2834,6 +2857,7 @@ export function BookingExperience({
             aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
             onClick={(event) => {
               offerRestoreFocusRef.current = event.currentTarget;
+              setOfferSpotlight(false);
               setOfferCenterOpen(true);
             }}
           ><BadgePercent aria-hidden="true" /><b>{publicPromotions.length}</b></button>}
@@ -2885,6 +2909,7 @@ export function BookingExperience({
               onClick={(event) => {
                 offerRestoreFocusRef.current = event.currentTarget;
                 setMobileNavOpen(false);
+                setOfferSpotlight(false);
                 setOfferCenterOpen(true);
               }}
             ><BadgePercent aria-hidden="true" /><span>Offers</span><b>{publicPromotions.length}</b></button>}
@@ -2896,19 +2921,37 @@ export function BookingExperience({
       </header>}
 
       {offerCenterOpen && publicPromotions.length > 0 && <div
-        className="offer-center-backdrop"
+        className={`offer-center-backdrop${offerSpotlight ? " is-spotlight" : ""}`}
         onMouseDown={(event) => {
           if (event.target === event.currentTarget) setOfferCenterOpen(false);
         }}
       >
         <div
           ref={offerDialogRef}
-          className="offer-center-dialog"
+          className={`offer-center-dialog${offerSpotlight ? " offer-spotlight-dialog" : ""}`}
           role="dialog"
           aria-modal="true"
           aria-labelledby="offer-center-title"
           aria-describedby="offer-center-description"
         >
+          {offerSpotlight ? (() => {
+            const promotion = livePromotions[0];
+            const bookingDate = promotionBookingDate(promotion, dates);
+            return <>
+              <div className="offer-spotlight-head">
+                <span className="offer-center-mark" aria-hidden="true"><BadgePercent /></span>
+                <div><p>Special offer</p><h2 id="offer-center-title">{promotion.name}</h2></div>
+                <button ref={offerCloseRef} type="button" className="offer-center-close" aria-label="Close special offer" onClick={() => { setOfferCenterOpen(false); setOfferSpotlight(false); }}><X aria-hidden="true" /></button>
+              </div>
+              <div className="offer-spotlight-body">
+                <strong>{promotionDiscountLabel(promotion)}</strong>
+                <p id="offer-center-description">Tap this card to view discounted court times.</p>
+                <dl><div><dt>When</dt><dd>{promotionScheduleLabel(promotion)}</dd></div><div><dt>Valid</dt><dd>{promotionValidityLabel(promotion)}</dd></div></dl>
+                {bookingDate && <Link className="offer-spotlight-action" href={`/book?offer=${encodeURIComponent(promotion.id)}&date=${bookingDate}`} onClick={() => { setOfferCenterOpen(false); setOfferSpotlight(false); }}>See available times <ArrowUpRight aria-hidden="true" /></Link>}
+                <div className="offer-countdown" role="timer" aria-live="off"><span style={{ "--countdown-progress": `${(offerCountdown / 6) * 100}%` } as CSSProperties} /><small>Closing in {offerCountdown}s</small></div>
+              </div>
+            </>;
+          })() : <>
           <div className="offer-center-hero">
             <span className="offer-center-mark" aria-hidden="true"><BadgePercent /></span>
             <div>
@@ -2955,6 +2998,7 @@ export function BookingExperience({
             <span><Check aria-hidden="true" /> Eligible discounts apply automatically.</span>
             <Link className="button offer-center-cta" href="/book" onClick={() => setOfferCenterOpen(false)}>View offer times <ArrowUpRight aria-hidden="true" /></Link>
           </div>
+          </>}
         </div>
       </div>}
       {!offerCenterOpen && publicPromotions.length > 0 && <button
@@ -2966,6 +3010,7 @@ export function BookingExperience({
           : `${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer is" : "offers are"} coming soon.`}
         onClick={(event) => {
           offerRestoreFocusRef.current = event.currentTarget;
+          setOfferSpotlight(false);
           setOfferCenterOpen(true);
         }}
       >
