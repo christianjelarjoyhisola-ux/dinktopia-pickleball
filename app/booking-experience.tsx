@@ -1565,7 +1565,7 @@ export function BookingExperience({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [offerCenterOpen, setOfferCenterOpen] = useState(false);
   const [offerSpotlight, setOfferSpotlight] = useState(false);
-  const [offerCountdown, setOfferCountdown] = useState(6);
+  const [offerCountdown, setOfferCountdown] = useState(10);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(() =>
@@ -2073,7 +2073,7 @@ export function BookingExperience({
       // The offer remains available from the header when session storage is unavailable.
     }
     const openTimer = window.setTimeout(() => {
-      setOfferCountdown(6);
+      setOfferCountdown(10);
       setOfferSpotlight(true);
       setOfferCenterOpen(true);
     }, 0);
@@ -2082,7 +2082,7 @@ export function BookingExperience({
 
   useEffect(() => {
     if (!offerCenterOpen || !offerSpotlight) return;
-    const deadline = Date.now() + 6000;
+    const deadline = Date.now() + 10000;
     const countdownTimer = window.setInterval(() => {
       const remaining = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       setOfferCountdown(remaining);
@@ -2959,7 +2959,7 @@ export function BookingExperience({
                     >{content}</Link> : <article className="offer-spotlight-card is-unavailable" key={promotion.id}>{content}</article>;
                   })}
                 </div>
-                <div className="offer-countdown" role="timer" aria-live="off"><span style={{ "--countdown-progress": `${(offerCountdown / 6) * 100}%` } as CSSProperties} /><small>Closing in {offerCountdown}s</small></div>
+                <div className="offer-countdown" role="timer" aria-live="off"><span style={{ "--countdown-progress": `${(offerCountdown / 10) * 100}%` } as CSSProperties} /><small>Closing in {offerCountdown}s</small></div>
               </div>
             </> : <>
           <div className="offer-center-hero">

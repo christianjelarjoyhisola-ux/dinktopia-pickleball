@@ -55,9 +55,10 @@ test("keeps a visible premium offer entry point while players scroll", () => {
   assert.match(css, /\.booking-route:has\(\.slot-step-footer \.button:not\(:disabled\)\) \.floating-offer-pill\s*\{[^}]*bottom:\s*calc\(92px \+ env\(safe-area-inset-bottom\)\)/s);
 });
 
-test("auto-opens a centered six-second offer spotlight", () => {
-  assert.match(booking, /setOfferCountdown\(6\)/);
-  assert.match(booking, /Date\.now\(\) \+ 6000/);
+test("auto-opens a centered ten-second offer spotlight", () => {
+  assert.match(booking, /setOfferCountdown\(10\)/);
+  assert.match(booking, /Date\.now\(\) \+ 10000/);
+  assert.match(booking, /offerCountdown \/ 10/);
   assert.match(booking, /Closing in \{offerCountdown\}s/);
   assert.match(booking, /livePromotions\.map\(\(promotion\) =>/);
   assert.match(booking, /Tap any card to see its discounted court times\./);
