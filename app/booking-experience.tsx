@@ -7,6 +7,8 @@ import {
   BadgePercent,
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Grid2X2,
   MapPin,
@@ -1555,6 +1557,8 @@ export function BookingExperience({
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
+  const dateSelectorRef = useRef<HTMLFieldSetElement>(null);
+  const dateRailRef = useRef<HTMLDivElement>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const offerDialogRef = useRef<HTMLDivElement>(null);
   const offerCloseRef = useRef<HTMLButtonElement>(null);
@@ -1710,12 +1714,23 @@ export function BookingExperience({
     targetPromotion && visiblePromotions.some((promotion) => promotion.id === targetPromotion.id),
   );
   const dateRailDates = useMemo(() => {
-    const standardDates = dates.slice(1, 7);
-    const selected = dates.find((date) => date.iso === selectedDate);
-    return selected && !standardDates.some((date) => date.iso === selected.iso)
-      ? [...standardDates.slice(0, 5), selected]
-      : standardDates;
-  }, [dates, selectedDate]);
+    return dates.slice(1);
+  }, [dates]);
+  const selectedDateIndex = dates.findIndex((date) => date.iso === selectedDate);
+  const previousBookingDate = selectedDateIndex > 1 ? dates[selectedDateIndex - 1] : null;
+  const nextBookingDate = selectedDateIndex >= 1 && selectedDateIndex < dates.length - 1
+    ? dates[selectedDateIndex + 1]
+    : null;
+
+  useEffect(() => {
+    const rail = dateRailRef.current;
+    const selectedOption = rail?.querySelector<HTMLElement>(`[data-booking-date="${selectedDate}"]`);
+    if (!rail || !selectedOption) return;
+    rail.scrollTo({
+      left: selectedOption.offsetLeft - (rail.clientWidth - selectedOption.clientWidth) / 2,
+      behavior: "smooth",
+    });
+  }, [selectedDate]);
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
   const atomicMultiSessionBooking =
@@ -3300,16 +3315,17 @@ export function BookingExperience({
                         <div><p className="booking-card-kicker">Court booking</p><h3>Choose your slots</h3></div>
                       </div>
 
-                      <fieldset className="booking-fieldset field-group">
+                      <fieldset ref={dateSelectorRef} className="booking-fieldset field-group booking-date-fieldset">
                         <legend className="sr-only">Select a date</legend>
-                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Next 6 days</span></div>
-                        <div className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
+                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Next {Math.max(0, dateRailDates.length)} days</span></div>
+                        <div ref={dateRailRef} className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
                           {dateRailDates.map((date, index) => (
                             <button
                               type="button"
                               key={date.iso}
                               className={`date-option ${selectedDate === date.iso ? "is-selected selected" : ""}`}
                               role="radio"
+                              data-booking-date={date.iso}
                               aria-checked={selectedDate === date.iso}
                               aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
@@ -3322,6 +3338,43 @@ export function BookingExperience({
                         </div>
                         {selectedSlots.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours.</p>}
                       </fieldset>
+
+                      <div className="mobile-sticky-date" role="region" aria-label="Current booking date">
+                        <button
+                          type="button"
+                          className="mobile-sticky-date-nav"
+                          disabled={!previousBookingDate}
+                          aria-label="Previous booking date"
+                          onClick={() => previousBookingDate && chooseDate(previousBookingDate.iso)}
+                        ><ChevronLeft aria-hidden="true" /></button>
+                        <button
+                          type="button"
+                          className="mobile-sticky-date-current"
+                          onClick={() => {
+                            const rail = dateRailRef.current;
+                            const selectedOption = rail?.querySelector<HTMLElement>(`[data-booking-date="${selectedDate}"]`);
+                            if (rail && selectedOption) {
+                              rail.scrollTo({
+                                left: selectedOption.offsetLeft - (rail.clientWidth - selectedOption.clientWidth) / 2,
+                                behavior: "smooth",
+                              });
+                            }
+                            dateSelectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }}
+                          aria-label={`${selectedBaseDateLabel}. Return to all booking dates.`}
+                        >
+                          <span className="mobile-sticky-date-icon" aria-hidden="true"><CalendarDays /></span>
+                          <span><small>Booking date</small><strong>{selectedDateDetails ? `${selectedDateDetails.day}, ${selectedDateDetails.month} ${selectedDateDetails.date}` : selectedBaseDateLabel}</strong></span>
+                          <em>All dates</em>
+                        </button>
+                        <button
+                          type="button"
+                          className="mobile-sticky-date-nav"
+                          disabled={!nextBookingDate}
+                          aria-label="Next booking date"
+                          onClick={() => nextBookingDate && chooseDate(nextBookingDate.iso)}
+                        ><ChevronRight aria-hidden="true" /></button>
+                      </div>
 
                       <fieldset className={`booking-fieldset availability-fieldset field-group availability-section${selectedSlots.length ? "" : " waiting"}`}>
                         <legend className="sr-only">Choose court-hours</legend>

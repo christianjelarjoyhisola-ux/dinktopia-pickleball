@@ -4434,7 +4434,9 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(customerHtml, /role="status"[^>]*aria-live="polite"/i);
   assert.match(customerHtml, /<fieldset\b/i);
   assert.match(customerHtml, /<legend class="sr-only">Select a date<\/legend>/i);
-  assert.match(customerHtml, /<div class="booking-field-label field-group-label"><strong>Select a date<\/strong><span>Next 6 days<\/span><\/div>/i);
+  assert.match(customerHtml, /<div class="booking-field-label field-group-label"><strong>Select a date<\/strong><span>Next \{Math\.max\(0, dateRailDates\.length\)\} days<\/span><\/div>/i);
+  assert.match(customerHtml, /className="mobile-sticky-date"/i);
+  assert.match(customerHtml, /Return to all booking dates/i);
   assert.match(customerHtml, /role="radio"[^>]*aria-checked="true"/i);
 
   assert.match(managerHtml, /aria-label="Management navigation"/i);
