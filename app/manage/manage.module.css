@@ -1320,6 +1320,7 @@
 .customerName, .customerRow > div { display: grid; }
 .customerRow strong { font-size: var(--text-meta); }
 .customerRow small, .customerName span { margin-top: 2px; overflow: hidden; color: var(--muted); font-size: var(--text-micro); text-overflow: ellipsis; white-space: nowrap; }
+.customerName .customerAliasPreview { color: #5e6b66; font-weight: 650; }
 .customerDirectory { overflow: hidden; }
 .customerDirectoryNote { display: block; margin-top: 5px; color: var(--muted); font-size: var(--text-caption); }
 .customerNeedsDetails { margin: 6px -10px; border: 1px solid #ecd59e; border-radius: 12px; background: #fffaf0; padding: 11px 10px; }
@@ -1334,6 +1335,10 @@
 .customerProfileEyebrow { color: #6558e8; font-size: var(--text-micro); font-weight: 800; letter-spacing: var(--tracking-label); text-transform: uppercase; }
 .customerProfileIdentity h2 { margin: 5px 0 0; font-size: 1.38rem; letter-spacing: -.045em; }
 .customerProfileIdentity p { margin: 6px 0 0; color: var(--muted); font-size: var(--text-caption); line-height: 1.55; }
+.customerAliases { display: grid; gap: 7px; margin-top: 12px; }
+.customerAliases > span { color: var(--muted); font-size: var(--text-micro); font-weight: 750; letter-spacing: .075em; text-transform: uppercase; }
+.customerAliases > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.customerAliases strong { border: 1px solid #d7e7df; border-radius: 999px; background: #eef7f3; padding: 5px 9px; color: #24634f; font-size: var(--text-micro); font-weight: 750; line-height: 1.2; }
 .customerDrawerClose { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 10px; background: #fffefa; color: var(--ink); cursor: pointer; }
 .customerDrawerClose:hover { border-color: #b9bdb6; background: #fff; }
 

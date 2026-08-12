@@ -427,6 +427,57 @@
 .booking-route .owner-payment-note strong { font-size: 0.69rem; }
 .booking-route .owner-payment-note small { margin-top: 3px; font-size: 0.62rem; line-height: 1.45; }
 
+.booking-route .payment-destination-grid {
+  display: grid;
+  gap: 16px;
+}
+
+.booking-route .payment-destination-grid.has-qr {
+  grid-template-columns: minmax(188px, 0.68fr) minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.booking-route .payment-qr-card,
+.booking-route .payment-manual-panel {
+  min-width: 0;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #fff;
+  padding: 16px;
+}
+
+.booking-route .payment-qr-card {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  background: linear-gradient(180deg, #f7fbff 0%, #fff 100%);
+}
+
+.booking-route .payment-qr-card .payment-qr {
+  width: min(188px, 100%);
+  border: 1px solid #dce4e0;
+  border-radius: 12px;
+  background: white;
+  padding: 8px;
+  box-shadow: 0 8px 24px rgba(10, 37, 68, 0.08);
+}
+
+.booking-route .payment-qr-card figcaption {
+  display: grid;
+  gap: 4px;
+  color: var(--ink);
+  text-align: center;
+}
+
+.booking-route .payment-qr-card figcaption strong { font-size: 0.78rem; }
+.booking-route .payment-qr-card figcaption span { color: var(--muted); font-size: 0.63rem; line-height: 1.45; }
+
+.booking-route .payment-manual-panel { display: grid; align-content: start; }
+.booking-route .payment-manual-heading { display: grid; gap: 3px; margin-bottom: 13px; }
+.booking-route .payment-manual-heading strong { font-size: 0.78rem; }
+.booking-route .payment-manual-heading span { color: var(--muted); font-size: 0.63rem; }
+
 .booking-route .gcash-account-field {
   display: grid;
   gap: 7px;
@@ -441,7 +492,7 @@
 .booking-route .gcash-account-number {
   display: grid;
   min-height: 48px;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -467,6 +518,28 @@
   font-size: 0.82rem;
   overflow-wrap: anywhere;
 }
+
+.booking-route .payment-copy-button {
+  min-width: 62px;
+  min-height: 36px;
+  margin-right: 6px;
+  border: 1px solid #dce3df;
+  border-radius: 8px;
+  background: #f5f7f5;
+  color: #17362c;
+  font-size: 0.67rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.booking-route .payment-copy-button:hover { border-color: #bdd2ca; background: #edf6f2; }
+.booking-route .payment-copy-button:focus-visible { outline: 3px solid rgba(8, 115, 230, 0.24); outline-offset: 2px; }
+.booking-route .payment-copy-status {
+  min-height: 15px;
+  color: #16845b;
+  font-size: 0.6rem;
+}
+.booking-route .payment-copy-status.is-error { color: #b33d32; }
 
 .booking-route .payment-recipient {
   display: grid;
@@ -570,6 +643,15 @@
   }
   .booking-route .booking-payment-view .gcash-payment-card { grid-row: 2; }
   .booking-route .payment-evidence-fields { grid-template-columns: 1fr; }
+  .booking-route .payment-destination-grid.has-qr { grid-template-columns: 1fr; }
+  .booking-route .payment-qr-card .payment-qr { width: min(208px, 76vw); }
+}
+
+@media (max-width: 430px) {
+  .booking-route .payment-qr-card,
+  .booking-route .payment-manual-panel { padding: 13px; }
+  .booking-route .gcash-account-number output { padding: 0 9px; font-size: 0.76rem; }
+  .booking-route .payment-copy-button { min-width: 56px; }
 }
 
 @media (max-width: 430px) {
@@ -5912,6 +5994,23 @@
 .booking-route .availability-cell.busy > span { border-color: #b8b8b2; background: #c8c8c2; }
 .booking-route .availability-cell.selected { position: relative; z-index: 2; background: var(--violet); color: white; box-shadow: inset 0 0 0 1px var(--violet-dark); }
 .booking-route .availability-cell.selected > span { border-color: white; background: white; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15); }
+.booking-route .booking-offers-strip { display: grid; grid-template-columns: 38px minmax(0, 1fr); align-items: center; gap: 11px; margin: 10px 0 14px; border: 1px solid rgba(101, 88, 232, .2); border-radius: 13px; background: linear-gradient(135deg, #f4f2ff, #faf9ff); padding: 11px 13px; }
+.booking-route .booking-offers-icon { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 11px; background: #6558e8; color: white; font: 750 .78rem var(--font-display), "Sora", sans-serif; box-shadow: 0 7px 16px rgba(101, 88, 232, .18); }
+.booking-route .booking-offers-strip > div:last-child { display: grid; min-width: 0; gap: 2px; }
+.booking-route .booking-offers-strip span { color: #5546d7; font-size: .59rem; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; }
+.booking-route .booking-offers-strip strong { overflow: hidden; color: var(--ink); font-size: .72rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.booking-route .booking-offers-strip small { color: var(--muted); font-size: .62rem; }
+.booking-route .slot-offer-price { display: flex; align-items: center; gap: 3px; color: inherit; font-size: .5rem; font-style: normal; line-height: 1; }
+.booking-route .slot-offer-price s { opacity: .58; }
+.booking-route .slot-offer-price b { font-size: .54rem; font-weight: 850; }
+.booking-route .availability-cell.selected .slot-offer-price s { opacity: .7; }
+.booking-route .summary-offer-saving small, .booking-route .summary-offer-saving strong { color: #16845b !important; }
+@media (max-width: 640px) {
+  .booking-route .booking-offers-strip { grid-template-columns: 34px minmax(0, 1fr); padding: 10px; }
+  .booking-route .booking-offers-icon { width: 34px; height: 34px; }
+  .booking-route .booking-offers-strip strong { font-size: .68rem; }
+  .booking-route .slot-offer-price { display: grid; justify-items: center; gap: 1px; }
+}
 
 @media (max-width: 760px) {
   .booking-route .availability-scroll { display: none; }

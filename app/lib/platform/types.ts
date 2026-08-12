@@ -150,6 +150,15 @@ export type BookingConfirmation = {
   currency: string;
   fullPaymentOnly: boolean;
   bookingToken: string;
+  promotionDiscountAmount?: number;
+  promotionApplications?: Array<{
+    promotionId: string;
+    name: string;
+    courtId: string;
+    startsAt: string;
+    baseAmount: number;
+    discountAmount: number;
+  }>;
   /** Present for atomic-group-aware responses; omitted by legacy servers. */
   sessions?: BookingConfirmationSession[];
   preview?: boolean;

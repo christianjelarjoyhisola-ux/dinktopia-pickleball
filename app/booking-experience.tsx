@@ -125,6 +125,8 @@ export type BookingRecord = {
   amount: number;
   subtotalAmount?: number;
   serviceFeeAmount?: number;
+  promotionDiscountAmount?: number;
+  promotionNames?: string[];
   items?: BookingSelection[];
   customer: CustomerDetails;
   detailsComplete?: boolean;
@@ -1175,6 +1177,10 @@ const platformAdapter: BookingAdapter = {
       serviceFeeAmount: platformMode() === "preview"
         ? Math.max(0, request.amount - request.items.reduce((sum, item) => sum + item.amount, 0))
         : confirmation.serviceFeeAmount,
+      promotionDiscountAmount: Math.max(0, confirmation.promotionDiscountAmount ?? 0),
+      promotionNames: Array.from(new Set(
+        (confirmation.promotionApplications ?? []).map((application) => application.name).filter(Boolean),
+      )),
       items: request.items,
       customer: request.customer,
       detailsComplete: !request.detailsPending,
@@ -1526,6 +1532,9 @@ export function BookingExperience({
   const [receiptFileName, setReceiptFileName] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [paymentError, setPaymentError] = useState("");
+  const [failedPaymentQrUrl, setFailedPaymentQrUrl] = useState("");
+  const [paymentCopyState, setPaymentCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const paymentCopyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<BookingRecord | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
@@ -1596,6 +1605,20 @@ export function BookingExperience({
     0,
   );
   const courtSubtotal = selectedSlots.reduce((sum, item) => sum + item.amount, 0);
+  const estimatedPromotionSavings = selectedSlotDetails.reduce(
+    (sum, item) => sum + Math.max(0, (item.slot.originalPrice ?? item.slot.price) - item.slot.price),
+    0,
+  );
+  const selectedPromotionNames = Array.from(new Set(
+    selectedSlotDetails.map((item) => item.slot.promotionName).filter((name): name is string => Boolean(name)),
+  ));
+  const visiblePromotions = useMemo(() => {
+    const promotedSlots = schedule.flatMap((court) => court.slots.filter((slot) => slot.promotionId));
+    return Array.from(new Map(promotedSlots.map((slot) => [slot.promotionId!, {
+      id: slot.promotionId!,
+      name: slot.promotionName ?? "Court offer",
+    }])).values());
+  }, [schedule]);
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
   const atomicMultiSessionBooking =
@@ -1648,7 +1671,37 @@ export function BookingExperience({
   const paymentAccountDisplay = isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits)
     ? gcashLocalDigits.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3")
     : paymentAccountNumber;
+  const paymentAccountCopyValue = isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits)
+    ? `+63${gcashLocalDigits}`
+    : paymentAccountNumber;
+  const paymentQrUrl = paymentMethod?.qrUrl?.trim() || paymentMethod?.qrImageUrl?.trim() || "";
   const paymentAccountReady = Boolean(paymentAccountName && paymentAccountNumber);
+
+  useEffect(() => () => {
+    if (paymentCopyTimerRef.current) clearTimeout(paymentCopyTimerRef.current);
+  }, []);
+
+  const copyPaymentAccount = async () => {
+    if (!paymentAccountCopyValue) return;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(paymentAccountCopyValue);
+      copied = true;
+    } catch {
+      const field = document.createElement("textarea");
+      field.value = paymentAccountCopyValue;
+      field.setAttribute("readonly", "");
+      field.style.position = "fixed";
+      field.style.opacity = "0";
+      document.body.appendChild(field);
+      field.select();
+      copied = document.execCommand("copy");
+      field.remove();
+    }
+    setPaymentCopyState(copied ? "copied" : "error");
+    if (paymentCopyTimerRef.current) clearTimeout(paymentCopyTimerRef.current);
+    paymentCopyTimerRef.current = setTimeout(() => setPaymentCopyState("idle"), 2200);
+  };
   const rawPolicy = (bootstrap?.settings?.refund_reschedule_policy ??
     bootstrap?.refundReschedulePolicy ??
     null) as Record<string, unknown> | null;
@@ -2948,6 +3001,13 @@ export function BookingExperience({
                           </div>
                         </div>
 
+                        {visibleAvailabilityState === "ready" && visiblePromotions.length > 0 && (
+                          <section className="booking-offers-strip" aria-label="Offers available for the selected date">
+                            <div className="booking-offers-icon" aria-hidden="true">%</div>
+                            <div><span>Offers available</span><strong>{visiblePromotions.map((promotion) => promotion.name).join(" · ")}</strong><small>Discounts apply automatically to marked court-hours.</small></div>
+                          </section>
+                        )}
+
                         {visibleAvailabilityState === "loading" && (
                           <div className="availability-loading" role="status" aria-live="polite">
                             <span className="spinner" aria-hidden="true" />
@@ -3028,9 +3088,9 @@ export function BookingExperience({
                                             className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={busy}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${slot?.promotionName ? `, ${slot.promotionName}, ${peso(slot.price)} promotional price` : ""}`}
                                             onClick={() => slot && !busy && chooseSlot(court, slot)}
-                                          ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
+                                          ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : slot?.promotionName ? "Offer" : "Open"}</small>{!busy && slot?.promotionName && <em className="slot-offer-price"><s>{peso(slot.originalPrice ?? slot.price)}</s><b>{peso(slot.price)}</b></em>}</button>
                                         );
                                       })}
                                     </Fragment>
@@ -3066,9 +3126,9 @@ export function BookingExperience({
                                           className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
                                           disabled={busy}
-                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${slot?.promotionName ? `, ${slot.promotionName}, ${peso(slot.price)} promotional price` : ""}`}
                                           onClick={() => slot && !busy && chooseSlot(court, slot)}
-                                        ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
+                                        ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : slot?.promotionName ? "Offer" : "Open"}</small>{!busy && slot?.promotionName && <em className="slot-offer-price"><s>{peso(slot.originalPrice ?? slot.price)}</s><b>{peso(slot.price)}</b></em>}</button>
                                       );
                                     })}
                                   </Fragment>
@@ -3216,7 +3276,7 @@ export function BookingExperience({
                         </button>
                       </div>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} promotionSavings={pendingBooking?.promotionDiscountAmount ?? estimatedPromotionSavings} promotionNames={pendingBooking?.promotionNames?.length ? pendingBooking.promotionNames : selectedPromotionNames} />
                   </div>
                 )}
 
@@ -3247,19 +3307,49 @@ export function BookingExperience({
                             <span aria-hidden="true">✦</span>
                             <div><strong>Pay the court owner directly</strong><small>Use the verified GCash details saved by the venue in System Setup.</small></div>
                           </div>
-                          <div className="gcash-account-field">
-                            <span>{paymentLabel} mobile number</span>
-                            <div className="gcash-account-number">
-                              {isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) && <b>+63</b>}
-                              <output aria-label={`${paymentLabel} account number`}>{isLive ? paymentAccountDisplay : "Available on the live booking site"}</output>
+                          <div className={`payment-destination-grid ${paymentQrUrl && failedPaymentQrUrl !== paymentQrUrl ? "has-qr" : ""}`}>
+                            {isLive && paymentQrUrl && failedPaymentQrUrl !== paymentQrUrl && (
+                              <figure className="payment-qr-card">
+                                <div className="payment-qr payment-qr-live">
+                                  {/* The platform validates this tenant-scoped public-storage URL. */}
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={paymentQrUrl}
+                                    alt={`${paymentLabel} QR code for ${paymentAccountName}`}
+                                    onError={() => setFailedPaymentQrUrl(paymentQrUrl)}
+                                  />
+                                </div>
+                                <figcaption><strong>Scan to pay</strong><span>Open {paymentLabel}, scan this code, then send the exact amount above.</span></figcaption>
+                              </figure>
+                            )}
+                            <div className="payment-manual-panel">
+                              <div className="payment-manual-heading">
+                                <strong>{paymentQrUrl && failedPaymentQrUrl !== paymentQrUrl ? "Or send manually" : "Send manually"}</strong>
+                                <span>Confirm the recipient before paying.</span>
+                              </div>
+                              <div className="gcash-account-field">
+                                <span>{paymentLabel} mobile number</span>
+                                <div className="gcash-account-number">
+                                  {isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) && <b>+63</b>}
+                                  <output aria-label={`${paymentLabel} account number`}>{isLive ? paymentAccountDisplay : "Available on the live booking site"}</output>
+                                  {isLive && paymentAccountCopyValue && (
+                                    <button type="button" className="payment-copy-button" onClick={() => void copyPaymentAccount()} aria-describedby={`${formId}-copy-status`}>
+                                      {paymentCopyState === "copied" ? "Copied" : "Copy"}
+                                    </button>
+                                  )}
+                                </div>
+                                <span id={`${formId}-copy-status`} className={`payment-copy-status ${paymentCopyState === "error" ? "is-error" : ""}`} role="status" aria-live="polite">
+                                  {paymentCopyState === "copied" ? "Account number copied to clipboard." : paymentCopyState === "error" ? "Copy failed. Select the number and copy it manually." : ""}
+                                </span>
+                              </div>
+                              <div className="payment-recipient">
+                                <span>Paying</span>
+                                <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
+                                <small>{paymentLabel} account from System Setup</small>
+                              </div>
+                              {isLive && paymentMethod?.instructions && <p className="payment-owner-instructions">{paymentMethod.instructions}</p>}
                             </div>
                           </div>
-                          <div className="payment-recipient">
-                            <span>Paying</span>
-                            <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
-                            <small>{paymentLabel} account from System Setup</small>
-                          </div>
-                          {isLive && paymentMethod?.instructions && <p className="payment-owner-instructions">{paymentMethod.instructions}</p>}
                           <div className="gcash-hold-status" role="status">
                             <span><i aria-hidden="true" /> Slot held · {pendingBooking.reference}</span>
                             <small>{holdRemainingSeconds == null ? "Complete payment while this hold is active." : `Expires in ${formatHoldCountdown(holdRemainingSeconds)}.`}</small>
@@ -3309,7 +3399,7 @@ export function BookingExperience({
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
                       <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s GCash details come directly from System Setup.</p>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} promotionSavings={pendingBooking.promotionDiscountAmount ?? estimatedPromotionSavings} promotionNames={pendingBooking.promotionNames?.length ? pendingBooking.promotionNames : selectedPromotionNames} />
                   </div>
                 )}
 
@@ -3470,6 +3560,8 @@ type BookingSummaryProps = {
   subtotal: number;
   bookingFee: number;
   total: number;
+  promotionSavings?: number;
+  promotionNames?: string[];
 };
 
 function RallyBookingSummary({
@@ -3478,6 +3570,8 @@ function RallyBookingSummary({
   subtotal,
   bookingFee,
   total,
+  promotionSavings = 0,
+  promotionNames = [],
 }: BookingSummaryProps) {
   const groups = groupSelectionDetails(selections);
   const courts = Array.from(
@@ -3512,6 +3606,7 @@ function RallyBookingSummary({
       </div>
       <div className="summary-price-lines">
         <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
+        {promotionSavings > 0 && <span className="summary-offer-saving"><small>{promotionNames.length ? promotionNames.join(", ") : "Offer savings"}</small><strong>−{peso(promotionSavings)}</strong></span>}
         {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
       </div>
       <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>

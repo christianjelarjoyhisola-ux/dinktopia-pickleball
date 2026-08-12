@@ -3633,6 +3633,20 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   assert.doesNotMatch(calendarCss, /min-width:\s*[4-9]\d{2}px/);
 });
 
+test("keeps multi-court calendar reservations grouped and totals authoritative", async () => {
+  const [calendar, adapter] = await Promise.all([
+    readFile(files.calendarView, "utf8"),
+    readFile(files.managementAdapter, "utf8"),
+  ]);
+  assert.match(calendar, /function reservationsFromBookings\(bookings: Booking\[\]\): CalendarReservation\[\]/);
+  assert.match(calendar, /groupTotalAmount: booking\.amount/);
+  assert.match(calendar, /allReservations\.find\(\(reservation\) => reservation\.id === selectedBookingId\)/);
+  assert.match(calendar, /Selected reservation[\s\S]*?selectedTimelineReservation\.sessions\.map[\s\S]*?selectedTimelineReservation\.totalAmount/);
+  assert.match(calendar, /reservations\.map\(\(reservation\)[\s\S]*?<BookingAgendaItem reservation=\{reservation\}/);
+  assert.match(calendar, /paidRevenue = reservations[\s\S]*?reservation\.totalAmount/);
+  assert.match(adapter, /groupTotalAmount\?: number/);
+});
+
 test("keeps analytics and finance complete, server-authoritative, capability-gated, and mobile-first", async () => {
   const [analyticsFinance, analyticsCss, client, manage, managementAdapter] =
     await Promise.all([

@@ -8,6 +8,7 @@ import type {
   PromotionCreateInput,
   RegularBookingReport,
   RemittanceSummary,
+  TenantPromotion,
 } from "./management-adapter";
 import styles from "./analytics-finance.module.css";
 
@@ -59,6 +60,19 @@ function localDate(value: string): string {
     year: "numeric",
     timeZone: "UTC",
   }).format(date);
+}
+
+function offerLifecycle(offer: TenantPromotion, today: string) {
+  if (offer.status === "paused") return { label: "Paused", tone: "paused" };
+  if (offer.status === "ended" || offer.validUntil < today) return { label: "Ended", tone: "ended" };
+  if (offer.validFrom > today) return { label: "Scheduled", tone: "scheduled" };
+  return { label: "Live", tone: "live" };
+}
+
+function offerDiscount(offer: TenantPromotion) {
+  return offer.discountType === "percentage"
+    ? `${offer.discountValue}% off`
+    : `${money(offer.discountValue, "PHP")} off`;
 }
 
 function localInstant(value: string, timeZone: string): string {
@@ -356,6 +370,7 @@ export function AnalyticsView({
   const validUntilDate = new Date();
   validUntilDate.setUTCDate(validUntilDate.getUTCDate() + 28);
   const validUntil = validUntilDate.toISOString().slice(0, 10);
+  const publishedOffers = promotions?.items ?? [];
   const recommendedActions = weekdayPerformance.map((item, index) => {
     const window = recommendationWindows[index];
     const availableHours = item.observations * Math.max(courts.length, 1) * 3;
@@ -466,7 +481,34 @@ export function AnalyticsView({
             return <article key={`${action.weekday}-${action.startsAt}`}><span className={styles.opportunityTime}>{weekdayNames[action.weekday]} / {action.startsAt}-{action.endsAt}</span><div><strong>{action.label}</strong><p>{action.utilization}% utilized / about {openHours} open court-hours</p></div><span className={styles.opportunityValue}>{money(opportunityValue, report.currency)}</span><button type="button" onClick={() => openOffer(action)} disabled={!promotions?.canCreate || !onCreatePromotion}>Create offer</button></article>;
           })}</div>
           {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer publishing will unlock after the Dinktopia promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Publishing is reserved for the System Owner or this tenant&apos;s court owner.</p> : <p className={styles.opportunityNote}>Opportunity values use open hours and the current recorded revenue per booked court-hour; they are not guaranteed revenue.</p>}
-          {promotions?.items.some((offer) => offer.status === "active") && <div className={styles.activeOffers}><span>Published offers</span>{promotions.items.filter((offer) => offer.status === "active").map((offer) => <strong key={offer.id}>{offer.name} · {offer.discountValue}{offer.discountType === "percentage" ? "%" : " PHP"} off · {offer.redemptionCount} used</strong>)}</div>}
+          {publishedOffers.length > 0 && (
+            <section className={styles.offerPortfolio} aria-labelledby="published-offers-title">
+              <header>
+                <div><span className={styles.eyebrow}>Player promotions</span><h4 id="published-offers-title">Published offers</h4></div>
+                <a href="/book" target="_blank" rel="noopener noreferrer">View booking page <span aria-hidden="true">↗</span></a>
+              </header>
+              <div className={styles.offerCards}>
+                {publishedOffers.map((offer) => {
+                  const lifecycle = offerLifecycle(offer, validFrom);
+                  const usage = offer.maxRedemptions
+                    ? `${offer.redemptionCount} of ${offer.maxRedemptions} used`
+                    : `${offer.redemptionCount} used`;
+                  return (
+                    <article key={offer.id}>
+                      <div className={styles.offerCardTop}>
+                        <span className={`${styles.offerStatus} ${styles[`offer_${lifecycle.tone}`]}`}>{lifecycle.label}</span>
+                        <strong>{offerDiscount(offer)}</strong>
+                      </div>
+                      <h5>{offer.name}</h5>
+                      <p>{offer.weekdays.map((day) => weekdayNames[day]).join(", ")} · {offer.startsAt.slice(0, 5)}–{offer.endsAt.slice(0, 5)}</p>
+                      <div className={styles.offerCardMeta}><span>{localDate(offer.validFrom)}–{localDate(offer.validUntil)}</span><span>{offer.courtIds.length} {offer.courtIds.length === 1 ? "court" : "courts"}</span></div>
+                      <footer><span>{usage}</span><small>Applied automatically to matching slots</small></footer>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          )}
         </section>
       </div>
 

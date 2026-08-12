@@ -665,6 +665,25 @@
 .activeOffers { display: grid; gap: 5px; margin-top: 14px; border-radius: 11px; background: #e8f7f1; padding: 12px 14px; }
 .activeOffers > span { color: #16845b; font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .activeOffers strong { font-size: .75rem; font-weight: 600; }
+.offerPortfolio { display: grid; gap: 13px; margin-top: 17px; border-top: 1px solid var(--insights-line, #dedfd9); padding-top: 16px; }
+.offerPortfolio > header { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.offerPortfolio h4 { margin: 3px 0 0; color: var(--insights-ink, #12211d); font: 600 .94rem var(--font-display), "Sora", Arial, sans-serif; letter-spacing: -.035em; }
+.offerPortfolio > header > a { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; border: 1px solid var(--insights-line, #dedfd9); border-radius: 10px; background: #fffefa; padding: 0 11px; color: var(--insights-violet-dark, #5546d7); font-size: .68rem; font-weight: 750; text-decoration: none; }
+.offerCards { display: grid; gap: 10px; }
+.offerCards > article { display: grid; gap: 7px; border: 1px solid var(--insights-line, #dedfd9); border-radius: 14px; background: linear-gradient(145deg, #fffefa, #faf9f4); padding: 14px; box-shadow: 0 7px 20px rgba(18, 33, 29, .035); }
+.offerCardTop, .offerCardMeta, .offerCards footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.offerCardTop > strong { color: var(--insights-violet-dark, #5546d7); font-size: .72rem; }
+.offerStatus { border-radius: 999px; padding: 5px 8px; font-size: .58rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.offer_live { background: #dff5ec; color: #087857; }
+.offer_scheduled { background: #eeecff; color: #5546d7; }
+.offer_paused { background: #fff1cf; color: #8c5c00; }
+.offer_ended { background: #efefeb; color: #69736f; }
+.offerCards h5 { margin: 0; color: var(--insights-ink, #12211d); font: 600 .83rem var(--font-display), "Sora", Arial, sans-serif; letter-spacing: -.025em; }
+.offerCards p { margin: 0; color: var(--insights-ink-3, #43534d); font-size: .69rem; }
+.offerCardMeta { color: var(--insights-muted, #71807a); font-size: .62rem; }
+.offerCards footer { margin-top: 2px; border-top: 1px solid var(--insights-line, #dedfd9); padding-top: 9px; }
+.offerCards footer span { color: var(--insights-ink, #12211d); font-size: .64rem; font-weight: 750; }
+.offerCards footer small { color: var(--insights-muted, #71807a); font-size: .6rem; }
 .offerBackdrop { position: fixed; z-index: 250; inset: 0; display: grid; place-items: center; overflow-y: auto; background: rgba(15, 31, 26, .44); padding: 20px; backdrop-filter: blur(5px); }
 .offerDialog { width: min(620px, 100%); border: 1px solid var(--line, #dedfd9); border-radius: 18px; background: #fffefa; padding: 22px; box-shadow: 0 28px 80px rgba(18, 33, 29, .2); }
 .offerDialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }

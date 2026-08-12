@@ -2252,7 +2252,7 @@ function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo:
   const [query, setQuery] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const customers = snapshot.customers.filter((customer) =>
-    `${customer.name} ${customer.contact} ${customer.phone ?? ""} ${customer.email ?? ""}`
+    `${customer.name} ${(customer.aliases ?? []).join(" ")} ${customer.contact} ${customer.phone ?? ""} ${customer.email ?? ""}`
       .toLowerCase()
       .includes(query.trim().toLowerCase()),
   );
@@ -2305,6 +2305,7 @@ function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo:
                 <div className={styles.customerName}>
                   <strong>{customer.name}</strong>
                   <span>{customer.contact}</span>
+                  {customer.aliases?.length ? <small className={styles.customerAliasPreview}>Also booked as {customer.aliases.slice(0, 2).join(", ")}{customer.aliases.length > 2 ? ` +${customer.aliases.length - 2}` : ""}</small> : null}
                   {customer.identityStatus && customer.identityStatus !== "resolved" ? <small>{customer.identityStatus === "review" ? "Identity review needed" : "Contact details needed"}</small> : null}
                 </div>
                 <div><span className={styles.mobileLabel}>Bookings</span><strong>{customer.totalBookings ?? customer.visits}</strong><small>{customer.completedVisits ?? 0} completed</small></div>
@@ -2329,6 +2330,7 @@ function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo:
                   <span className={styles.customerProfileEyebrow}>{selectedCustomer.identityStatus === "resolved" || !selectedCustomer.identityStatus ? "Linked player profile" : "Profile needs attention"}</span>
                   <h2 id="customer-profile-title">{selectedCustomer.name}</h2>
                   <p>{selectedCustomer.identityStatus === "review" ? "The contact identifiers conflict and were not merged automatically." : selectedCustomer.note}</p>
+                  {selectedCustomer.aliases?.length ? <div className={styles.customerAliases} aria-label="Names used on earlier or later bookings"><span>Also booked as</span><div>{selectedCustomer.aliases.map((alias) => <strong key={alias}>{alias}</strong>)}</div></div> : null}
                 </div>
               </div>
               <button type="button" className={styles.customerDrawerClose} onClick={() => setSelectedCustomerId(null)} aria-label="Close customer profile"><X aria-hidden="true" size={18} /></button>

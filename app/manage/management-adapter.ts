@@ -118,6 +118,8 @@ export type Booking = {
   time: string;
   duration: string;
   amount: number;
+  /** Authoritative reservation total retained on calendar session projections. */
+  groupTotalAmount?: number;
   status: BookingStatus;
   payment: BookingPaymentStatus;
   courtId: string;
@@ -418,6 +420,7 @@ export type Customer = {
   cancelledBookings?: number;
   nextBooking?: string | null;
   identityStatus?: "resolved" | "needs_details" | "review";
+  aliases?: string[];
   bookingHistory?: Array<{
     bookingId: string;
     reference: string;
@@ -4137,10 +4140,11 @@ type CustomerAccumulator = {
   nextBooking: string | null;
   note: string;
   identityStatus: "resolved" | "needs_details" | "review";
+  aliases: string[];
   bookingHistory: NonNullable<Customer["bookingHistory"]>;
   latestCompletedAt: number | null;
   nextBookingAt: number | null;
-  latestNameAt: number;
+  hasCanonicalName: boolean;
 };
 
 function stableCustomerId(key: string): string {
@@ -4169,6 +4173,16 @@ function isPendingCustomerName(name: string): boolean {
   return /^(booking details pending|details pending|customer details pending)$/i.test(name.trim());
 }
 
+function normalizedCustomerName(raw: string): string {
+  return raw.trim().replace(/\s+/g, " ");
+}
+
+function customerIdentityInstant(row: JsonObject): number {
+  return parsedInstant(row, ["created_at", "createdAt"])?.getTime() ??
+    parsedInstant(row, ["starts_at", "startsAt"])?.getTime() ??
+    0;
+}
+
 function deriveLiveCustomers(
   bookingRows: JsonObject[],
   courtNames: ReadonlyMap<string, string>,
@@ -4178,15 +4192,33 @@ function deriveLiveCustomers(
   const emailIndex = new Map<string, CustomerAccumulator>();
   const now = Date.now();
 
-  for (const row of bookingRows) {
+  // The source RPC does not promise row order. Process the first recorded
+  // booking first so a customer's canonical identity never changes when a
+  // later booking uses a nickname or a differently formatted name.
+  const orderedRows = [...bookingRows].sort((left, right) => {
+    const instantDifference = customerIdentityInstant(left) - customerIdentityInstant(right);
+    if (instantDifference !== 0) return instantDifference;
+    return value(left, ["id", "booking_id", "bookingId"])
+      .localeCompare(value(right, ["id", "booking_id", "bookingId"]), "en-PH");
+  });
+
+  for (const row of orderedRows) {
     const booking = mapLiveBooking(row, courtNames);
-    const rawName = value(row, ["customer_name", "customerName"]);
+    const rawName = normalizedCustomerName(value(row, ["customer_name", "customerName"]));
     const phone = normalizedCustomerPhone(value(row, ["customer_phone", "phone", "mobile"]));
     const email = normalizedCustomerEmail(value(row, ["customer_email", "customerEmail"]));
     const phoneMatch = phone ? phoneIndex.get(phone) : undefined;
     const emailMatch = email ? emailIndex.get(email) : undefined;
-    const identityConflict = Boolean(phoneMatch && emailMatch && phoneMatch !== emailMatch);
-    const existingMatch = identityConflict ? undefined : phoneMatch ?? emailMatch;
+    // A normalized mobile number is authoritative inside this tenant. A new
+    // phone must never be joined to an existing, different phone merely
+    // because both bookings happen to share an email address.
+    const emailBelongsToDifferentPhone = Boolean(
+      phone && !phoneMatch && emailMatch?.phone && emailMatch.phone !== `+${phone}`,
+    );
+    const identityConflict = emailBelongsToDifferentPhone;
+    const existingMatch = phoneMatch ?? (
+      !identityConflict && (!phone || !emailMatch?.phone) ? emailMatch : undefined
+    );
     const key = existingMatch?.key ?? (identityConflict
       ? `review:${booking.bookingId}`
       : phone
@@ -4196,8 +4228,8 @@ function deriveLiveCustomers(
           : `unresolved:${booking.bookingId}`);
     const startsAt = parsedInstant(row, ["starts_at"]);
     const endsAt = parsedInstant(row, ["ends_at"]);
-    const name = !rawName || isPendingCustomerName(rawName) ? "Customer details needed" : rawName;
-    const nameTimestamp = startsAt?.getTime() ?? 0;
+    const hasValidName = Boolean(rawName) && !isPendingCustomerName(rawName);
+    const name = hasValidName ? rawName : "Customer details needed";
     const existing = existingMatch ?? customers.get(key) ?? {
       key,
       id: stableCustomerId(key),
@@ -4215,19 +4247,26 @@ function deriveLiveCustomers(
       nextBooking: null,
       note: phone || email ? "Identity linked from tenant bookings" : "Add a mobile number or email to link future bookings",
       identityStatus: identityConflict ? "review" : phone || email ? "resolved" : "needs_details",
+      aliases: [],
       bookingHistory: [],
       latestCompletedAt: null,
       nextBookingAt: null,
-      latestNameAt: nameTimestamp,
+      hasCanonicalName: hasValidName,
     };
     const status = booking.status;
     const paymentStatus = value(row, ["payment_status"]);
     const terminalCancelled = status === "cancelled" || status === "expired";
 
-    if (!isPendingCustomerName(rawName) && nameTimestamp >= existing.latestNameAt) {
+    if (hasValidName && !existing.hasCanonicalName) {
       existing.name = rawName;
       existing.initials = initialsFor(rawName);
-      existing.latestNameAt = nameTimestamp;
+      existing.hasCanonicalName = true;
+    } else if (
+      hasValidName &&
+      rawName.localeCompare(existing.name, "en-PH", { sensitivity: "base" }) !== 0 &&
+      !existing.aliases.some((alias) => alias.localeCompare(rawName, "en-PH", { sensitivity: "base" }) === 0)
+    ) {
+      existing.aliases.push(rawName);
     }
     if (!existing.phone && phone) existing.phone = `+${phone}`;
     if (!existing.email && email) existing.email = email;
@@ -4266,9 +4305,12 @@ function deriveLiveCustomers(
       payment: booking.payment,
     });
     customers.set(key, existing);
-    if (!identityConflict) {
-      if (phone) phoneIndex.set(phone, existing);
-      if (email) emailIndex.set(email, existing);
+    if (phone) phoneIndex.set(phone, existing);
+    if (email && !identityConflict) {
+      const indexedEmail = emailIndex.get(email);
+      if (!indexedEmail || indexedEmail === existing || !indexedEmail.phone) {
+        emailIndex.set(email, existing);
+      }
     }
   }
 
@@ -4296,6 +4338,7 @@ function deriveLiveCustomers(
       email: customer.email,
       nextBooking: customer.nextBooking,
       identityStatus: customer.identityStatus,
+      aliases: customer.aliases,
       bookingHistory: customer.bookingHistory.sort((left, right) =>
         `${right.date} ${right.time}`.localeCompare(`${left.date} ${left.time}`, "en-PH")
       ),
