@@ -622,7 +622,7 @@
 
 .booking-route .payment-security > span { margin-right: 5px; color: #16845b; font-weight: 800; }
 
-@media (max-width: 760px) {
+@media (max-width: 779.98px) {
   .booking-route .checkout-layout.booking-details-view { grid-template-columns: 1fr; }
   .booking-route .booking-details-view .rally-booking-summary {
     position: static;
@@ -5863,6 +5863,44 @@
 .booking-app-search kbd { border: 1px solid #dedfd9; border-radius: 6px; padding: 3px 5px; background: #f6f4ee; font: inherit; font-size: 0.61rem; }
 .booking-app-notification { position: relative; display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid #dedfd9; border-radius: 12px; background: white; color: #43534d; font-size: 18px; }
 .booking-app-notification b { position: absolute; top: -5px; right: -4px; display: grid; width: 16px; height: 16px; place-items: center; border-radius: 50%; background: #ff6b55; color: white; font-size: 0.52rem; }
+.offer-center-trigger { position: relative; display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 7px; border: 1px solid rgba(126, 175, 67, .3); border-radius: 11px; background: rgba(126, 175, 67, .09); padding: 8px 11px; color: #173f32; font-family: var(--font-body), sans-serif; font-size: .75rem; font-weight: 700; cursor: pointer; }
+.offer-center-trigger svg { width: 17px; height: 17px; stroke-width: 1.8; }
+.offer-center-trigger b { display: grid; min-width: 18px; height: 18px; place-items: center; border-radius: 99px; background: #7eaf43; padding-inline: 5px; color: #08182d; font-size: .6rem; font-weight: 800; }
+.offer-center-trigger:hover { border-color: rgba(126, 175, 67, .55); background: rgba(126, 175, 67, .15); }
+.mobile-offer-trigger { display: none; width: 42px; min-height: 42px; padding: 0; }
+.public-mobile-offer-trigger { display: none; width: 42px; min-height: 42px; margin-left: auto; padding: 0; }
+.mobile-offer-trigger b { position: absolute; top: -4px; right: -4px; }
+.public-mobile-offer-trigger b { position: absolute; top: -4px; right: -4px; }
+.offer-center-backdrop { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; overflow-y: auto; background: rgba(5, 17, 31, .68); padding: 24px; backdrop-filter: blur(12px); animation: offer-fade-in .18s ease-out both; }
+.offer-center-dialog { width: min(640px, 100%); overflow: hidden; border: 1px solid rgba(255, 255, 255, .52); border-radius: 24px; background: #fffefa; color: #102a43; box-shadow: 0 32px 100px rgba(2, 11, 22, .34); animation: offer-rise-in .22s ease-out both; }
+.offer-center-hero { position: relative; display: grid; grid-template-columns: 50px minmax(0, 1fr) 42px; align-items: start; gap: 15px; background: linear-gradient(135deg, #0b2138, #143d5d); padding: 25px 25px 23px; color: #fff; }
+.offer-center-mark { display: grid; width: 50px; height: 50px; place-items: center; border: 1px solid rgba(168, 205, 121, .3); border-radius: 15px; background: rgba(168, 205, 121, .13); color: #a8cd79; }
+.offer-center-mark svg { width: 24px; height: 24px; stroke-width: 1.7; }
+.offer-center-hero p { margin: 1px 0 5px; color: #a8cd79; font-size: .65rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.offer-center-hero h2 { margin: 0; color: #fff; font-family: var(--font-display), sans-serif; font-size: clamp(1.35rem, 3vw, 1.75rem); font-weight: 650; letter-spacing: -.045em; line-height: 1.16; }
+.offer-center-hero span:not(.offer-center-mark) { display: block; margin-top: 7px; color: rgba(241, 247, 244, .7); font-size: .78rem; line-height: 1.5; }
+.offer-center-close { display: grid; width: 40px; height: 40px; place-items: center; border: 1px solid rgba(255, 255, 255, .18); border-radius: 12px; background: rgba(255, 255, 255, .08); color: #fff; cursor: pointer; }
+.offer-center-close:hover { background: rgba(255, 255, 255, .14); }
+.offer-center-close svg { width: 18px; height: 18px; }
+.offer-center-list { display: grid; max-height: min(50vh, 410px); gap: 10px; overflow-y: auto; padding: 20px 22px; }
+.offer-center-card { border: 1px solid #e3e1da; border-radius: 16px; background: #f8f7f2; padding: 16px; }
+.offer-center-card.is-live { border-color: rgba(22, 132, 91, .23); background: linear-gradient(135deg, #f4fbf8, #fffefa); }
+.offer-center-card-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.offer-status { border-radius: 99px; background: #eceae4; padding: 5px 8px; color: #68746f; font-size: .57rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.offer-status.is-live { background: #dcf5eb; color: #117354; }
+.offer-center-card-top > strong { color: #5546d7; font-family: var(--font-display), sans-serif; font-size: .84rem; }
+.offer-center-card h3 { margin: 12px 0 11px; color: #102a43; font-family: var(--font-display), sans-serif; font-size: 1rem; font-weight: 650; letter-spacing: -.025em; }
+.offer-center-card dl { display: grid; grid-template-columns: 1.4fr 1fr .55fr; gap: 10px; margin: 0; }
+.offer-center-card dl > div { min-width: 0; }
+.offer-center-card dt { color: #7a8681; font-size: .55rem; font-weight: 750; letter-spacing: .06em; text-transform: uppercase; }
+.offer-center-card dd { overflow: hidden; margin: 4px 0 0; color: #364b44; font-size: .68rem; font-weight: 600; line-height: 1.35; text-overflow: ellipsis; }
+.offer-center-footer { display: flex; align-items: center; justify-content: space-between; gap: 18px; border-top: 1px solid #e8e5de; background: #fffefa; padding: 16px 22px 20px; }
+.offer-center-footer > span { display: flex; max-width: 300px; align-items: flex-start; gap: 7px; color: #68746f; font-size: .65rem; line-height: 1.45; }
+.offer-center-footer > span svg { width: 14px; min-width: 14px; color: #16845b; }
+.offer-center-cta { min-height: 42px; flex: none; border: 0; background: #6558e8; color: #fff; font-weight: 700; box-shadow: 0 10px 24px rgba(101, 88, 232, .2); }
+.offer-center-cta svg { width: 15px; height: 15px; }
+@keyframes offer-fade-in { from { opacity: 0; } }
+@keyframes offer-rise-in { from { opacity: 0; transform: translateY(14px) scale(.985); } }
 .booking-app-navigation { top: calc(100% - 1px); display: none; }
 
 .booking-new-route .booking-zone-heading { display: none; }
@@ -6018,6 +6056,24 @@
 }
 
 @media (max-width: 760px) {
+  .booking-app-mobile-bar { grid-template-columns: 42px minmax(0, 1fr) 42px; }
+  .mobile-offer-trigger { display: grid; }
+  .public-mobile-offer-trigger { display: grid; }
+  .booking-offer-trigger { display: none; }
+  .offer-center-backdrop { align-items: end; padding: 0; }
+  .offer-center-dialog { width: 100%; max-height: min(88dvh, 760px); border-width: 1px 0 0; border-radius: 24px 24px 0 0; }
+  .offer-center-hero { grid-template-columns: 44px minmax(0, 1fr) 40px; gap: 12px; padding: 21px 18px 19px; }
+  .offer-center-mark { width: 44px; height: 44px; border-radius: 13px; }
+  .offer-center-list { max-height: calc(88dvh - 260px); padding: 15px 16px; }
+  .offer-center-card { padding: 14px; }
+  .offer-center-card dl { grid-template-columns: 1fr 1fr; }
+  .offer-center-card dl > div:last-child { grid-column: 1 / -1; }
+  .offer-center-footer { position: sticky; bottom: 0; display: grid; gap: 12px; padding: 14px 16px calc(16px + env(safe-area-inset-bottom)); }
+  .offer-center-footer > span { max-width: none; }
+  .offer-center-cta { width: 100%; }
+}
+
+@media (max-width: 760px) {
   .booking-route .availability-scroll { display: none; }
   .booking-route .availability-mobile { display: block; overflow-x: auto; border: 1px solid var(--line); border-radius: 15px; background: white; scrollbar-width: thin; }
   .booking-route .mobile-availability-grid { min-width: max(100%, var(--mobile-grid-min)); display: grid; grid-template-columns: 80px repeat(var(--court-count), minmax(58px, 1fr)); }
@@ -6037,6 +6093,11 @@
   .booking-route .mobile-availability-cell { min-width: 0; padding: 4px 1px; }
   .booking-route .mobile-availability-cell small { max-width: 100%; overflow: hidden; font-size: 0.57rem; text-overflow: ellipsis; }
   .booking-route .mobile-availability-cell > span { width: 6px; height: 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .offer-center-backdrop,
+  .offer-center-dialog { animation: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

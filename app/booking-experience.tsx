@@ -4,6 +4,7 @@ import Image from "next/image";
 import { FaFacebookF, FaInstagram, FaTiktok } from "react-icons/fa6";
 import {
   ArrowUpRight,
+  BadgePercent,
   CalendarDays,
   Check,
   Clock3,
@@ -12,6 +13,7 @@ import {
   Share2,
   TriangleAlert,
   WalletCards,
+  X,
 } from "lucide-react";
 import {
   CSSProperties,
@@ -658,6 +660,43 @@ function promotionClockMinutes(value: string): number | null {
       Number.isInteger(minutes) && minutes >= 0 && minutes <= 59
     ? hours * 60 + minutes
     : null;
+}
+
+const promotionWeekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+
+function manilaDateNow() {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "Asia/Manila",
+  }).format(new Date());
+}
+
+function promotionDiscountLabel(promotion: PublicPromotion) {
+  return promotion.discountType === "percentage"
+    ? `${promotion.discountValue}% off`
+    : `${peso(promotion.discountValue)} off`;
+}
+
+function promotionScheduleLabel(promotion: PublicPromotion) {
+  const days = promotion.weekdays
+    .slice()
+    .sort((left, right) => left - right)
+    .map((day) => promotionWeekdayNames[day])
+    .filter(Boolean)
+    .join(", ");
+  return `${days || "Selected days"} · ${promotion.startsAt.slice(0, 5)}–${promotion.endsAt.slice(0, 5)}`;
+}
+
+function promotionValidityLabel(promotion: PublicPromotion) {
+  const formatter = new Intl.DateTimeFormat("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+  return `${formatter.format(new Date(`${promotion.validFrom}T12:00:00Z`))}–${formatter.format(new Date(`${promotion.validUntil}T12:00:00Z`))}`;
 }
 
 function promotedHourlyPrice(
@@ -1499,9 +1538,13 @@ export function BookingExperience({
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
+  const offerDialogRef = useRef<HTMLDivElement>(null);
+  const offerCloseRef = useRef<HTMLButtonElement>(null);
+  const offerRestoreFocusRef = useRef<HTMLElement | null>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [offerCenterOpen, setOfferCenterOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
@@ -1567,6 +1610,20 @@ export function BookingExperience({
     return displayCourtsFromPlatform(bootstrap?.courts ?? []);
   }, [bootstrap, bootstrapState, isLive]);
   const galleryPhotos = useMemo(() => galleryPhotosFromPlatform(bootstrap), [bootstrap]);
+  const publicPromotions = useMemo(() => {
+    const today = manilaDateNow();
+    return (bootstrap?.promotions ?? [])
+      .filter((promotion) => promotion.validUntil >= today)
+      .sort((left, right) => left.validFrom.localeCompare(right.validFrom) || left.name.localeCompare(right.name));
+  }, [bootstrap]);
+  const livePromotions = useMemo(() => {
+    const today = manilaDateNow();
+    return publicPromotions.filter((promotion) => promotion.validFrom <= today && promotion.validUntil >= today);
+  }, [publicPromotions]);
+  const offerSignature = useMemo(() => publicPromotions
+    .map((promotion) => `${promotion.id}:${promotion.validFrom}:${promotion.validUntil}:${promotion.discountValue}`)
+    .sort()
+    .join("|"), [publicPromotions]);
   const startingHourlyRate = useMemo(
     () =>
       isLive
@@ -1963,6 +2020,57 @@ export function BookingExperience({
       active = false;
     };
   }, [adapter, isBookingPage]);
+
+  useEffect(() => {
+    if (!isLive || bootstrapState !== "ready" || !offerSignature || livePromotions.length === 0) return;
+    const storageKey = `dinktopia:offer-center:${activeTenant.slug}:${offerSignature}`;
+    try {
+      if (sessionStorage.getItem(storageKey)) return;
+      sessionStorage.setItem(storageKey, "seen");
+    } catch {
+      // The offer remains available from the header when session storage is unavailable.
+    }
+    const openTimer = window.setTimeout(() => setOfferCenterOpen(true), 0);
+    return () => window.clearTimeout(openTimer);
+  }, [bootstrapState, isLive, livePromotions.length, offerSignature]);
+
+  useEffect(() => {
+    if (!offerCenterOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusTimer = window.setTimeout(() => offerCloseRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setOfferCenterOpen(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(
+        offerDialogRef.current?.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
+        ) ?? [],
+      );
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.clearTimeout(focusTimer);
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      offerRestoreFocusRef.current?.focus();
+      offerRestoreFocusRef.current = null;
+    };
+  }, [offerCenterOpen]);
 
   useEffect(() => {
     if (!pendingBooking?.expiresAt) return;
@@ -2590,6 +2698,15 @@ export function BookingExperience({
               <span className="menu-lines" aria-hidden="true" />
             </button>
             <strong>Book a court</strong>
+            {publicPromotions.length > 0 && <button
+              type="button"
+              className="offer-center-trigger mobile-offer-trigger"
+              aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
+              onClick={(event) => {
+                offerRestoreFocusRef.current = event.currentTarget;
+                setOfferCenterOpen(true);
+              }}
+            ><BadgePercent aria-hidden="true" /><b>{publicPromotions.length}</b></button>}
           </div>
           <div className="booking-app-desktop-bar">
             <div className="booking-app-title">
@@ -2602,6 +2719,15 @@ export function BookingExperience({
                 <input type="search" placeholder="Search bookings and players" aria-label="Search bookings and players" />
                 <kbd>⌘ K</kbd>
               </label>
+              {publicPromotions.length > 0 && <button
+                type="button"
+                className="offer-center-trigger booking-offer-trigger"
+                aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
+                onClick={(event) => {
+                  offerRestoreFocusRef.current = event.currentTarget;
+                  setOfferCenterOpen(true);
+                }}
+              ><BadgePercent aria-hidden="true" /><span>Offers</span><b>{publicPromotions.length}</b></button>}
               <Link className="booking-app-notification" href="/book?mode=manage" aria-label="Manage booking notifications">♧<b>2</b></Link>
             </div>
           </div>
@@ -2631,6 +2757,15 @@ export function BookingExperience({
               priority
             />
           </Link>
+          {publicPromotions.length > 0 && <button
+            type="button"
+            className="offer-center-trigger public-mobile-offer-trigger"
+            aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
+            onClick={(event) => {
+              offerRestoreFocusRef.current = event.currentTarget;
+              setOfferCenterOpen(true);
+            }}
+          ><BadgePercent aria-hidden="true" /><b>{publicPromotions.length}</b></button>}
           <button
             className="menu-button"
             type="button"
@@ -2672,12 +2807,69 @@ export function BookingExperience({
             <Link className="nav-admin-link" href="/manage" onClick={() => setMobileNavOpen(false)}>
               Admin login
             </Link>
+            {publicPromotions.length > 0 && <button
+              type="button"
+              className="offer-center-trigger nav-offer-trigger"
+              aria-label={`View ${publicPromotions.length} special ${publicPromotions.length === 1 ? "offer" : "offers"}`}
+              onClick={(event) => {
+                offerRestoreFocusRef.current = event.currentTarget;
+                setMobileNavOpen(false);
+                setOfferCenterOpen(true);
+              }}
+            ><BadgePercent aria-hidden="true" /><span>Offers</span><b>{publicPromotions.length}</b></button>}
             <Link className="button button-small button-lime" href="/book" onClick={() => setMobileNavOpen(false)}>
               Book a court <span aria-hidden="true">↗</span>
             </Link>
           </nav>
         </div>
       </header>}
+
+      {offerCenterOpen && publicPromotions.length > 0 && <div
+        className="offer-center-backdrop"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget) setOfferCenterOpen(false);
+        }}
+      >
+        <div
+          ref={offerDialogRef}
+          className="offer-center-dialog"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="offer-center-title"
+          aria-describedby="offer-center-description"
+        >
+          <div className="offer-center-hero">
+            <span className="offer-center-mark" aria-hidden="true"><BadgePercent /></span>
+            <div>
+              <p>Player offers</p>
+              <h2 id="offer-center-title">A better hour to rally.</h2>
+              <span id="offer-center-description">Special rates are applied automatically to matching court-hours.</span>
+            </div>
+            <button ref={offerCloseRef} type="button" className="offer-center-close" aria-label="Close special offers" onClick={() => setOfferCenterOpen(false)}><X aria-hidden="true" /></button>
+          </div>
+          <div className="offer-center-list">
+            {publicPromotions.map((promotion) => {
+              const isPromotionLive = livePromotions.some((candidate) => candidate.id === promotion.id);
+              return <article className={`offer-center-card${isPromotionLive ? " is-live" : ""}`} key={promotion.id}>
+                <div className="offer-center-card-top">
+                  <span className={`offer-status${isPromotionLive ? " is-live" : ""}`}>{isPromotionLive ? "Live now" : "Upcoming"}</span>
+                  <strong>{promotionDiscountLabel(promotion)}</strong>
+                </div>
+                <h3>{promotion.name}</h3>
+                <dl>
+                  <div><dt>When</dt><dd>{promotionScheduleLabel(promotion)}</dd></div>
+                  <div><dt>Valid</dt><dd>{promotionValidityLabel(promotion)}</dd></div>
+                  <div><dt>Courts</dt><dd>{promotion.courtIds.length} {promotion.courtIds.length === 1 ? "court" : "courts"}</dd></div>
+                </dl>
+              </article>;
+            })}
+          </div>
+          <div className="offer-center-footer">
+            <span><Check aria-hidden="true" /> No code needed. The best eligible offer is applied automatically.</span>
+            <Link className="button offer-center-cta" href="/book" onClick={() => setOfferCenterOpen(false)}>View offer times <ArrowUpRight aria-hidden="true" /></Link>
+          </div>
+        </div>
+      </div>}
 
       <main id="main-content" className={isHome ? undefined : isBookingPage && mode === "book" ? "route-main rallyos-main-content" : "route-main"}>
         {isHome && <section className="hero" id="top">
