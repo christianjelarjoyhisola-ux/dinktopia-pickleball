@@ -44,7 +44,8 @@ test("takes each offer to its eligible date and highlights matching court-hours"
   assert.match(booking, /setTimeout\(\(\) => setTargetOfferId\(""\), reducedMotion \? 700 : 2650\)/);
   assert.match(css, /\.availability-cell\.offer-target:not\(\.busy\):not\(\.selected\)/);
   assert.match(css, /@keyframes offer-slot-focus/);
-  assert.match(css, /background:\s*#fff3f0/);
+  assert.match(css, /18%, 62%\s*\{\s*background:\s*#fff1ed;\s*\}/);
+  assert.doesNotMatch(css, /\.availability-cell\.offer-target[^}]*small[^}]*font-weight/s);
 });
 
 test("keeps a visible premium offer entry point while players scroll", () => {
