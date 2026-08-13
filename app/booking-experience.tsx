@@ -2325,7 +2325,6 @@ export function BookingExperience({
     } else {
       setLiveMessage(resetMessage);
     }
-    setSchedule([]);
     setScheduleDate("");
     setAvailabilityState("loading");
     setSelectedDate(date);
@@ -3417,7 +3416,7 @@ export function BookingExperience({
                           </section>
                         )}
 
-                        {visibleAvailabilityState === "loading" && (
+                        {visibleAvailabilityState === "loading" && schedule.length === 0 && (
                           <div className="availability-loading" role="status" aria-live="polite">
                             <span className="spinner" aria-hidden="true" />
                             <div><strong>Checking the court board…</strong><small>Looking for open whole-hour slots.</small></div>
@@ -3456,8 +3455,13 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="rally-availability-board">
+                        {(visibleAvailabilityState === "ready" || (visibleAvailabilityState === "loading" && schedule.length > 0)) && availableCount > 0 && displayCourts.length > 0 && (
+                          <div className={`rally-availability-board${visibleAvailabilityState === "loading" ? " is-refreshing" : ""}`} aria-busy={visibleAvailabilityState === "loading"}>
+                            {visibleAvailabilityState === "loading" && (
+                              <div className="availability-refreshing" role="status" aria-live="polite">
+                                <span className="spinner" aria-hidden="true" /> Updating court times
+                              </div>
+                            )}
                             <div
                               className="availability-scroll"
                               role="region"
@@ -3496,7 +3500,7 @@ export function BookingExperience({
                                             key={`${court.id}-${hour}`}
                                             className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}${slot?.promotionId === targetOfferId ? " offer-target" : ""}`}
                                             aria-pressed={isSelected}
-                                            disabled={busy}
+                                            disabled={busy || visibleAvailabilityState === "loading"}
                                             aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && slot ? slot.promotionName ? `, ${slot.promotionName}, regular price ${peso(slot.originalPrice ?? slot.price)}, offer price ${peso(slot.price)}` : `, ${peso(slot.price)} per court-hour` : ""}${slot?.promotionId === targetOfferId ? ", highlighted offer time" : ""}`}
                                             onClick={() => slot && !busy && chooseSlot(court, slot)}
                                           ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : slot?.promotionName ? "Offer" : "Open"}</small>{!busy && slot && <em className={`slot-price${slot.promotionName ? " has-offer" : ""}`}>{slot.promotionName && <s>{peso(slot.originalPrice ?? slot.price)}</s>}<b>{peso(slot.price)}</b></em>}</button>
@@ -3534,7 +3538,7 @@ export function BookingExperience({
                                           key={`${court.id}-${hour}`}
                                           className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}${slot?.promotionId === targetOfferId ? " offer-target" : ""}`}
                                           aria-pressed={isSelected}
-                                          disabled={busy}
+                                           disabled={busy || visibleAvailabilityState === "loading"}
                                           aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && slot ? slot.promotionName ? `, ${slot.promotionName}, regular price ${peso(slot.originalPrice ?? slot.price)}, offer price ${peso(slot.price)}` : `, ${peso(slot.price)} per court-hour` : ""}${slot?.promotionId === targetOfferId ? ", highlighted offer time" : ""}`}
                                           onClick={() => slot && !busy && chooseSlot(court, slot)}
                                         ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : slot?.promotionName ? "Offer" : "Open"}</small>{!busy && slot && <em className={`slot-price${slot.promotionName ? " has-offer" : ""}`}>{slot.promotionName && <s>{peso(slot.originalPrice ?? slot.price)}</s>}<b>{peso(slot.price)}</b></em>}</button>
