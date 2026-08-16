@@ -3543,6 +3543,7 @@ export default function ManagePage() {
   const runtimeMode = platformMode();
   const isPreview = runtimeMode === "preview";
   const setupPreview =
+    isPreview &&
     activeTenant.activation.status === "setup_required" &&
     activeTenant.activation.provisional &&
     activeTenant.previewCourts.length === 0;

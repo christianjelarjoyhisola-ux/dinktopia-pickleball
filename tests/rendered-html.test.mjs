@@ -4415,6 +4415,11 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.doesNotMatch(managerHtml, /aria-label="Preview notifications"/i);
   assert.match(manage, /isPreview && !setupPreview && <button[^>]*aria-label="Preview search control"/);
   assert.match(manage, /isPreview && !setupPreview && <button[^>]*aria-label="Preview notifications"/);
+  assert.match(
+    manage,
+    /const setupPreview =\s*isPreview &&\s*activeTenant\.activation\.status === "setup_required"/s,
+    "setup-required tenants must expose their real empty setup forms when the live platform is connected",
+  );
   assert.match(managerHtml, /aria-label="Preview account control unavailable|Sign out and use another account"/i);
   assert.match(managerHtml, /role="status"[^>]*aria-live="polite"/i);
   assert.match(
