@@ -1,3 +1,5 @@
+import { activeTenant } from "./tenants/registry";
+
 type RouteLoadingScreenProps = {
   source?: "boundary" | "link";
 };
@@ -21,9 +23,9 @@ export function RouteLoadingScreen({
           </span>
           <span className="route-loading-shadow" />
         </div>
-        <p>Dinktopia · Court Hub</p>
-        <strong>Loading your next rally…</strong>
-        <span>Getting the court ready.</span>
+        <p>{activeTenant.identity.name} · Setup preview</p>
+        <strong>Loading the venue preview…</strong>
+        <span>Details are still being configured.</span>
       </div>
     </div>
   );

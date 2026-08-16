@@ -54,6 +54,7 @@ import {
   type ManagementContext,
   type ManagementInsights,
   type ManagementSnapshot,
+  type PaymentEvidence,
   type PaymentReceiptView,
   type RemittanceDestination,
   type TenantRole,
@@ -197,7 +198,7 @@ const VIEW_COPY: Record<View, { title: string; description: string }> = {
 
 const LIVE_VIEW_COPY: Record<View, { title: string; description: string }> = {
   overview: {
-    title: "Dinktopia workspace.",
+    title: `${activeTenant.identity.name} workspace.`,
     description: "Authenticated, server-scoped booking data and launch readiness.",
   },
   bookings: {
@@ -229,7 +230,7 @@ const LIVE_VIEW_COPY: Record<View, { title: string; description: string }> = {
     description: "Courts, hours, rates and booking rules.",
   },
   launch: {
-    title: "Launch Dinktopia",
+    title: `Launch ${activeTenant.identity.shortName}`,
     description: "Complete the checks required for public booking.",
   },
   access: {
@@ -374,13 +375,6 @@ function blockCalendarParts(dateValue: string | null, fallback: string) {
   };
 }
 
-const ROLE_TEAM: { name: string; initials: string; role: TenantRole; activity: string }[] = [
-  { name: "Alex Rivera", initials: "AR", role: "owner", activity: "Active now" },
-  { name: "Mara Villanueva", initials: "MV", role: "admin", activity: "Today, 1:42 PM" },
-  { name: "Jules Ramos", initials: "JR", role: "staff", activity: "Yesterday" },
-  { name: "Sam Flores", initials: "SF", role: "host", activity: "Aug 6" },
-];
-
 const CAPABILITY_LABEL: Record<ManagementCapability, string> = {
   "booking:create": "Create bookings",
   "booking:update": "Edit bookings",
@@ -449,6 +443,33 @@ function Avatar({ initials, tone = 0 }: { initials: string; tone?: number }) {
   );
 }
 
+function TenantBrandMark({ sizes, priority = false }: { sizes: string; priority?: boolean }) {
+  const logo = activeTenant.brand.logo;
+  if (logo.kind === "image") {
+    return (
+      <Image
+        className={styles.brandLogo}
+        src={logo.src}
+        alt=""
+        width={2046}
+        height={769}
+        sizes={sizes}
+        unoptimized
+        priority={priority}
+      />
+    );
+  }
+  return (
+    <span
+      className={styles.brandLogo}
+      aria-hidden="true"
+      style={{ display: "block", fontWeight: 800, lineHeight: 1.05, letterSpacing: "-.04em" }}
+    >
+      {logo.label}
+    </span>
+  );
+}
+
 function MetricCard({
   label,
   value,
@@ -474,7 +495,7 @@ function MetricCard({
 function DashboardSkeleton() {
   return (
     <div className={styles.skeleton} role="status" aria-live="polite">
-      <span className={styles.srOnly}>Loading Dinktopia management data</span>
+      <span className={styles.srOnly}>Loading {activeTenant.identity.name} management data</span>
       <div className={cx(styles.skeletonLine, styles.skeletonEyebrow)} />
       <div className={cx(styles.skeletonLine, styles.skeletonTitle)} />
       <div className={styles.skeletonMetrics}>
@@ -505,7 +526,7 @@ function StatePanel({
     empty: {
       mark: "00",
       title: "Nothing here yet",
-      body: "New tenant activity will appear here after Dinktopia starts accepting bookings.",
+      body: `New tenant activity will appear here after ${activeTenant.identity.shortName} starts accepting bookings.`,
       action: "Show preview data",
     },
     error: {
@@ -528,11 +549,38 @@ function StatePanel({
         {copy.mark}
       </span>
       <p className={styles.eyebrow}>
-        Dinktopia · {isPreview ? ROLE_LABEL[role] : "Live workspace"}
+        {activeTenant.identity.shortName} · {isPreview ? ROLE_LABEL[role] : "Live workspace"}
       </p>
       <h2 id={`state-${kind}-title`}>{copy.title}</h2>
       <p>{copy.body}</p>
       <ActionButton onClick={onRestore}>{copy.action}</ActionButton>
+    </section>
+  );
+}
+
+function SetupRequiredPanel({ view }: { view: View }) {
+  const area = {
+    overview: "Venue operations",
+    bookings: "Bookings",
+    schedule: "Court schedule",
+    blocks: "Court blocks",
+    customers: "Customers",
+    reports: "Analytics",
+    finance: "Finance and remittance",
+    settings: "Venue settings",
+    launch: "Launch readiness",
+    access: "Team access",
+  }[view];
+  return (
+    <section className={styles.statePanel} role="status" aria-labelledby="tenant-setup-title">
+      <span className={styles.stateMark} aria-hidden="true">…</span>
+      <p className={styles.eyebrow}>{activeTenant.identity.name} · Setup required</p>
+      <h2 id="tenant-setup-title">{area} will appear after configuration.</h2>
+      <p>
+        No placeholder courts, schedules, rates, policies, payment details, contacts,
+        or team records are shown. Authorized managers can add the real information
+        here after the tenant is connected to the shared platform.
+      </p>
     </section>
   );
 }
@@ -786,6 +834,11 @@ function OverviewView({
         booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
       ) ?? null
     : null;
+  const reviewingEvidence = reviewing?.paymentEvidence ?? null;
+  const reviewWorkspace: { booking: Booking; evidence: PaymentEvidence } | null =
+    reviewing && reviewingEvidence
+    ? { booking: reviewing!, evidence: reviewingEvidence! }
+    : null;
   const paidCount = operationalBookings.filter((booking) => booking.payment === "paid").length;
 
   const closePaymentReview = () => {
@@ -884,8 +937,8 @@ function OverviewView({
                   <dt>Receipt submitted</dt>
                   <dd>
                     {inboxBooking.paymentEvidence?.submittedAt ? (
-                      <time dateTime={inboxBooking.paymentEvidence.submittedAt}>
-                        {new Date(inboxBooking.paymentEvidence.submittedAt).toLocaleString("en-PH", {
+                      <time dateTime={inboxBooking.paymentEvidence!.submittedAt}>
+                        {new Date(inboxBooking.paymentEvidence!.submittedAt).toLocaleString(activeTenant.identity.locale, {
                           timeZone: activeTenant.identity.timezone,
                         })}
                       </time>
@@ -928,10 +981,10 @@ function OverviewView({
         </section>
       )}
 
-      {!isPreview && canReviewPayments && reviewing?.paymentEvidence && (
+      {!isPreview && canReviewPayments && reviewWorkspace && (
         <PaymentReviewWorkspace
-          key={reviewing.paymentEvidence.verificationId}
-          booking={reviewing}
+          key={reviewWorkspace!.evidence.verificationId}
+          booking={reviewWorkspace!.booking}
           can={can}
           request={request}
           loadPaymentReceipt={loadPaymentReceipt}
@@ -1235,12 +1288,12 @@ function BookingsView({
   const [manual, setManual] = useState({
     courtId: courts[0]?.id ?? "",
     bookingDate: manilaCalendarDate(),
-    startTime: "06:00",
+    startTime: "",
     durationHours: "1",
     customerName: "",
     customerEmail: "",
     customerPhone: "",
-    paymentMethod: "gcash",
+    paymentMethod: "",
     paymentReference: "",
   });
   const [rescheduleDraft, setRescheduleDraft] = useState({
@@ -1271,6 +1324,11 @@ function BookingsView({
     ? bookings.find((booking) =>
         booking.bookingId === reviewingBookingId && booking.paymentEvidence?.reviewable === true
       ) ?? null
+    : null;
+  const reviewingEvidence = reviewing?.paymentEvidence ?? null;
+  const reviewWorkspace: { booking: Booking; evidence: PaymentEvidence } | null =
+    reviewing && reviewingEvidence
+    ? { booking: reviewing!, evidence: reviewingEvidence! }
     : null;
   const today = manilaCalendarDate();
   const todayCount = bookings.filter((booking) => booking.bookingDate === today).length;
@@ -1412,13 +1470,13 @@ function BookingsView({
           <div className={styles.compactFields}>
             <label className={styles.field}><span>Court</span><select required value={manual.courtId} onChange={(event) => setManual({ ...manual, courtId: event.target.value })}>{courts.map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}</select></label>
             <label className={styles.field}><span>Date</span><input required type="date" min={manilaCalendarDate()} value={manual.bookingDate} onChange={(event) => setManual({ ...manual, bookingDate: event.target.value })} /></label>
-            <label className={styles.field}><span>Starts</span><select value={manual.startTime} onChange={(event) => setManual({ ...manual, startTime: event.target.value })}>{wholeHourOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
+            <label className={styles.field}><span>Starts</span><select required value={manual.startTime} onChange={(event) => setManual({ ...manual, startTime: event.target.value })}><option value="" disabled>Select start time</option>{wholeHourOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
             <label className={styles.field}><span>Hours</span><select value={manual.durationHours} onChange={(event) => setManual({ ...manual, durationHours: event.target.value })}>{Array.from({ length: 18 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
             <label className={styles.field}><span>Player name</span><input required minLength={2} maxLength={100} value={manual.customerName} onChange={(event) => setManual({ ...manual, customerName: event.target.value })} /></label>
             <label className={styles.field}><span>Phone</span><input required minLength={7} maxLength={30} value={manual.customerPhone} onChange={(event) => setManual({ ...manual, customerPhone: event.target.value })} /></label>
             <label className={styles.field}><span>Email <small>optional</small></span><input type="email" maxLength={254} value={manual.customerEmail} onChange={(event) => setManual({ ...manual, customerEmail: event.target.value })} /></label>
-            <label className={styles.field}><span>Paid through</span><select value={manual.paymentMethod} onChange={(event) => setManual({ ...manual, paymentMethod: event.target.value })}><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
-            {manual.paymentMethod !== "cash" && <label className={styles.field}><span>Payment reference</span><input required minLength={4} maxLength={100} value={manual.paymentReference} onChange={(event) => setManual({ ...manual, paymentReference: event.target.value })} /></label>}
+            <label className={styles.field}><span>Paid through</span><select required value={manual.paymentMethod} onChange={(event) => setManual({ ...manual, paymentMethod: event.target.value })}><option value="" disabled>Select payment method</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
+            {manual.paymentMethod && manual.paymentMethod !== "cash" && <label className={styles.field}><span>Payment reference</span><input required minLength={4} maxLength={100} value={manual.paymentReference} onChange={(event) => setManual({ ...manual, paymentReference: event.target.value })} /></label>}
           </div>
           <div className={styles.compactFormActions}><span>Only a server-authorized owner can complete this write.</span><ActionButton type="submit">Review booking</ActionButton></div>
         </form>
@@ -1540,10 +1598,10 @@ function BookingsView({
         </form>
         </div>
       )}
-      {!isPreview && canReviewPayments && reviewing?.paymentEvidence && (
+      {!isPreview && canReviewPayments && reviewWorkspace && (
         <PaymentReviewWorkspace
-          key={reviewing.paymentEvidence.verificationId}
-          booking={reviewing}
+          key={reviewWorkspace!.evidence.verificationId}
+          booking={reviewWorkspace!.booking}
           can={can}
           request={request}
           loadPaymentReceipt={loadPaymentReceipt}
@@ -2298,6 +2356,10 @@ type NewCourtDraft = {
   closesAt: string;
   dayRate: string;
   peakRate: string;
+  minimumHours: string;
+  maximumHours: string;
+  minimumLeadMinutes: string;
+  maximumAdvanceDays: string;
 };
 
 type SharedScheduleDraft = {
@@ -2312,19 +2374,16 @@ const emptyNewCourt: NewCourtDraft = {
   name: "",
   description: "",
   status: "active",
-  opensAt: "06:00",
-  peakStartsAt: "16:00",
-  closesAt: "22:00",
-  dayRate: "300",
-  peakRate: "400",
+  opensAt: "",
+  peakStartsAt: "",
+  closesAt: "",
+  dayRate: "",
+  peakRate: "",
+  minimumHours: "",
+  maximumHours: "",
+  minimumLeadMinutes: "",
+  maximumAdvanceDays: "",
 };
-
-const NEW_COURT_INTERNAL_DEFAULTS = {
-  minimumHours: 1,
-  maximumHours: 18,
-  minimumLeadMinutes: 60,
-  maximumAdvanceDays: 30,
-} as const;
 
 const wholeHourOptions: ClockOption[] = Array.from({ length: 24 }, (_, hour) => ({
   value: clockValueForHour(hour)!,
@@ -2420,17 +2479,16 @@ function shiftedOperatingWindow(
   const currentCloseIsAvailable = closeOptions.some((option) =>
     option.value === current.closesAt
   );
-  const preservedDuration = currentOpen !== null && currentClose !== null &&
-      nextOpen !== null
+  const preservedDuration = currentOpen !== null && currentClose !== null && nextOpen !== null
     ? currentClose - currentOpen
-    : 16;
-  const shiftedClose = nextOpen === null
+    : null;
+  const shiftedClose = nextOpen === null || preservedDuration === null
     ? null
     : clockValueForHour(nextOpen + preservedDuration);
   const closesAt = currentCloseIsAvailable
     ? current.closesAt
     : closeOptions.find((option) => option.value === shiftedClose)?.value ??
-      closeOptions[15]?.value ?? "";
+      "";
   return {
     opensAt,
     closesAt,
@@ -2515,6 +2573,20 @@ function newCourtDraftError(draft: NewCourtDraft): string | null {
   if (!scheduleForNewCourt(draft)) {
     return "Both hourly rates must be valid amounts with at most two decimal places.";
   }
+  const minimumHours = Number(draft.minimumHours);
+  const maximumHours = Number(draft.maximumHours);
+  const minimumLeadMinutes = Number(draft.minimumLeadMinutes);
+  const maximumAdvanceDays = Number(draft.maximumAdvanceDays);
+  if (
+    !Number.isSafeInteger(minimumHours) || minimumHours < 1 || minimumHours > 18 ||
+    !Number.isSafeInteger(maximumHours) || maximumHours < minimumHours || maximumHours > 18
+  ) return "Booking duration must be 1 to 18 hours, with the maximum at least the minimum.";
+  if (!Number.isSafeInteger(minimumLeadMinutes) || minimumLeadMinutes < 0 || minimumLeadMinutes > 43_200) {
+    return "Minimum lead time must be 0 to 43,200 minutes.";
+  }
+  if (!Number.isSafeInteger(maximumAdvanceDays) || maximumAdvanceDays < 1 || maximumAdvanceDays > 365) {
+    return "Booking horizon must be 1 to 365 days.";
+  }
   return null;
 }
 
@@ -2543,7 +2615,7 @@ function policyDraftFor(snapshot: ManagementSnapshot): PolicyDraft {
   const source = policy?.draft ?? policy?.publishedPolicy;
   return source
     ? { title: source.title, intro: source.intro, content: source.content }
-    : { title: "Dinktopia booking rules", intro: "Please review these rules before booking.", content: "" };
+    : { title: `${activeTenant.identity.shortName} booking rules`, intro: "", content: "" };
 }
 
 function policyDraftError(draft: PolicyDraft): string | null {
@@ -2832,7 +2904,7 @@ function LiveSettingsView({
     if (!scheduleDraft || !schedulePayload) return;
     request({
       title: "Save the shared schedule?",
-      detail: `${operatingWindowSummary(scheduleDraft.opensAt, scheduleDraft.closesAt, scheduleDraft.boundaryAt)} ${formatPeso(scheduleDraft.firstHourlyRate)}/hour before the peak boundary, then ${formatPeso(scheduleDraft.secondHourlyRate)}/hour. This replaces hours and rates on every Dinktopia court atomically.`,
+      detail: `${operatingWindowSummary(scheduleDraft.opensAt, scheduleDraft.closesAt, scheduleDraft.boundaryAt)} ${formatPeso(scheduleDraft.firstHourlyRate)}/hour before the peak boundary, then ${formatPeso(scheduleDraft.secondHourlyRate)}/hour. This replaces hours and rates on every ${activeTenant.identity.shortName} court atomically.`,
       confirmLabel: "Save shared schedule",
       actionType: "settings:schedule",
       payload: schedulePayload,
@@ -2933,13 +3005,13 @@ function LiveSettingsView({
                       closesAt: newCourt.closesAt,
                       currency: snapshot.tenant.currency,
                       pricingConfig: { regular: {
-                        minimumHours: NEW_COURT_INTERNAL_DEFAULTS.minimumHours,
-                        maximumHours: NEW_COURT_INTERNAL_DEFAULTS.maximumHours,
+                        minimumHours: Number(newCourt.minimumHours),
+                        maximumHours: Number(newCourt.maximumHours),
                         bands: courtSchedule.bands,
                       } },
                       publicConfig: {
-                        minimumLeadMinutes: NEW_COURT_INTERNAL_DEFAULTS.minimumLeadMinutes,
-                        maximumAdvanceDays: NEW_COURT_INTERNAL_DEFAULTS.maximumAdvanceDays,
+                        minimumLeadMinutes: Number(newCourt.minimumLeadMinutes),
+                        maximumAdvanceDays: Number(newCourt.maximumAdvanceDays),
                       },
                     },
                     onSuccess: cancelNewCourtForm,
@@ -2960,14 +3032,20 @@ function LiveSettingsView({
                   <legend>Hours and pricing</legend>
                    <p>Choose whole hours only. The peak rate starts at the selected boundary.</p>
                    <div className={styles.newCourtTimes}>
-                    <label className={styles.field}><span>Opens</span><select required value={newCourt.opensAt} onChange={(event) => setNewCourtOpen(event.target.value)}>{wholeHourOptions.map((option) => <option key={`open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
-                    <label className={styles.field}><span>Closes</span><select required value={newCourt.closesAt} onChange={(event) => setNewCourtClose(event.target.value)}>{closeOptionsFor(newCourt.opensAt).map((option) => <option key={`close-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                    <label className={styles.field}><span>Opens</span><select required value={newCourt.opensAt} onChange={(event) => setNewCourtOpen(event.target.value)}><option value="" disabled>Select opening time</option>{wholeHourOptions.map((option) => <option key={`open-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
+                    <label className={styles.field}><span>Closes</span><select required value={newCourt.closesAt} onChange={(event) => setNewCourtClose(event.target.value)}><option value="" disabled>Select closing time</option>{closeOptionsFor(newCourt.opensAt).map((option) => <option key={`close-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
                     <label className={styles.field}><span>Peak starts</span><select required value={newCourt.peakStartsAt} onChange={(event) => setNewCourtField("peakStartsAt", event.target.value)}>{boundaryOptionsFor(newCourt.opensAt, newCourt.closesAt).length === 0 && <option value="">No interior hour</option>}{boundaryOptionsFor(newCourt.opensAt, newCourt.closesAt).map((option) => <option key={`peak-${option.value}`} value={option.value}>{option.label}</option>)}</select></label>
                    </div>
                   <p className={styles.operatingSummary} aria-live="polite">{operatingWindowSummary(newCourt.opensAt, newCourt.closesAt, newCourt.peakStartsAt)}</p>
                   <div className={styles.newCourtRates}>
                     <label className={styles.field}><span>Day rate / hour</span><div className={styles.moneyInput}><span aria-hidden="true">₱</span><input aria-label="Day rate per hour in Philippine pesos" required inputMode="decimal" type="number" min="0.01" step="0.01" value={newCourt.dayRate} onChange={(event) => setNewCourtField("dayRate", event.target.value)} /></div></label>
                     <label className={styles.field}><span>Peak rate / hour</span><div className={styles.moneyInput}><span aria-hidden="true">₱</span><input aria-label="Peak rate per hour in Philippine pesos" required inputMode="decimal" type="number" min="0.01" step="0.01" value={newCourt.peakRate} onChange={(event) => setNewCourtField("peakRate", event.target.value)} /></div></label>
+                  </div>
+                  <div className={styles.newCourtRates}>
+                    <label className={styles.field}><span>Minimum booking hours</span><input required type="number" min="1" max="18" step="1" value={newCourt.minimumHours} onChange={(event) => setNewCourtField("minimumHours", event.target.value)} /></label>
+                    <label className={styles.field}><span>Maximum booking hours</span><input required type="number" min="1" max="18" step="1" value={newCourt.maximumHours} onChange={(event) => setNewCourtField("maximumHours", event.target.value)} /></label>
+                    <label className={styles.field}><span>Minimum lead time (minutes)</span><input required type="number" min="0" max="43200" step="1" value={newCourt.minimumLeadMinutes} onChange={(event) => setNewCourtField("minimumLeadMinutes", event.target.value)} /></label>
+                    <label className={styles.field}><span>Booking horizon (days)</span><input required type="number" min="1" max="365" step="1" value={newCourt.maximumAdvanceDays} onChange={(event) => setNewCourtField("maximumAdvanceDays", event.target.value)} /></label>
                   </div>
                 </fieldset>
                 <p className={styles.systemDefaultsNote}>The court address, display order, and booking safeguards are set automatically.</p>
@@ -3224,7 +3302,6 @@ function SettingsView({
   uploadPaymentQr: (methodCode: string, file: File) => Promise<{ url: string; contentType: string; tenantRevision: string }>;
   onLiveSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
 }) {
-  const [section, setSection] = useState<"courts" | "rates" | "hours" | "rules">("courts");
   if (snapshot.tenant.mode === "live") {
     return (
       <LiveSettingsView
@@ -3244,79 +3321,7 @@ function SettingsView({
       />
     );
   }
-  const save = (label: string) => request({
-    title: `Save ${label.toLowerCase()}?`,
-    detail: "These values are still preview configuration. Production writes will require a fresh authorized tenant session.",
-    confirmLabel: "Save preview settings",
-    actionType: "settings:update",
-  });
-
-  return (
-    <section className={styles.settingsLayout}>
-      <nav className={styles.settingsNav} aria-label="Venue settings sections">
-        {(["courts", "rates", "hours", "rules"] as const).map((item, index) => (
-          <button type="button" key={item} className={section === item ? styles.settingsActive : undefined} onClick={() => setSection(item)} aria-current={section === item ? "page" : undefined}>
-            <span>0{index + 1}</span>{item[0].toUpperCase() + item.slice(1)}
-          </button>
-        ))}
-      </nav>
-      <div className={styles.panel}>
-        {section === "courts" && (
-          <div className={styles.settingsSection}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Inventory</p><h2>Courts</h2></div><span className={styles.previewTag}>Preview values</span></div>
-            <p className={styles.sectionIntro}>Court names are customer-facing. Confirm the final venue inventory before activation.</p>
-            <div className={styles.courtSettingList}>
-              {snapshot.courts.map((court, index) => (
-                <article key={court.id}>
-                  <span className={styles.courtNumber}>0{index + 1}</span>
-                  <label className={styles.field}><span>Display name</span><input defaultValue={court.name} /></label>
-                  <label className={styles.field}><span>Surface</span><input defaultValue={court.surface} /></label>
-                  <span className={styles.openTag}>Open</span>
-                </article>
-              ))}
-            </div>
-            <div className={styles.settingsFooter}><span>{snapshot.courts.length} preview courts</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Courts")}>Save courts</ActionButton></div>
-          </div>
-        )}
-        {section === "rates" && (
-          <div className={styles.settingsSection}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>PHP · Per court</p><h2>Rates & durations</h2></div><span className={styles.previewTag}>Preview values</span></div>
-            <div className={styles.rateGrid}>
-              <label className={styles.field}><span>Day rate / hour</span><div className={styles.moneyInput}><span>₱</span><input type="number" defaultValue="300" /></div><small>6:00 AM–3:59 PM</small></label>
-              <label className={styles.field}><span>Peak rate / hour</span><div className={styles.moneyInput}><span>₱</span><input type="number" defaultValue="400" /></div><small>4:00 PM–10:00 PM</small></label>
-              <label className={styles.field}><span>Minimum duration</span><select defaultValue="1"><option value="1">1 hour</option><option value="2">2 hours</option></select></label>
-              <label className={styles.field}><span>Maximum duration</span><select defaultValue="3"><option value="2">2 hours</option><option value="3">3 hours</option></select></label>
-            </div>
-            <div className={styles.settingsFooter}><span>Applies to all {snapshot.courts.length} preview courts</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Rates")}>Save rates</ActionButton></div>
-          </div>
-        )}
-        {section === "hours" && (
-          <div className={styles.settingsSection}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Asia/Manila</p><h2>Operating hours</h2></div><span className={styles.previewTag}>Daily schedule</span></div>
-            <div className={styles.hoursList}>
-              {["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map((day) => (
-                <div key={day}><label className={styles.switchLabel}><input type="checkbox" defaultChecked /><span aria-hidden="true" />{day}</label><input aria-label={`${day} opening time`} type="time" defaultValue="06:00" /><span>to</span><input aria-label={`${day} closing time`} type="time" defaultValue="22:00" /></div>
-              ))}
-            </div>
-            <div className={styles.settingsFooter}><span>Customers see times in Manila time</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Hours")}>Save hours</ActionButton></div>
-          </div>
-        )}
-        {section === "rules" && (
-          <div className={styles.settingsSection}>
-            <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Customer policy</p><h2>Booking rules</h2></div><span className={styles.needsTag}>Needs approval</span></div>
-            <div className={styles.ruleList}>
-              <label className={styles.field}><span>Advance notice</span><select defaultValue="60"><option value="60">At least 60 minutes</option><option value="120">At least 2 hours</option></select></label>
-              <label className={styles.field}><span>Booking horizon</span><select defaultValue="30"><option value="14">14 days</option><option value="30">30 days</option><option value="60">60 days</option></select></label>
-              <label className={styles.field}><span>Cancellation policy</span><textarea defaultValue="Customers may cancel unpaid holds. Paid cancellations require owner assistance." rows={3} /></label>
-              <label className={styles.field}><span>Rescheduling policy</span><textarea defaultValue="Rescheduling is owner/admin-assisted and subject to live availability." rows={3} /></label>
-            </div>
-            <div className={styles.noticeBox}><span aria-hidden="true">!</span><p><strong>Approval required.</strong> These rules are draft language and should be reviewed before customer booking is enabled.</p></div>
-            <div className={styles.settingsFooter}><span>Last edited in preview</span><ActionButton disabled={!can("settings:update")} onClick={() => save("Booking rules")}>Save rules</ActionButton></div>
-          </div>
-        )}
-      </div>
-    </section>
-  );
+  return <SetupRequiredPanel view="settings" />;
 }
 
 function LaunchView({
@@ -3335,7 +3340,7 @@ function LaunchView({
   });
   const existingDestination = snapshot.configuration.remittanceDestination;
   const [destination, setDestination] = useState({
-    method: existingDestination?.method ?? "gcash",
+    method: existingDestination?.method ?? "",
     accountName: existingDestination?.accountName ?? "",
     accountReference: existingDestination?.accountReference ?? "",
     dueDay: existingDestination ? String(existingDestination.dueDay) : "",
@@ -3350,7 +3355,7 @@ function LaunchView({
   const billingValid = billing.feeAmount.trim() !== "" && Number.isFinite(billingAmount) &&
     billingAmount >= 0 && billingAmount <= (billing.feeMode === "percentage" ? 100 : 9_999_999_999.99);
   const dueDay = Number(destination.dueDay);
-  const destinationValid = destination.accountName.trim().length >= 2 &&
+  const destinationValid = Boolean(destination.method) && destination.accountName.trim().length >= 2 &&
     destination.accountReference.trim().length >= 4 && Number.isSafeInteger(dueDay) &&
     dueDay >= 1 && dueDay <= 28;
 
@@ -3417,7 +3422,7 @@ function LaunchView({
         }}>
           <div className={styles.panelHeading}><div><p className={styles.eyebrow}>Platform remittance</p><h2>Destination</h2></div><span className={existingDestination ? styles.openTag : styles.needsTag}>{existingDestination ? "Configured" : "Required"}</span></div>
           <div className={styles.compactFields}>
-            <label className={styles.field}><span>Method</span><select value={destination.method} onChange={(event) => setDestination({ ...destination, method: event.target.value as RemittanceDestination["method"] })}><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
+            <label className={styles.field}><span>Method</span><select required value={destination.method} onChange={(event) => setDestination({ ...destination, method: event.target.value as RemittanceDestination["method"] })}><option value="" disabled>Select remittance method</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="other">Other</option></select></label>
             <label className={styles.field}><span>Monthly due day</span><input required type="number" min="1" max="28" step="1" value={destination.dueDay} onChange={(event) => setDestination({ ...destination, dueDay: event.target.value })} /></label>
             <label className={styles.field}><span>Account name</span><input required minLength={2} maxLength={160} value={destination.accountName} onChange={(event) => setDestination({ ...destination, accountName: event.target.value })} /></label>
             <label className={styles.field}><span>Account number / reference</span><input required minLength={4} maxLength={120} value={destination.accountReference} onChange={(event) => setDestination({ ...destination, accountReference: event.target.value })} /></label>
@@ -3428,8 +3433,8 @@ function LaunchView({
       </div>
 
       <section className={cx(styles.panel, styles.launchFinal)}>
-        <div><p className={styles.eyebrow}>Final server gate</p><h2>{publicBookingIsLive ? "Dinktopia is live" : ready ? "Dinktopia is ready" : "Complete every missing item"}</h2><p>{publicBookingIsLive ? "Public booking is already enabled. Continue managing venue details without running initial activation again." : "The platform rechecks every requirement atomically. This browser cannot bypass a missing configuration."}</p></div>
-        <ActionButton disabled={publicBookingIsLive || !ready} onClick={() => request({ title: "Open Dinktopia public booking?", detail: "The platform will run one final authoritative readiness check and enable public booking only if every requirement still passes.", confirmLabel: "Go live", actionType: "tenant:publish" })}>{publicBookingIsLive ? "Already live" : "Go live"}</ActionButton>
+        <div><p className={styles.eyebrow}>Final server gate</p><h2>{publicBookingIsLive ? `${activeTenant.identity.shortName} is live` : ready ? `${activeTenant.identity.shortName} is ready` : "Complete every missing item"}</h2><p>{publicBookingIsLive ? "Public booking is already enabled. Continue managing venue details without running initial activation again." : "The platform rechecks every requirement atomically. This browser cannot bypass a missing configuration."}</p></div>
+        <ActionButton disabled={publicBookingIsLive || !ready} onClick={() => request({ title: `Open ${activeTenant.identity.shortName} public booking?`, detail: "The platform will run one final authoritative readiness check and enable public booking only if every requirement still passes.", confirmLabel: "Go live", actionType: "tenant:publish" })}>{publicBookingIsLive ? "Already live" : "Go live"}</ActionButton>
       </section>
     </div>
   );
@@ -3454,18 +3459,8 @@ function AccessView({
   return (
     <section className={cx(styles.accessGrid, !isPreview && styles.accessGridLive)}>
       <article className={styles.panel}>
-        <div className={styles.panelHeading}><div><p className={styles.eyebrow}>{isPreview ? "Dinktopia team" : "Tenant memberships"}</p><h2>{isPreview ? "4 preview people" : "Membership details unavailable"}</h2></div><span className={styles.previewTag}>{isPreview ? "UI preview" : "Protected"}</span></div>
-        {isPreview ? <div className={styles.teamList}>
-          {ROLE_TEAM.map((member, index) => (
-            <div className={styles.teamRow} key={member.name}>
-              <Avatar initials={member.initials} tone={index} />
-              <div><strong>{member.name}</strong><span>{member.activity}</span></div>
-              <span className={styles.roleBadge}>{ROLE_LABEL[member.role]}</span>
-              <button type="button" className={styles.moreButton} aria-label={`Open access options for ${member.name}`}>•••</button>
-            </div>
-          ))}
-        </div> : <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Membership directory protected</p><h3>No membership records were returned.</h3><p>Invite and membership management will appear only when the shared platform returns an authorized tenant-scoped contract.</p></div>}
-        {isPreview && <button type="button" className={styles.inviteButton} disabled>＋ Invite teammate <small>Preview control only</small></button>}
+        <div className={styles.panelHeading}><div><p className={styles.eyebrow}>{isPreview ? `${activeTenant.identity.shortName} team setup` : "Tenant memberships"}</p><h2>Membership details unavailable</h2></div><span className={styles.previewTag}>{isPreview ? "Setup required" : "Protected"}</span></div>
+        <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Membership directory protected</p><h3>No membership records were returned.</h3><p>Invite and membership management will appear only when the shared platform returns an authorized tenant-scoped contract.</p></div>
       </article>
       <aside className={cx(styles.panel, styles.capabilityPanel)}>
         <p className={styles.eyebrow}>{isPreview ? "Current preview session" : "Current authenticated session"}</p>
@@ -3509,24 +3504,15 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
       <section className={styles.signInCard} aria-labelledby="manager-sign-in-title">
         <div className={styles.signInBrand}>
           <span className={styles.logoPlate}>
-            <Image
-              className={styles.brandLogo}
-              src="/dinktopia-logo.png"
-              alt=""
-              width={2046}
-              height={769}
-              sizes="180px"
-              unoptimized
-              priority
-            />
+            <TenantBrandMark sizes="180px" priority />
           </span>
-          <span className={styles.srOnly}>DINKTOPIA</span>
+          <span className={styles.srOnly}>{activeTenant.identity.name}</span>
           <span className={styles.signInContext}>Secure tenant workspace</span>
         </div>
         <span className={styles.liveTag}>Live connection</span>
         <p className={styles.eyebrow}>Management access</p>
         <h1 id="manager-sign-in-title">Welcome back.</h1>
-        <p className={styles.signInIntro}>Sign in with a System Owner account or an account authorized for Dinktopia. Access is verified by the shared platform.</p>
+        <p className={styles.signInIntro}>Sign in with a System Owner account or an account authorized for {activeTenant.identity.name}. Access is verified by the shared platform.</p>
         <form
           onSubmit={async (event) => {
             event.preventDefault();
@@ -3547,7 +3533,7 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
           {error && <p className={styles.signInError} role="alert">{error}</p>}
           <ActionButton type="submit" disabled={pending} className={styles.fullButton}>{pending ? "Verifying…" : "Sign in securely"}</ActionButton>
         </form>
-        <p className={styles.signInFoot}>The browser sends the fixed <strong>dinktopia</strong> slug only. Tenant scope and role permissions are enforced by the server.</p>
+        <p className={styles.signInFoot}>The browser sends the fixed <strong>{activeTenant.identity.slug}</strong> slug only. Tenant scope and role permissions are enforced by the server.</p>
       </section>
     </main>
   );
@@ -3556,6 +3542,10 @@ function SignInGate({ onSignedIn }: { onSignedIn: () => Promise<void> }) {
 export default function ManagePage() {
   const runtimeMode = platformMode();
   const isPreview = runtimeMode === "preview";
+  const setupPreview =
+    activeTenant.activation.status === "setup_required" &&
+    activeTenant.activation.provisional &&
+    activeTenant.previewCourts.length === 0;
   const [view, setView] = useState<View>("overview");
   const [role] = useState<TenantRole>("owner");
   const [previewState, setPreviewState] = useState<PreviewState>("ready");
@@ -3894,10 +3884,14 @@ export default function ManagePage() {
   const selectedCopy = isPreview ? VIEW_COPY[view] : LIVE_VIEW_COPY[view];
   const requiredCapability = VIEW_CAPABILITY[view];
   const viewPermitted = !requiredCapability || can(requiredCapability);
-  const completedSetup = snapshot?.setup.filter((item) => item.complete).length ?? 0;
-  const paymentReviewCount = snapshot?.bookings.filter((booking) =>
-    booking.paymentEvidence?.reviewable === true || booking.status === "payment_attention"
-  ).length ?? 0;
+  const completedSetup = setupPreview
+    ? 0
+    : snapshot?.setup.filter((item) => item.complete).length ?? 0;
+  const paymentReviewCount = setupPreview
+    ? 0
+    : (snapshot?.bookings.filter((booking) =>
+        booking.paymentEvidence?.reviewable === true || booking.status === "payment_attention"
+      ).length ?? 0);
   const visibleNavItems = NAV_ITEMS.filter((item) =>
     item.id !== "launch" || snapshot?.session.isSystemOwner === true
   );
@@ -3909,6 +3903,7 @@ export default function ManagePage() {
       return <StatePanel kind={previewState} role={role} isPreview onRestore={() => setPreviewState("ready")} />;
     }
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
+    if (setupPreview) return <SetupRequiredPanel view={view} />;
     switch (view) {
       case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
       case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
@@ -3973,22 +3968,13 @@ export default function ManagePage() {
       <aside className={styles.sidebar}>
         <div className={styles.brand}>
           <span className={styles.logoPlate}>
-            <Image
-              className={styles.brandLogo}
-              src="/dinktopia-logo.png"
-              alt=""
-              width={2046}
-              height={769}
-              sizes="180px"
-              unoptimized
-              priority
-            />
+            <TenantBrandMark sizes="180px" priority />
           </span>
-          <span className={styles.srOnly}>DINKTOPIA</span>
+          <span className={styles.srOnly}>{activeTenant.identity.name}</span>
           <span className={styles.brandContext}>Court operations</span>
         </div>
         <div className={styles.tenantSwitcher}>
-          <span>D</span><div><small>Current tenant</small><strong>Dinktopia</strong></div>
+          <span>{activeTenant.identity.shortName.slice(0, 2).toUpperCase()}</span><div><small>Current tenant</small><strong>{activeTenant.identity.shortName}</strong></div>
           {isPreview && <b aria-hidden="true">⌄</b>}
         </div>
         <nav className={styles.desktopNav} aria-label="Management navigation">
@@ -4019,16 +4005,16 @@ export default function ManagePage() {
             <div><span className={styles.modeDot} aria-hidden="true" /><strong>{isPreview ? "Preview mode" : "Live connection"}</strong></div>
             {snapshot ? (
               <>
-                <p>{completedSetup} of {snapshot.setup.length} setup checks ready</p>
-                <span className={styles.miniProgress}><i style={{ width: `${snapshot.setup.length ? (completedSetup / snapshot.setup.length) * 100 : 0}%` }} /></span>
+                <p>{setupPreview ? "Venue details are not configured" : `${completedSetup} of ${snapshot.setup.length} setup checks ready`}</p>
+                <span className={styles.miniProgress}><i style={{ width: `${setupPreview ? 0 : snapshot.setup.length ? (completedSetup / snapshot.setup.length) * 100 : 0}%` }} /></span>
               </>
             ) : (
               <p>Setup checks loading</p>
             )}
           </div>
           <div className={styles.userCard}>
-            <Avatar initials={isPreview ? "AR" : snapshot?.session.isSystemOwner ? "SO" : "TM"} tone={0} />
-            <div><strong>{isPreview ? "Alex Rivera" : snapshot?.session.displayName ?? "Authenticated user"}</strong><span>{isPreview ? `${ROLE_LABEL[role]} preview session` : `${ROLE_LABEL[sessionRole]} server session`}</span></div>
+            <Avatar initials={isPreview ? "PV" : snapshot?.session.isSystemOwner ? "SO" : "TM"} tone={0} />
+            <div><strong>{isPreview ? "Preview session" : snapshot?.session.displayName ?? "Authenticated user"}</strong><span>{isPreview ? "No tenant account loaded" : `${ROLE_LABEL[sessionRole]} server session`}</span></div>
             <button
               type="button"
               disabled={isPreview || accountPending}
@@ -4046,18 +4032,9 @@ export default function ManagePage() {
         <header className={styles.mobileBrand}>
           <div className={styles.brand}>
             <span className={styles.logoPlate}>
-              <Image
-                className={styles.brandLogo}
-                src="/dinktopia-logo.png"
-                alt=""
-                width={2046}
-                height={769}
-                sizes="136px"
-                unoptimized
-                priority
-              />
+              <TenantBrandMark sizes="136px" priority />
             </span>
-            <span className={styles.srOnly}>DINKTOPIA</span>
+            <span className={styles.srOnly}>{activeTenant.identity.name}</span>
             <span className={styles.brandContext}>Manage</span>
           </div>
           <span className={styles.previewTag}>{isPreview ? "Preview" : "Live"}</span>
@@ -4068,7 +4045,7 @@ export default function ManagePage() {
             onClick={switchAccount}
             aria-label={isPreview ? "Preview account control unavailable" : "Sign out and use another account"}
           >
-            {accountPending ? "…" : isPreview ? "AR" : "↪"}
+            {accountPending ? "…" : isPreview ? "PV" : "↪"}
           </button>
         </header>
         <nav className={styles.mobileNav} aria-label="Mobile management navigation">
@@ -4081,7 +4058,7 @@ export default function ManagePage() {
 
         <div className={styles.topbar}>
           <div className={styles.topbarTitle}>
-            <span>{view === "overview" ? "Today’s operations" : view === "reports" ? "Venue performance" : "Dinktopia operations"}</span>
+            <span>{view === "overview" ? "Today’s operations" : view === "reports" ? "Venue performance" : `${activeTenant.identity.shortName} operations`}</span>
             <h1>{view === "overview" ? "Today" : selectedCopy.title}</h1>
           </div>
           <div className={styles.rallyTopActions}>
@@ -4099,8 +4076,8 @@ export default function ManagePage() {
               </button>
             )}
             <div className={styles.rallyRoleCard}>
-              <span>{snapshot?.session.isSystemOwner ? "SO" : "CO"}</span>
-              <div><small>Viewing as</small><strong>{snapshot?.session.isSystemOwner ? "System owner" : "Court owner"}</strong></div>
+              <span>{setupPreview ? "PV" : snapshot?.session.isSystemOwner ? "SO" : "CO"}</span>
+              <div><small>Viewing as</small><strong>{setupPreview ? "Setup preview" : snapshot?.session.isSystemOwner ? "System owner" : "Court owner"}</strong></div>
             </div>
           </div>
         </div>
@@ -4112,9 +4089,8 @@ export default function ManagePage() {
               <p>{selectedCopy.description}</p>
             </div>
             <div className={styles.pageActions}>
-              {isPreview && <button type="button" className={styles.iconButton} aria-label="Preview search control">⌕</button>}
-              {isPreview && <button type="button" className={styles.iconButton} aria-label="Preview notifications">◎<span>2</span></button>}
-              {isPreview && view === "overview" && <ActionButton disabled={!can("booking:create")} onClick={() => setView("schedule")}><span aria-hidden="true">＋</span> New booking</ActionButton>}
+              {isPreview && !setupPreview && <button type="button" className={styles.iconButton} aria-label="Preview search control">⌕</button>}
+              {isPreview && !setupPreview && <button type="button" className={styles.iconButton} aria-label="Preview notifications">◎<span>2</span></button>}
               {view === "settings" && snapshot?.session.isSystemOwner && (
                 <ActionButton
                   variant="secondary"
@@ -4146,7 +4122,7 @@ export default function ManagePage() {
             <p className={styles.eyebrow}>Confirm before continuing</p>
             <h2 id="confirm-title">{confirmAction.title}</h2>
             <p id="confirm-description">{confirmAction.detail}</p>
-            <div className={styles.dialogSummary}><span>Tenant</span><strong>Dinktopia</strong><span>Mode</span><strong>{isPreview ? "Preview · no live write" : "Live · server-authorized write"}</strong></div>
+            <div className={styles.dialogSummary}><span>Tenant</span><strong>{activeTenant.identity.shortName}</strong><span>Mode</span><strong>{isPreview ? "Preview · no live write" : "Live · server-authorized write"}</strong></div>
             <div className={styles.dialogActions}>
               <ActionButton variant="quiet" disabled={confirmPending} onClick={() => setConfirmAction(null)}>Go back</ActionButton>
               <ActionButton variant={confirmAction.tone === "danger" ? "danger" : "primary"} disabled={confirmPending} onClick={performConfirmedAction}>{refreshPending ? "Refreshing workspace…" : confirmPending ? "Saving…" : confirmAction.confirmLabel}</ActionButton>

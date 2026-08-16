@@ -100,7 +100,10 @@ begin
 
   if v_booking.customer_name <> 'Booking details pending'
      or v_booking.customer_phone <> '0000000000'
-     or coalesce(v_booking.customer_email, '') !~ '^booking-[0-9a-f-]+@pending[.]dinktopia[.]invalid$'
+     or split_part(coalesce(v_booking.customer_email, ''), '@', 1) !~ '^booking-[0-9a-f-]+$'
+     or coalesce(v_booking.customer_email, '') <>
+       split_part(coalesce(v_booking.customer_email, ''), '@', 1) ||
+       '@pending.' || lower(btrim(p_tenant_slug)) || '.invalid'
      or v_booking.metadata ->> 'notes' <> '__details_pending_v1__' then
     -- Idempotent retry after a successful response was lost.
     if v_booking.customer_name = v_name

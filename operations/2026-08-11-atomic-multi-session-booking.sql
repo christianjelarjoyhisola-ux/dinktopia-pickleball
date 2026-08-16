@@ -114,7 +114,7 @@ begin
       'status', v_existing.status,
       'expiresAt', v_existing.expires_at,
       'accessExpiresAt', v_access_expires_at,
-      'courtName', coalesce(v_existing.metadata ->> 'courtName', 'Dinktopia courts'),
+      'courtName', coalesce(v_existing.metadata ->> 'courtName', 'Tenant courts'),
       'bookingType', v_existing.booking_type,
       'startsAt', v_existing.starts_at,
       'endsAt', v_existing.ends_at,

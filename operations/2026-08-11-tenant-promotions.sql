@@ -383,10 +383,11 @@ begin
     p_access_token_hash
   );
 
-  -- This release is deliberately Dinktopia-only. Every other tenant returns
+  -- This release is deliberately enabled only for the two explicitly
+  -- registered tenant implementations. Every other tenant returns
   -- the original protected function result byte-for-byte and performs no
   -- promotion reads, pricing changes, metadata writes, or counters.
-  if lower(btrim(p_tenant_slug)) <> 'dinktopia' then
+  if lower(btrim(p_tenant_slug)) not in ('dinktopia', 'kl-pickleball-court') then
     return v_result;
   end if;
 

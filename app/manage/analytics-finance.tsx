@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import { useState } from "react";
 
 import type {
   Booking,
@@ -9,6 +9,7 @@ import type {
   RegularBookingReport,
   RemittanceSummary,
 } from "./management-adapter";
+import { activeTenant } from "../tenants/registry";
 import styles from "./analytics-finance.module.css";
 
 export type AnalyticsPeriod = "today" | "7d" | "30d" | "90d";
@@ -182,70 +183,6 @@ export function DailyGrossChart({ report }: { report: RegularBookingReport }) {
   );
 }
 
-const HEAT_WINDOWS = [
-  ["6–9 AM", 6, 9],
-  ["9 AM–12 PM", 9, 12],
-  ["12–3 PM", 12, 15],
-  ["3–6 PM", 15, 18],
-  ["6–9 PM", 18, 21],
-  ["9–10 PM", 21, 22],
-] as const;
-
-function weekdayIndex(date: string) {
-  return (new Date(`${date}T00:00:00Z`).getUTCDay() + 6) % 7;
-}
-
-function bookingDurationHours(booking: Booking) {
-  const parsed = Number.parseFloat(booking.duration);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
-}
-
-function utilizationMatrix(
-  report: RegularBookingReport,
-  bookings: Booking[],
-  courtCount: number,
-  courtId: string | null,
-) {
-  const observations = Array.from({ length: 7 }, (_, day) =>
-    report.breakdowns.daily.filter((entry) => weekdayIndex(entry.date) === day).length,
-  );
-  return HEAT_WINDOWS.map(([, windowStart, windowEnd]) =>
-    Array.from({ length: 7 }, (_, day) => {
-      const booked = bookings.filter((booking) =>
-        booking.bookingDate && booking.startTime &&
-        booking.bookingDate >= report.range.dateFrom && booking.bookingDate <= report.range.dateTo &&
-        weekdayIndex(booking.bookingDate) === day &&
-        (!courtId || booking.courtId === courtId) &&
-        !["cancelled", "expired"].includes(booking.status)
-      ).reduce((sum, booking) => {
-        const starts = Number.parseInt(booking.startTime?.slice(0, 2) ?? "", 10);
-        if (!Number.isFinite(starts)) return sum;
-        const ends = starts + bookingDurationHours(booking);
-        return sum + Math.max(0, Math.min(ends, windowEnd) - Math.max(starts, windowStart));
-      }, 0);
-      const available = Math.max(observations[day], 1) * Math.max(courtCount, 1) * (windowEnd - windowStart);
-      return Math.min(100, Math.round(booked / available * 100));
-    }),
-  );
-}
-
-function DemandHeatmap({ values }: { values: number[][] }) {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  return (
-    <div className={styles.heatmapWrap}>
-      <table className={styles.heatmap}>
-        <caption className={styles.srOnly}>Court utilization percentage by day and time window</caption>
-        <thead><tr><th>Time</th>{days.map((day) => <th key={day}>{day}</th>)}</tr></thead>
-        <tbody>{HEAT_WINDOWS.map(([label], row) => (
-          <tr key={label}><th scope="row">{label}</th>{(values[row] ?? []).map((value, column) => (
-            <td key={days[column]}><span className={value >= 62 ? styles.heatStrong : undefined} style={{ "--heat": 0.08 + value / 100 * 0.78 } as CSSProperties}><b>{value}%</b></span></td>
-          ))}</tr>
-        ))}</tbody>
-      </table>
-    </div>
-  );
-}
-
 function TrendChart({ report }: { report: RegularBookingReport }) {
   const rows = report.breakdowns.daily.slice(-7);
   const width = 720, height = 220, padX = 30, padTop = 18, chartHeight = 168;
@@ -304,7 +241,6 @@ export function AnalyticsView({
   courtId = null,
   promotions = null,
   onCreatePromotion,
-  bookings = [],
   loading = false,
   error = null,
   onRetry,
@@ -313,12 +249,12 @@ export function AnalyticsView({
   const [offerPending, setOfferPending] = useState(false);
   const [offerError, setOfferError] = useState<string | null>(null);
   const [roi, setRoi] = useState({
-    courts: Math.max(courts.length, 1),
-    rate: 560,
-    hours: 16,
-    days: 30,
-    current: 50,
-    target: 58,
+    courts: courts.length,
+    rate: 0,
+    hours: 0,
+    days: 0,
+    current: 0,
+    target: 0,
   });
   if (loading && !report) return <LoadingPanel label="analytics" />;
   if (error || !report) {
@@ -333,40 +269,18 @@ export function AnalyticsView({
   }
 
   const { summary } = report;
-  const recommendationWindows = [
-    { startsAt: "12:00", endsAt: "15:00", label: "Lunch rally offer" },
-    { startsAt: "06:00", endsAt: "09:00", label: "Early-bird package" },
-    { startsAt: "09:00", endsAt: "12:00", label: "Morning court saver" },
-  ];
   const weekdayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const weekdayPerformance = Array.from({ length: 7 }, (_, weekday) => {
-    const days = report.breakdowns.daily.filter((entry) => {
-      const date = new Date(`${entry.date}T00:00:00Z`);
-      return (date.getUTCDay() + 6) % 7 === weekday;
-    });
-    return {
-      weekday,
-      bookedHours: days.reduce((sum, day) => sum + day.bookedHours, 0),
-      observations: days.length,
-    };
-  }).filter((item) => item.observations > 0)
-    .sort((left, right) => left.bookedHours / left.observations - right.bookedHours / right.observations)
-    .slice(0, 3);
   const validFrom = new Date().toISOString().slice(0, 10);
   const validUntilDate = new Date();
   validUntilDate.setUTCDate(validUntilDate.getUTCDate() + 28);
   const validUntil = validUntilDate.toISOString().slice(0, 10);
-  const recommendedActions = weekdayPerformance.map((item, index) => {
-    const window = recommendationWindows[index];
-    const availableHours = item.observations * Math.max(courts.length, 1) * 3;
-    return {
-      weekday: item.weekday,
-      utilization: availableHours > 0
-        ? Math.min(100, Math.round(item.bookedHours / availableHours * 100))
-        : 0,
-      ...window,
-    };
-  });
+  const recommendedActions: Array<{
+    weekday: number;
+    utilization: number;
+    startsAt: string;
+    endsAt: string;
+    label: string;
+  }> = [];
 
   const openOffer = (action: typeof recommendedActions[number]) => {
     setOfferError(null);
@@ -400,17 +314,10 @@ export function AnalyticsView({
     }
   };
   const periodLabel = `${localDate(report.range.dateFrom)} – ${localDate(report.range.dateTo)}`;
-  const selectedCourtCount = courtId ? 1 : Math.max(courts.length, 1);
-  const bookableHours = selectedCourtCount * report.range.dayCount * 16;
-  const utilization = bookableHours > 0
-    ? Math.min(100, Math.round(summary.bookedHours / bookableHours * 100))
-    : 0;
+  const selectedCourtCount = courtId ? 1 : courts.length;
   const revenuePerHour = summary.bookedHours > 0
     ? summary.venueSalesPaid / summary.bookedHours
     : 0;
-  const heatValues = utilizationMatrix(report, bookings, selectedCourtCount, courtId);
-  const weakestCell = heatValues.flatMap((row, window) => row.map((value, day) => ({ value, day, window })))
-    .sort((left, right) => left.value - right.value)[0];
   const recentRows = report.breakdowns.daily.slice(-7);
   const firstRecent = recentRows[0]?.grossPaid ?? 0;
   const latestRecent = recentRows.at(-1)?.grossPaid ?? 0;
@@ -425,7 +332,7 @@ export function AnalyticsView({
     <section className={`${styles.workspace} ${styles.insightsView}`} aria-labelledby="analytics-title" aria-busy={loading}>
       <header className={styles.insightsHero}>
         <div>
-          <p className={styles.eyebrow}>Dinktopia intelligence / {periodLabel}</p>
+          <p className={styles.eyebrow}>{activeTenant.identity.shortName} intelligence / {periodLabel}</p>
           <h2 id="analytics-title">See where demand grows, and where court revenue still hides.</h2>
           <p>One clear view of utilization, booking momentum, performance, and the next best operating moves.</p>
         </div>
@@ -436,16 +343,15 @@ export function AnalyticsView({
 
       <div className={styles.insightMetrics} aria-label="Owner performance summary">
         <article><span>Gross bookings</span><strong>{money(summary.grossPaid, report.currency)}</strong><small className={styles.positive}>Paid customer total</small></article>
-        <article><span>Court utilization</span><strong>{utilization}%</strong><small>{number(summary.bookedHours)} booked court-hours</small></article>
+        <article><span>Court utilization</span><strong>—</strong><small>{number(summary.bookedHours)} booked court-hours · capacity not configured</small></article>
         <article><span>Completed bookings</span><strong>{summary.lifecycleCounts.completed}</strong><small>{number(summary.totalBookingCount / Math.max(report.range.dayCount, 1), 1)} daily average</small></article>
         <article><span>Revenue / court-hour</span><strong>{money(revenuePerHour, report.currency)}</strong><small className={styles.positive}>{summary.paidBookingCount} paid bookings</small></article>
       </div>
 
       <div className={styles.insightsGrid}>
         <section className={`${styles.panel} ${styles.insightPanel} ${styles.heatmapPanel}`} aria-labelledby="utilization-title">
-          <div className={styles.insightPanelHeading}><div><p className={styles.eyebrow}>Demand map</p><h3 id="utilization-title">Utilization by time window</h3></div><div className={styles.heatLegend}><span>Lower</span><i /><i /><i /><i /><span>Higher</span></div></div>
-          <DemandHeatmap values={heatValues} />
-          <div className={styles.insightCallout}><span aria-hidden="true">✦</span><p><strong>Clearest growth pocket.</strong> {weakestCell ? `${weekdayNames[weakestCell.day]} ${HEAT_WINDOWS[weakestCell.window][0]} currently reads ${weakestCell.value}% utilized.` : "More booking history will reveal the next opportunity."}</p></div>
+          <div className={styles.insightPanelHeading}><div><p className={styles.eyebrow}>Demand map</p><h3 id="utilization-title">Booking density by time window</h3></div><div className={styles.heatLegend}><span>Lower</span><i /><i /><i /><i /><span>Higher</span></div></div>
+          <div className={styles.insightCallout}><span aria-hidden="true">i</span><p><strong>Capacity is not estimated.</strong> Configure authoritative operating hours before time-window utilization is shown.</p></div>
         </section>
 
         <section className={`${styles.panel} ${styles.insightPanel} ${styles.sourcePanel}`} aria-labelledby="source-title">
@@ -465,17 +371,18 @@ export function AnalyticsView({
             const opportunityValue = openHours * revenuePerHour;
             return <article key={`${action.weekday}-${action.startsAt}`}><span className={styles.opportunityTime}>{weekdayNames[action.weekday]} / {action.startsAt}-{action.endsAt}</span><div><strong>{action.label}</strong><p>{action.utilization}% utilized / about {openHours} open court-hours</p></div><span className={styles.opportunityValue}>{money(opportunityValue, report.currency)}</span><button type="button" onClick={() => openOffer(action)} disabled={!promotions?.canCreate || !onCreatePromotion}>Create offer</button></article>;
           })}</div>
-          {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer publishing will unlock after the Dinktopia promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Publishing is reserved for the System Owner or this tenant&apos;s court owner.</p> : <p className={styles.opportunityNote}>Opportunity values use open hours and the current recorded revenue per booked court-hour; they are not guaranteed revenue.</p>}
+          {!recommendedActions.length && <p className={styles.opportunityNote}>No time-window recommendations are generated until authoritative operating capacity is available.</p>}
+          {promotions && !promotions.available ? <p className={styles.opportunityNote}>Offer publishing will unlock after the tenant promotion migration is installed.</p> : !promotions?.canCreate ? <p className={styles.opportunityNote}>Publishing is reserved for the System Owner or this tenant&apos;s court owner.</p> : null}
           {promotions?.items.some((offer) => offer.status === "active") && <div className={styles.activeOffers}><span>Published offers</span>{promotions.items.filter((offer) => offer.status === "active").map((offer) => <strong key={offer.id}>{offer.name} · {offer.discountValue}{offer.discountType === "percentage" ? "%" : " PHP"} off · {offer.redemptionCount} used</strong>)}</div>}
         </section>
       </div>
 
       <section className={`${styles.panel} ${styles.roiCard}`} aria-labelledby="roi-title">
-        <div className={styles.roiHeading}><div><p className={styles.eyebrow}>Editable scenario</p><h3 id="roi-title">What could stronger utilization mean?</h3><p>Change the assumptions to model an illustrative gross-booking opportunity for Dinktopia.</p></div><span>Assumptions, not a forecast</span></div>
+        <div className={styles.roiHeading}><div><p className={styles.eyebrow}>Editable scenario</p><h3 id="roi-title">What could stronger utilization mean?</h3><p>Enter assumptions to model an illustrative gross-booking opportunity for {activeTenant.identity.shortName}. No operating values are prefilled.</p></div><span>Assumptions, not a forecast</span></div>
         <div className={styles.roiLayout}>
           <form className={styles.roiForm} onSubmit={(event) => event.preventDefault()}>
             {([[
-              "Courts", "courts", 1, 30, 1], ["Average rate / court-hour", "rate", 0, 10000, 10], ["Bookable hours / day", "hours", 1, 24, 1], ["Operating days / month", "days", 1, 31, 1], ["Current utilization", "current", 0, 100, 1], ["Target utilization", "target", 0, 100, 1],
+              "Courts", "courts", 0, 30, 1], ["Average rate / court-hour", "rate", 0, 10000, 10], ["Bookable hours / day", "hours", 0, 24, 1], ["Operating days / month", "days", 0, 31, 1], ["Current utilization", "current", 0, 100, 1], ["Target utilization", "target", 0, 100, 1],
             ] as const).map(([label, key, min, max, step]) => <label key={key}><span>{label}</span><div className={key === "rate" ? styles.inputPrefix : key === "current" || key === "target" ? styles.inputSuffix : undefined}>{key === "rate" && <i>PHP</i>}<input type="number" min={min} max={max} step={step} value={roi[key]} onChange={(event) => setRoi({ ...roi, [key]: Number(event.target.value) })} />{(key === "current" || key === "target") && <i>%</i>}</div></label>)}
           </form>
           <div className={styles.roiOutput} aria-live="polite"><span>Illustrative monthly uplift</span><strong>{money(roiMonthly, report.currency)}</strong><p><b>{Math.round(recoveredHours)}</b> recovered court-hours at a <b>{Math.max(0, roi.target - roi.current)}</b>-point utilization lift.</p><div><span>Annualized gross bookings</span><strong>{money(roiMonthly * 12, report.currency)}</strong></div></div>

@@ -1,58 +1,7 @@
-export type DinktopiaCourtPreview = {
-  id: string;
-  slug: string;
-  name: string;
-  surface: string;
-  environment: string;
-  description: string;
-};
+import type { TenantConfig, TenantCourtPreview } from "../types";
 
-export type DinktopiaTenantConfig = {
-  identity: {
-    name: string;
-    shortName: string;
-    slug: "dinktopia";
-    locale: "en-PH";
-    currency: "PHP";
-    timezone: "Asia/Manila";
-    productionDomain: "dinktopia.pages.dev";
-  };
-  activation: {
-    status: "setup_required";
-    publicBookingEnabled: false;
-    provisional: true;
-  };
-  venue: {
-    locationLabel: string;
-    address: null;
-    opensAt: string;
-    closesAt: string;
-  };
-  booking: {
-    minimumHours: number;
-    maximumHours: number;
-    minimumLeadMinutes: number;
-    maximumAdvanceDays: number;
-    slotMinutes: 60;
-    holdMinutes: number;
-    offPeakEndsAt: string;
-    offPeakHourlyRate: number;
-    peakHourlyRate: number;
-    paymentFlow: "manual-full-payment-receipt";
-    cancellation: string;
-    rescheduling: string;
-  };
-  brand: {
-    direction: string;
-    tagline: string;
-    primary: string;
-    paper: string;
-    electric: string;
-    citrus: string;
-    coral: string;
-  };
-  previewCourts: readonly DinktopiaCourtPreview[];
-};
+export type DinktopiaCourtPreview = TenantCourtPreview;
+export type DinktopiaTenantConfig = TenantConfig<"dinktopia">;
 
 /**
  * Dinktopia's only tenant-owned configuration boundary.
@@ -107,6 +56,13 @@ export const dinktopiaConfig = {
     electric: "#254C84",
     citrus: "#82F500",
     coral: "#C13E2B",
+    logo: {
+      kind: "image",
+      src: "/dinktopia-logo.png",
+      alt: "Dinktopia Pickleball",
+      temporary: false,
+    },
+    socialImagePath: "/og.png",
   },
   previewCourts: [
     {

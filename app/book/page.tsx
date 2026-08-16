@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { BookingExperience } from "../booking-experience";
+import { activeTenant } from "../tenants/registry";
 import "../dinktopia.css";
 
 type BookPageProps = {
@@ -13,11 +14,11 @@ export async function generateMetadata({ searchParams }: BookPageProps): Promise
   return isManageMode
     ? {
         title: "Manage Booking",
-        description: "Find and manage an existing Dinktopia court booking.",
+        description: `Find and manage an existing ${activeTenant.identity.shortName} court booking.`,
       }
     : {
         title: "Book a Court",
-        description: "Choose a Dinktopia time, review the booking details, and reserve your court.",
+        description: `${activeTenant.identity.name} booking is not public yet. Schedule and pricing details are coming soon.`,
       };
 }
 
