@@ -5,7 +5,7 @@ import "../dinktopia.css";
 
 export const metadata: Metadata = {
   title: "Our Courts",
-  description: `Explore ${activeTenant.identity.shortName} courts when verified surface, facility, and availability details are published. Venue setup is still in progress.`,
+  description: `Explore ${activeTenant.identity.shortName} courts, current rates, and live booking availability.`,
 };
 
 export default function CourtsPage() {

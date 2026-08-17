@@ -20,9 +20,9 @@ export const klPickleballCourtConfig = {
     productionDomain: "klpickleball.pages.dev",
   },
   activation: {
-    status: "setup_required",
-    publicBookingEnabled: false,
-    provisional: true,
+    status: "active",
+    publicBookingEnabled: true,
+    provisional: false,
   },
   venue: {
     locationLabel: null,

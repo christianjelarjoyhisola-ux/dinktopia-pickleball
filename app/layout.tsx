@@ -16,7 +16,7 @@ const sora = Sora({
 
 const title = `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "Court booking"}`;
 const description =
-  `${activeTenant.identity.name} is a local pickleball court community in setup. Verified court, schedule, pricing, and booking details will be published before public booking opens.`;
+  `Reserve a court at ${activeTenant.identity.name}. View live availability, rates, booking rules, and payment instructions.`;
 
 function configuredTenantOrigin(): string | null {
   const domain = activeTenant.identity.productionDomain?.trim().toLowerCase();
@@ -58,7 +58,7 @@ export async function generateMetadata(): Promise<Metadata> {
       "court booking",
       activeTenant.identity.name,
     ],
-    robots: { index: false, follow: false },
+    robots: { index: true, follow: true },
     openGraph: {
       type: "website",
       locale: activeTenant.identity.locale.replace("-", "_"),

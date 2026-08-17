@@ -833,14 +833,14 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   const [home, courts, selectedBook, invalidBook, repeatedBook, manageBook] =
     await Promise.all(responses.map((response) => response.text()));
 
-  assert.equal(documentTitle(home), "Local Pickleball, Coming Soon · K&L Pickleball Court");
+  assert.equal(documentTitle(home), "Pickleball Court Booking · K&L Pickleball Court");
   assert.equal(documentTitle(courts), "Our Courts · K&L Pickleball Court");
   assert.equal(documentTitle(selectedBook), "Reserve a Court · K&L Pickleball Court");
   assert.equal(documentTitle(manageBook), "Manage Booking · K&L Pickleball Court");
 
   for (const html of [home, courts, selectedBook, invalidBook, repeatedBook, manageBook]) {
     assert.match(html, /<html\b[^>]*\blang="en-PH"/i);
-    assert.match(html, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="noindex, nofollow"/i);
+    assert.match(html, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="index, follow"/i);
     assert.match(html, /<a\b[^>]*class="skip-link"[^>]*href="#main-content"/i);
     assert.equal(countTags(html, "main"), 1);
     assert.equal(countTags(html, "h1"), 1);
@@ -1324,9 +1324,9 @@ test("uses a branded, accessible pickleball loader only for route transitions", 
   assert.match(loadingScreen, /aria-atomic="true"/);
   assert.doesNotMatch(loadingScreen, /aria-busy/);
   assert.match(loadingScreen, /className="route-loading-court" aria-hidden="true"/);
-  assert.match(loadingScreen, /\{activeTenant\.identity\.name\} · Setup preview/);
-  assert.match(loadingScreen, /Loading the venue preview…/);
-  assert.match(loadingScreen, /Details are still being configured\./);
+  assert.match(loadingScreen, /liveDeployment \? "Live booking" : "Setup preview"/);
+  assert.match(loadingScreen, /liveDeployment \? "Loading live court availability…" : "Loading the venue preview…"/);
+  assert.match(loadingScreen, /liveDeployment \? "Checking courts, rates, and open times\." : "Details are still being configured\."/);
   assert.doesNotMatch(
     loadingScreen,
     /<a\b|<button\b|<input\b|<select\b|<textarea\b|tabIndex|autoFocus/,
@@ -1761,7 +1761,7 @@ test("pins K&L active scope while preserving Dinktopia's registered config", asy
   assert.match(config, /productionDomain:\s*"klpickleball\.pages\.dev"/);
   assert.match(
     config,
-    /activation:\s*\{\s*status:\s*"setup_required",\s*publicBookingEnabled:\s*false,\s*provisional:\s*true/s,
+    /activation:\s*\{\s*status:\s*"active",\s*publicBookingEnabled:\s*true,\s*provisional:\s*false/s,
   );
   for (const field of [
     "locationLabel", "address", "opensAt", "closesAt", "minimumHours",
@@ -4237,8 +4237,8 @@ test("fails closed when live platform setup or authorization is incomplete", asy
     /result\.tenant\?\.slug !== activeTenant\.identity\.slug[\s\S]*?"LIVE_TENANT_SCOPE_MISMATCH"/,
   );
   assert.doesNotMatch(client, /turnstile|TURNSTILE/i);
-  assert.match(config, /status:\s*"setup_required"/);
-  assert.match(config, /publicBookingEnabled:\s*false/);
+  assert.match(config, /status:\s*"active"/);
+  assert.match(config, /publicBookingEnabled:\s*true/);
   assert.match(
     booking,
     /isLive &&[\s\S]*?!bootstrap\?\.readiness\.publicBookingEnabled/,

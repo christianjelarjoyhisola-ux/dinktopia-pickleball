@@ -7,6 +7,11 @@ type RouteLoadingScreenProps = {
 export function RouteLoadingScreen({
   source = "boundary",
 }: RouteLoadingScreenProps) {
+  const liveDeployment =
+    activeTenant.activation.status === "active" &&
+    activeTenant.activation.publicBookingEnabled &&
+    !activeTenant.activation.provisional;
+
   return (
     <div
       className="route-loading-screen"
@@ -23,9 +28,9 @@ export function RouteLoadingScreen({
           </span>
           <span className="route-loading-shadow" />
         </div>
-        <p>{activeTenant.identity.name} · Setup preview</p>
-        <strong>Loading the venue preview…</strong>
-        <span>Details are still being configured.</span>
+        <p>{activeTenant.identity.name} · {liveDeployment ? "Live booking" : "Setup preview"}</p>
+        <strong>{liveDeployment ? "Loading live court availability…" : "Loading the venue preview…"}</strong>
+        <span>{liveDeployment ? "Checking courts, rates, and open times." : "Details are still being configured."}</span>
       </div>
     </div>
   );

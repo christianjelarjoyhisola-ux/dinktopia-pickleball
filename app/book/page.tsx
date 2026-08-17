@@ -18,7 +18,7 @@ export async function generateMetadata({ searchParams }: BookPageProps): Promise
       }
     : {
         title: "Reserve a Court",
-        description: `${activeTenant.identity.name} public booking is not open yet. Verified schedules, rates, and court availability will appear here when setup is complete.`,
+        description: `Reserve a court at ${activeTenant.identity.name}. View live schedules, rates, and court availability.`,
       };
 }
 

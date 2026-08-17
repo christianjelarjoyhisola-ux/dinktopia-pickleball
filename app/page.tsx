@@ -4,8 +4,8 @@ import { activeTenant } from "./tenants/registry";
 import "./dinktopia.css";
 
 export const metadata: Metadata = {
-  title: "Local Pickleball, Coming Soon",
-  description: `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "a local pickleball court community"} Verified venue and booking details will be published when setup is complete.`,
+  title: "Pickleball Court Booking",
+  description: `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "your local pickleball court"} View live courts, rates, and availability.`,
 };
 
 export default function HomePage() {

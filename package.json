@@ -10,7 +10,8 @@
     "build": "vinext build",
     "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs tests/tenant-promotions.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .pages-output",
+    "build:pages": "npm run build && node build/prepare-pages.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.57.4",

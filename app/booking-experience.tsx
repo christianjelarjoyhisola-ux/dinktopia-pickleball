@@ -3583,9 +3583,9 @@ export function BookingExperience({
           <div><TenantWordmark footer /><p>Local court time, made easy.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Reserve a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>{previewHours ? <>Daily<br /><strong>{formatClockLabel(previewHours.openingHour)}–{formatClockLabel(previewHours.closingHour)}</strong></> : <strong>Hours coming soon</strong>}</p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
-          <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
+          <div><h2>Booking status</h2><p>{bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Booking setup in progress.<br />Venue details coming next.</>}</p></div>
         </div>
-        <div className="site-container footer-bottom"><span>© 2026 {activeTenant.identity.name}</span><span>K&amp;L booking setup</span></div>
+        <div className="site-container footer-bottom"><span>© 2026 {activeTenant.identity.name}</span><span>K&amp;L court booking</span></div>
       </footer>
       <p className="sr-live" aria-live="polite" aria-atomic="true">{liveMessage}</p>
       <p className="sr-live" aria-live="polite" aria-atomic="true">{selectionState.announcement}</p>
