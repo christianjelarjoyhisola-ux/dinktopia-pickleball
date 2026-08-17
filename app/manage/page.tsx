@@ -3518,11 +3518,47 @@ function AccessView({
   const visibleCapabilities: ManagementCapability[] = capabilities.filter(
     (capability) => capability !== "booking:check-in",
   );
+  const liveMembershipRole = session?.membershipRole ?? null;
+  const hasTenantMembership = !isPreview && !session?.isSystemOwner && liveMembershipRole !== null;
   return (
     <section className={cx(styles.accessGrid, !isPreview && styles.accessGridLive)}>
       <article className={styles.panel}>
-        <div className={styles.panelHeading}><div><p className={styles.eyebrow}>{isPreview ? `${activeTenant.identity.shortName} team setup` : "Tenant memberships"}</p><h2>Membership details unavailable</h2></div><span className={styles.previewTag}>{isPreview ? "Setup required" : "Protected"}</span></div>
-        <div className={styles.statePanel} role="status"><p className={styles.eyebrow}>Membership directory protected</p><h3>No membership records were returned.</h3><p>Invite and membership management will appear only when the shared platform returns an authorized tenant-scoped contract.</p></div>
+        <div className={styles.panelHeading}>
+          <div>
+            <p className={styles.eyebrow}>{isPreview ? `${activeTenant.identity.shortName} team setup` : "Account access"}</p>
+            <h2>{isPreview ? "Membership details unavailable" : hasTenantMembership ? "Your tenant membership" : "Platform authority"}</h2>
+          </div>
+          <span className={hasTenantMembership || session?.isSystemOwner ? styles.openTag : styles.previewTag}>
+            {isPreview ? "Setup required" : "Verified"}
+          </span>
+        </div>
+        {isPreview ? (
+          <div className={styles.statePanel} role="status">
+            <p className={styles.eyebrow}>Membership directory protected</p>
+            <h3>No membership records were returned.</h3>
+            <p>Invite and membership management will appear only when the shared platform returns an authorized tenant-scoped contract.</p>
+          </div>
+        ) : (
+          <div className={styles.membershipSummary} role="status" aria-label="Current account access">
+            <div className={styles.membershipIdentity}>
+              <span aria-hidden="true">{session?.isSystemOwner ? "SO" : ROLE_LABEL[role].slice(0, 2).toUpperCase()}</span>
+              <div>
+                <strong>{session?.displayName ?? "Authenticated user"}</strong>
+                <small>{session?.email ?? "Verified management account"}</small>
+              </div>
+            </div>
+            <dl className={styles.membershipFacts}>
+              <div><dt>Access level</dt><dd>{session?.isSystemOwner ? "System Owner" : ROLE_LABEL[liveMembershipRole ?? role]}</dd></div>
+              <div><dt>Workspace</dt><dd>{session?.isSystemOwner ? "Shared platform" : activeTenant.identity.name}</dd></div>
+              <div><dt>Scope</dt><dd>{session?.isSystemOwner ? "Platform authorized" : "This tenant only"}</dd></div>
+            </dl>
+            <p className={styles.membershipPrivacy}>
+              {session?.isSystemOwner
+                ? "System Owner authority is verified by the server and does not depend on a tenant membership."
+                : `Only your verified ${activeTenant.identity.shortName} membership is shown. Other tenants are not exposed in this workspace.`}
+            </p>
+          </div>
+        )}
       </article>
       <aside className={cx(styles.panel, styles.capabilityPanel)}>
         <p className={styles.eyebrow}>{isPreview ? "Current preview session" : "Current authenticated session"}</p>
