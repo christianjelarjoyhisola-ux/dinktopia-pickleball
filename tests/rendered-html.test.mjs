@@ -1004,6 +1004,11 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   assert.match(matrixSource, /const isSelected = selectedKeys\.has\(selectionKey\(court\.id, hour\)\)/);
   assert.match(matrixSource, /const busy = !slot \|\| slot\.status === "unavailable"/);
+  assert.match(matrixSource, /const ownedState = ownedSlotStates\.get\(selectionKey\(court\.id, hour\)\)/);
+  assert.match(matrixSource, /ownedState === "held"[\s\S]*?"Held for you"/);
+  assert.match(matrixSource, /ownedState === "payment_review"[\s\S]*?"Payment review"/);
+  assert.match(matrixSource, /ownedState === "confirmed"[\s\S]*?"Booked for you"/);
+  assert.match(matrixSource, /busy[\s\S]*?"Booked"/);
   assert.match(
     matrixSource,
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
@@ -1014,9 +1019,19 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     matrixSource,
     /onClick=\{\(\) => slot && !busy && chooseSlot\(court, slot\)\}/,
   );
-  assert.match(matrixSource, /availability-cell\$\{busy \? " busy" : isSelected \? " selected" : ""\}/);
+  assert.match(matrixSource, /availability-cell\$\{ownedState \? ` owned-state owned-\$\{ownedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}/);
   assert.doesNotMatch(matrixSource, /isLimitBlocked|is-limit-blocked|selection limit/i);
   assert.doesNotMatch(matrixSource, /aria-disabled=/);
+
+  const ownedStateStart = booking.indexOf("const ownedSlotStates = useMemo(");
+  const ownedStateEnd = booking.indexOf("const liveBookingReady", ownedStateStart);
+  assert.ok(ownedStateStart >= 0 && ownedStateEnd > ownedStateStart, "expected private owned-slot overlay state");
+  const ownedStateSource = booking.slice(ownedStateStart, ownedStateEnd);
+  assert.match(ownedStateSource, /const booking = pendingBooking \?\? confirmedBooking/);
+  assert.match(ownedStateSource, /booking\.date !== selectedDate \|\| booking\.status === "cancelled"/);
+  assert.match(ownedStateSource, /booking\.status === "pending_payment" && !holdExpired/);
+  assert.match(ownedStateSource, /booking\.items\?\.length/);
+  assert.match(ownedStateSource, /states\.set\(selectionKey\(item\.courtId, item\.startHour\), state\)/);
 
   const uniqueStart = booking.indexOf("function uniqueSelections(");
   const reducerStart = booking.indexOf("function selectionReducer(", uniqueStart);
@@ -5016,7 +5031,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
 
   assert.match(
     booking,
-    /className=\{`availability-cell mobile-availability-cell\$\{busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
+    /className=\{`availability-cell mobile-availability-cell\$\{ownedState \? ` owned-state owned-\$\{ownedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
   );
   const publicTextCss = publicCss.replace(
     /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*\}/gs,

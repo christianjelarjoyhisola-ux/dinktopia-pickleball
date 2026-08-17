@@ -70,6 +70,8 @@ type GalleryPhoto = {
 
 type SlotStatus = "available" | "limited" | "unavailable";
 
+type OwnedSlotState = "held" | "payment_review" | "confirmed";
+
 export type AvailabilitySlot = {
   hour: number;
   startsAt: string;
@@ -1870,6 +1872,32 @@ export function BookingExperience({
     pendingBooking && Number.isFinite(holdExpiryTimestamp) && !holdExpired
       ? Math.max(0, Math.ceil((holdExpiryTimestamp - holdNow) / 1000))
       : null;
+  const ownedSlotStates = useMemo(() => {
+    const states = new Map<string, OwnedSlotState>();
+    const booking = pendingBooking ?? confirmedBooking;
+    if (!booking || booking.date !== selectedDate || booking.status === "cancelled") return states;
+
+    const state: OwnedSlotState | null =
+      booking.status === "pending_payment" && !holdExpired
+        ? "held"
+        : booking.status === "payment_review"
+          ? "payment_review"
+          : booking.status === "confirmed"
+            ? "confirmed"
+            : null;
+    if (!state) return states;
+
+    const items = booking.items?.length
+      ? booking.items
+      : Array.from({ length: booking.durationHours }, (_, index) => ({
+          courtId: booking.courtId,
+          startHour: booking.startHour + index,
+          durationHours: 1 as const,
+          amount: 0,
+        }));
+    items.forEach((item) => states.set(selectionKey(item.courtId, item.startHour), state));
+    return states;
+  }, [confirmedBooking, holdExpired, pendingBooking, selectedDate]);
   const liveBookingReady =
     bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
@@ -3254,16 +3282,28 @@ export function BookingExperience({
                                         const slot = courtSchedule?.slots.find((item) => item.hour === hour);
                                         const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                         const busy = !slot || slot.status === "unavailable";
+                                        const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
+                                        const stateLabel = ownedState === "held"
+                                          ? "Held for you"
+                                          : ownedState === "payment_review"
+                                            ? "Payment review"
+                                            : ownedState === "confirmed"
+                                              ? "Booked for you"
+                                              : busy
+                                                ? "Booked"
+                                                : isSelected
+                                                  ? "Selected"
+                                                  : "Open";
                                         return (
                                           <button
                                             type="button"
                                             key={`${court.id}-${hour}`}
-                                            className={`availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
+                                            className={`availability-cell${ownedState ? ` owned-state owned-${ownedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={busy}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${ownedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
                                             onClick={() => slot && !busy && chooseSlot(court, slot)}
-                                          ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
+                                          ><span aria-hidden="true" /><small>{stateLabel}</small></button>
                                         );
                                       })}
                                     </Fragment>
@@ -3292,16 +3332,28 @@ export function BookingExperience({
                                       const slot = schedule.find((item) => item.courtId === court.id)?.slots.find((item) => item.hour === hour);
                                       const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                       const busy = !slot || slot.status === "unavailable";
+                                      const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
+                                      const stateLabel = ownedState === "held"
+                                        ? "Held for you"
+                                        : ownedState === "payment_review"
+                                          ? "Payment review"
+                                          : ownedState === "confirmed"
+                                            ? "Booked for you"
+                                            : busy
+                                              ? "Booked"
+                                              : isSelected
+                                                ? "Selected"
+                                                : "Open";
                                       return (
                                         <button
                                           type="button"
                                           key={`${court.id}-${hour}`}
-                                          className={`availability-cell mobile-availability-cell${busy ? " busy" : isSelected ? " selected" : ""}`}
+                                          className={`availability-cell mobile-availability-cell${ownedState ? ` owned-state owned-${ownedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
                                           disabled={busy}
-                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${busy ? "Booked" : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${ownedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
                                           onClick={() => slot && !busy && chooseSlot(court, slot)}
-                                        ><span aria-hidden="true" /><small>{busy ? "Booked" : isSelected ? "Selected" : "Open"}</small></button>
+                                        ><span aria-hidden="true" /><small>{stateLabel}</small></button>
                                       );
                                     })}
                                   </Fragment>

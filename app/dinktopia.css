@@ -7440,6 +7440,14 @@
 .booking-route .availability-cell.busy > span { border-color: #b8b8b2; background: #c8c8c2; }
 .booking-route .availability-cell.selected { position: relative; z-index: 2; background: var(--violet); color: white; box-shadow: inset 0 0 0 1px var(--violet-dark); }
 .booking-route .availability-cell.selected > span { border-color: white; background: white; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.15); }
+.booking-route .availability-cell.owned-state { cursor: default; opacity: 1; }
+.booking-route .availability-cell.owned-state small { line-height: 1.1; white-space: normal; }
+.booking-route .availability-cell.owned-held { background: #fff5d9; color: #76520a; box-shadow: inset 0 0 0 1px #e0b94e; }
+.booking-route .availability-cell.owned-held > span { border-color: #c28c08; background: #f2bd38; box-shadow: 0 0 0 3px rgba(242, 189, 56, 0.18); }
+.booking-route .availability-cell.owned-payment_review { background: #e8eef4; color: #234f78; box-shadow: inset 0 0 0 1px #91a9bd; }
+.booking-route .availability-cell.owned-payment_review > span { border-color: #285a87; background: #285a87; box-shadow: 0 0 0 3px rgba(40, 90, 135, 0.14); }
+.booking-route .availability-cell.owned-confirmed { background: #e8f7ef; color: #126846; box-shadow: inset 0 0 0 1px #75b99d; }
+.booking-route .availability-cell.owned-confirmed > span { border-color: #16845b; background: #16845b; box-shadow: 0 0 0 3px rgba(22, 132, 91, 0.14); }
 
 @media (max-width: 760px) {
   .booking-route .availability-scroll { display: none; }
