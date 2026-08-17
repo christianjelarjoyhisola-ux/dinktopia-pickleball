@@ -406,6 +406,13 @@ export async function getTenantBootstrap(): Promise<TenantBootstrap> {
       `This ${activeTenant.identity.shortName} hostname is not registered with the booking platform.`,
     );
   }
+  if (result.tenant?.slug !== activeTenant.identity.slug) {
+    throw new PlatformRequestError(
+      403,
+      "LIVE_TENANT_SCOPE_MISMATCH",
+      "The booking platform returned a different tenant scope.",
+    );
+  }
   return { ...result, promotions };
 }
 

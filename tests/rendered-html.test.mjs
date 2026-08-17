@@ -4232,12 +4232,20 @@ test("fails closed when live platform setup or authorization is incomplete", asy
     /return validBrowserPlatformConfiguration\(\) \? "live" : "preview"/,
   );
   assert.match(client, /"TENANT_ORIGIN_NOT_REGISTERED"/);
+  assert.match(
+    client,
+    /result\.tenant\?\.slug !== activeTenant\.identity\.slug[\s\S]*?"LIVE_TENANT_SCOPE_MISMATCH"/,
+  );
   assert.doesNotMatch(client, /turnstile|TURNSTILE/i);
   assert.match(config, /status:\s*"setup_required"/);
   assert.match(config, /publicBookingEnabled:\s*false/);
   assert.match(
     booking,
-    /isLive &&[\s\S]*?!activeTenant\.activation\.publicBookingEnabled[\s\S]*?!bootstrap\?\.readiness\.publicBookingEnabled/,
+    /isLive &&[\s\S]*?!bootstrap\?\.readiness\.publicBookingEnabled/,
+  );
+  assert.doesNotMatch(
+    booking,
+    /activeTenant\.activation\.publicBookingEnabled/,
   );
   assert.match(booking, /if \(isLive && !paymentMethod\)/);
   assert.match(booking, /if \(isLive && !policyVersion\)/);
@@ -4313,7 +4321,7 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
 
   for (const [label, guard] of [
     ["bootstrap failure", /if \(bootstrapState === "error"\)/],
-    ["public-booking readiness", /if \([\s\S]*?isLive &&[\s\S]*?!activeTenant\.activation\.publicBookingEnabled[\s\S]*?!bootstrap\?\.readiness\.publicBookingEnabled/],
+    ["public-booking readiness", /if \([\s\S]*?isLive &&[\s\S]*?!bootstrap\?\.readiness\.publicBookingEnabled/],
     ["payment readiness", /if \(isLive && !paymentMethod\)/],
     ["published policy", /if \(isLive && !policyVersion\)/],
     ["non-empty selection", /if \(!selectedSlots\.length\)/],

@@ -1825,8 +1825,7 @@ export function BookingExperience({
       ? Math.max(0, Math.ceil((holdExpiryTimestamp - holdNow) / 1000))
       : null;
   const liveBookingReady =
-    Boolean(activeTenant.activation.publicBookingEnabled) &&
-      bootstrapState === "ready" &&
+    bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
       Boolean(bootstrap?.courts.length) &&
       paymentAccountReady &&
@@ -2222,8 +2221,7 @@ export function BookingExperience({
     }
     if (
       isLive &&
-      (!activeTenant.activation.publicBookingEnabled ||
-        !bootstrap?.readiness.publicBookingEnabled)
+      !bootstrap?.readiness.publicBookingEnabled
     ) {
       setPaymentError("Online booking is not active for this venue yet.");
       return;
