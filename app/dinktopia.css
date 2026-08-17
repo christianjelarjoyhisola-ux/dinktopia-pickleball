@@ -1425,7 +1425,7 @@
   text-transform: uppercase;
 }
 
-.court-card-copy h3 {
+.court-card-copy :is(h2, h3) {
   margin-top: 7px;
   font-size: clamp(2rem, 8vw, 3.2rem);
   font-weight: 800;
@@ -4340,7 +4340,7 @@
   font-size: var(--text-small);
 }
 
-.court-card-copy h3,
+.court-card-copy :is(h2, h3),
 .how-list h3,
 .booking-summary h3,
 .state-card h4,
@@ -4356,7 +4356,7 @@
   font-weight: var(--weight-semibold);
 }
 
-.court-card-copy h3 {
+.court-card-copy :is(h2, h3) {
   font-size: var(--text-card);
 }
 
@@ -4575,7 +4575,7 @@
     white-space: nowrap;
   }
 
-  .court-card-copy h3 {
+  .court-card-copy :is(h2, h3) {
     margin-top: 4px;
     font-size: clamp(24px, 7vw, 30px);
   }
@@ -5850,7 +5850,7 @@
   text-transform: none;
 }
 
-.kl-court-site .court-card-copy h3 {
+.kl-court-site .court-card-copy :is(h2, h3) {
   margin-top: 9px;
   font-size: clamp(2rem, 5vw, 3.15rem);
   font-weight: 620;

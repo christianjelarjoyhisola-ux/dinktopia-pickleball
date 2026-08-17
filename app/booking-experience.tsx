@@ -306,15 +306,18 @@ function tenantCalendarUidDomain() {
 }
 
 function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
-  return publicCourts.map((court, index) => ({
-    id: court.id,
-    slug: court.slug,
-    number: String(index + 1).padStart(2, "0"),
-    name: court.name,
-    descriptor: court.description || "Pickleball court",
-    mood: court.description || `Configured for ${activeTenant.identity.shortName} play`,
-    color: index % 2 === 0 ? "blue" : "coral",
-  }));
+  return publicCourts.map((court, index) => {
+    const description = court.description?.replaceAll("\\", "/").trim();
+    return {
+      id: court.id,
+      slug: court.slug,
+      number: String(index + 1).padStart(2, "0"),
+      name: court.name,
+      descriptor: description || "Pickleball court",
+      mood: description || `Configured for ${activeTenant.identity.shortName} play`,
+      color: index % 2 === 0 ? "blue" : "coral",
+    };
+  });
 }
 
 function compactCourtSurface(court: Court) {
@@ -1327,15 +1330,53 @@ const platformAdapter: BookingAdapter = {
     if (parsed.record.status !== "pending_payment") {
       throw new Error("This booking is no longer awaiting player details.");
     }
-    const result = await completePlatformBookingDetails({
-      reference: parsed.record.reference,
-      token: parsed.token,
-      customer: {
-        name: request.customer.fullName.trim(),
-        email: request.customer.email.trim().toLowerCase(),
-        phone: request.customer.phone.trim(),
-      },
-    });
+    let result: Awaited<ReturnType<typeof completePlatformBookingDetails>>;
+    try {
+      result = await completePlatformBookingDetails({
+        reference: parsed.record.reference,
+        token: parsed.token,
+        customer: {
+          name: request.customer.fullName.trim(),
+          email: request.customer.email.trim().toLowerCase(),
+          phone: request.customer.phone.trim(),
+        },
+      });
+    } catch (error) {
+      // Older deployments rejected a retry when the first successful response
+      // was lost and the player changed a field before trying again. The RPC
+      // reaches this exact error only after validating the tenant, booking
+      // token, pending-payment status, and active hold, so it is safe to resume
+      // payment without creating another reservation.
+      if (
+        !(error instanceof Error) ||
+        error.message !== "Player details have already been completed."
+      ) {
+        throw error;
+      }
+      const current = await bookingStatus(parsed.record.reference, parsed.token);
+      const currentBooking = current.booking as
+        | { status?: string; expiresAt?: string | null; expires_at?: string | null }
+        | undefined;
+      const currentStatus = currentBooking
+        ? mappedBookingStatus(currentBooking.status, "cancelled")
+        : "cancelled";
+      const currentExpiry =
+        currentBooking?.expiresAt ?? currentBooking?.expires_at ?? null;
+      if (
+        currentStatus !== "pending_payment" ||
+        !currentExpiry ||
+        !Number.isFinite(Date.parse(currentExpiry)) ||
+        Date.parse(currentExpiry) <= Date.now()
+      ) {
+        throw error;
+      }
+      result = {
+        reference: parsed.record.reference,
+        status: currentStatus,
+        expiresAt: currentExpiry,
+        detailsComplete: true,
+      };
+    }
     const status = mappedBookingStatus(result.status, parsed.record.status);
     if (platformMode() === "live" && status !== "pending_payment") {
       throw new Error("This court hold is no longer active.");
@@ -2921,7 +2962,7 @@ export function BookingExperience({
                     </div>
                     <div className="court-card-copy">
                       <p>{court.descriptor}</p>
-                      <h3>{court.name}</h3>
+                      <h2>{court.name}</h2>
                       <div className="court-card-meta">
                         <span>{court.mood}</span>
                         <span>{startingHourlyRate === null ? "Rates coming soon" : `From ${peso(startingHourlyRate)} / hour`}</span>
@@ -3306,6 +3347,8 @@ export function BookingExperience({
                           <span>Full name</span>
                           <input
                             id={`${formId}-name`}
+                            name="fullName"
+                            required
                             autoComplete="name"
                             value={customer.fullName}
                             aria-invalid={Boolean(detailErrors.fullName)}
@@ -3321,6 +3364,8 @@ export function BookingExperience({
                             <b>+63</b>
                             <input
                               id={`${formId}-phone`}
+                              name="phone"
+                              required
                               type="tel"
                               inputMode="tel"
                               autoComplete="tel"
@@ -3337,6 +3382,8 @@ export function BookingExperience({
                           <span>Email address</span>
                           <input
                             id={`${formId}-email`}
+                            name="email"
+                            required
                             type="email"
                             autoComplete="email"
                             value={customer.email}
@@ -3391,7 +3438,7 @@ export function BookingExperience({
                         </button>
                       </div>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} policyTitle={policyVersion ? policyTitle : null} />
                   </div>
                 )}
 
@@ -3484,7 +3531,7 @@ export function BookingExperience({
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
                       <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s payment details come directly from System Setup.</p>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} policyTitle={policyVersion ? policyTitle : null} />
                   </div>
                 )}
 
@@ -3599,6 +3646,7 @@ type BookingSummaryProps = {
   subtotal: number;
   bookingFee: number;
   total: number;
+  policyTitle: string | null;
 };
 
 function RallyBookingSummary({
@@ -3607,6 +3655,7 @@ function RallyBookingSummary({
   subtotal,
   bookingFee,
   total,
+  policyTitle,
 }: BookingSummaryProps) {
   const groups = groupSelectionDetails(selections);
   const courts = Array.from(
@@ -3644,7 +3693,7 @@ function RallyBookingSummary({
         {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
       </div>
       <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
-      <p className="summary-note">{activeTenant.booking.cancellation || "Cancellation details will appear after the venue publishes its policy."}</p>
+      <p className="summary-note">{policyTitle ? `${policyTitle} applies to this reservation.` : activeTenant.booking.cancellation || "Cancellation details will appear after the venue publishes its policy."}</p>
     </aside>
   );
 }

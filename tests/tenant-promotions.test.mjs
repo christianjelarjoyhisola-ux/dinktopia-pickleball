@@ -4,6 +4,35 @@ import test from "node:test";
 
 const root = new URL("../", import.meta.url);
 
+test("player details remain resumable only for a verified active tenant hold", async () => {
+  const sql = await readFile(
+    new URL("operations/2026-08-17-resumable-public-booking-details.sql", root),
+    "utf8",
+  );
+  const tenantResolution = sql.indexOf(
+    "v_tenant_id := public.resolve_tenant_id(p_tenant_slug, p_hostname)",
+  );
+  const tokenCheck = sql.indexOf(
+    "v_expected_hash is null or v_expected_hash is distinct from v_actual_hash",
+  );
+  const activeHoldCheck = sql.indexOf("v_booking.status <> 'pending_payment'");
+  const detailsUpdate = sql.indexOf("update public.bookings");
+
+  assert.ok(tenantResolution >= 0);
+  assert.ok(tokenCheck > tenantResolution);
+  assert.ok(activeHoldCheck > tokenCheck);
+  assert.ok(detailsUpdate > activeHoldCheck);
+  assert.match(
+    sql.slice(detailsUpdate),
+    /where tenant_id = v_tenant_id\s+and id = v_booking\.id/,
+  );
+  assert.match(
+    sql,
+    /if lower\(btrim\(p_tenant_slug\)\) <> 'kl-pickleball-court'[\s\S]*?then[\s\S]*?Player details have already been completed\./,
+    "existing tenants must retain the prior exact-replay contract",
+  );
+});
+
 test("promotion migration is additive and limited to registered tenants at the shared hold boundary", async () => {
   const sql = await readFile(new URL("operations/2026-08-11-tenant-promotions.sql", root), "utf8");
   const baseCall = sql.indexOf("v_result := public.create_public_booking_group_with_access_base_v1(");

@@ -4356,6 +4356,26 @@ test("keeps checkout reserve-first and recovers authoritative unpaid holds", asy
   assert.match(detailsSource, /adapter\.completeDetails\(/);
   assert.match(detailsSource, /setStep\(3\)/);
 
+  const adapterDetailsStart = booking.indexOf("async completeDetails(");
+  const adapterDetailsEnd = booking.indexOf("async submitPayment(", adapterDetailsStart);
+  assert.ok(adapterDetailsStart >= 0 && adapterDetailsEnd > adapterDetailsStart);
+  const adapterDetailsSource = booking.slice(adapterDetailsStart, adapterDetailsEnd);
+  assert.match(
+    adapterDetailsSource,
+    /error\.message !== "Player details have already been completed\."/,
+  );
+  assert.match(
+    adapterDetailsSource,
+    /bookingStatus\(parsed\.record\.reference, parsed\.token\)/,
+  );
+  assert.ok(
+    adapterDetailsSource.indexOf("bookingStatus(parsed.record.reference, parsed.token)") <
+      adapterDetailsSource.indexOf("detailsComplete: true"),
+    "an already-completed response must be revalidated before payment resumes",
+  );
+  assert.match(adapterDetailsSource, /currentStatus !== "pending_payment"/);
+  assert.match(adapterDetailsSource, /Date\.parse\(currentExpiry\) <= Date\.now\(\)/);
+
   const customerPaymentStart = booking.indexOf(
     "async function submitPayment(",
     reserveEnd,
@@ -4572,8 +4592,11 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(summarySource, /Court reservation[\s\S]*Booking fee[\s\S]*rally-summary-total[\s\S]*Total/);
   assert.match(
     summarySource,
-    /activeTenant\.booking\.cancellation \|\| "Cancellation details will appear after the venue publishes its policy\."/,
+    /policyTitle \? `\$\{policyTitle\} applies to this reservation\.` : activeTenant\.booking\.cancellation \|\| "Cancellation details will appear after the venue publishes its policy\."/,
   );
+  assert.match(stepTwo, /name="fullName"[\s\S]*?required/);
+  assert.match(stepTwo, /name="phone"[\s\S]*?required/);
+  assert.match(stepTwo, /name="email"[\s\S]*?required/);
   assert.match(stepTwo, /aria-invalid=\{Boolean\(detailErrors\./);
   assert.match(stepTwo, /className="field-error"/);
   assert.match(stepTwo, /aria-busy=\{isSubmitting\}/);
