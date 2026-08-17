@@ -1005,9 +1005,9 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(matrixSource, /const isSelected = selectedKeys\.has\(selectionKey\(court\.id, hour\)\)/);
   assert.match(matrixSource, /const busy = !slot \|\| slot\.status === "unavailable"/);
   assert.match(matrixSource, /const ownedState = ownedSlotStates\.get\(selectionKey\(court\.id, hour\)\)/);
-  assert.match(matrixSource, /ownedState === "held"[\s\S]*?"Held for you"/);
-  assert.match(matrixSource, /ownedState === "payment_review"[\s\S]*?"Payment review"/);
-  assert.match(matrixSource, /ownedState === "confirmed"[\s\S]*?"Booked for you"/);
+  assert.match(matrixSource, /ownedState === "held"[\s\S]*?"Held"/);
+  assert.match(matrixSource, /ownedState === "payment_review"[\s\S]*?"Reviewing"/);
+  assert.match(matrixSource, /ownedState === "confirmed"[\s\S]*?"Booked"/);
   assert.match(matrixSource, /busy[\s\S]*?"Booked"/);
   assert.match(
     matrixSource,

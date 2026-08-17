@@ -3284,11 +3284,11 @@ export function BookingExperience({
                                         const busy = !slot || slot.status === "unavailable";
                                         const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
                                         const stateLabel = ownedState === "held"
-                                          ? "Held for you"
+                                          ? "Held"
                                           : ownedState === "payment_review"
-                                            ? "Payment review"
+                                            ? "Reviewing"
                                             : ownedState === "confirmed"
-                                              ? "Booked for you"
+                                              ? "Booked"
                                               : busy
                                                 ? "Booked"
                                                 : isSelected
@@ -3334,11 +3334,11 @@ export function BookingExperience({
                                       const busy = !slot || slot.status === "unavailable";
                                       const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
                                       const stateLabel = ownedState === "held"
-                                        ? "Held for you"
+                                        ? "Held"
                                         : ownedState === "payment_review"
-                                          ? "Payment review"
+                                          ? "Reviewing"
                                           : ownedState === "confirmed"
-                                            ? "Booked for you"
+                                            ? "Booked"
                                             : busy
                                               ? "Booked"
                                               : isSelected
