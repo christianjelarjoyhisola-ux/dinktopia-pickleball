@@ -23,6 +23,7 @@ import {
 } from "react";
 import { TransitionLink as Link } from "./transition-link";
 import { activeTenant } from "./tenants/registry";
+import type { TenantCourtPreview, TenantLogo } from "./tenants/types";
 import {
   formatClockLabel,
   logicalBandForHour,
@@ -98,7 +99,7 @@ type SelectionDetail = {
 };
 
 export type AvailabilityRequest = {
-  tenantSlug: "dinktopia";
+  tenantSlug: typeof activeTenant.identity.slug;
   date: string;
 };
 
@@ -127,7 +128,7 @@ export type BookingRecord = {
 };
 
 export type BookingHoldRequest = {
-  tenantSlug: "dinktopia";
+  tenantSlug: typeof activeTenant.identity.slug;
   date: string;
   courtId: string;
   startHour: number;
@@ -174,7 +175,8 @@ export type BookingExperienceProps = {
   initialMode?: "book" | "manage";
 };
 
-const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => ({
+const configuredPreviewCourts = activeTenant.previewCourts as readonly TenantCourtPreview[];
+const previewCourts: Court[] = configuredPreviewCourts.map((court, index) => ({
   id: court.id,
   slug: court.slug,
   number: String(index + 1).padStart(2, "0"),
@@ -184,7 +186,118 @@ const previewCourts: Court[] = activeTenant.previewCourts.map((court, index) => 
   color: index % 2 === 0 ? "blue" : "coral",
 }));
 
-const tickerPhrases = ["PLAY MORE", "RALLY OFTEN", "STAY FOCUSED", "NEW HABIT"] as const;
+const tickerPhrases = ["LOCAL COURTS", "GOOD RALLIES", "YOUR CREW", "K&L PICKLEBALL"] as const;
+
+const tenantLogo = activeTenant.brand.logo as TenantLogo;
+const tenantLogoSrc = tenantLogo.kind === "image"
+  ? tenantLogo.src
+  : null;
+const tenantWordmarkLabel = tenantLogo.kind === "wordmark"
+  ? tenantLogo.label
+  : activeTenant.identity.name;
+const tenantHeroWord = activeTenant.identity.shortName.toUpperCase();
+const tenantHeroCourtLabels = tenantHeroWord.length > 6
+  ? [tenantHeroWord.slice(0, 4), tenantHeroWord.slice(4)]
+  : [tenantHeroWord, "PICKLEBALL"];
+const seededPreviewCourt = previewCourts.find(
+  (court) => court.id === "00000000-0000-4000-8000-000000000101",
+);
+
+function optionalBookingNumber(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function previewHourlyRates() {
+  const booking = activeTenant.booking as typeof activeTenant.booking & {
+    offPeakHourlyRate?: number | null;
+    peakHourlyRate?: number | null;
+  };
+  const rates = [booking.offPeakHourlyRate, booking.peakHourlyRate]
+    .map(optionalBookingNumber)
+    .filter((rate): rate is number => rate !== null && rate >= 0);
+  return rates;
+}
+
+function configuredPreviewHours() {
+  const { opensAt, closesAt } = activeTenant.venue;
+  if (typeof opensAt !== "string" || typeof closesAt !== "string") return null;
+  const openingHour = parseClockHour(opensAt);
+  const closingHour = parseClockHour(closesAt);
+  if (openingHour === null || closingHour === null) return null;
+  return { opensAt, closesAt, openingHour, closingHour };
+}
+
+function TenantWordmark({ footer = false, priority = false }: { footer?: boolean; priority?: boolean }) {
+  return (
+    <Link
+      className={`wordmark${footer ? " wordmark-footer" : ""}`}
+      href="/"
+      aria-label={`${activeTenant.identity.name} home`}
+    >
+      {tenantLogoSrc ? (
+        <Image
+          className="brand-logo"
+          src={tenantLogoSrc}
+          alt=""
+          width={2046}
+          height={769}
+          sizes={footer ? "212px" : "(max-width: 390px) 128px, (max-width: 779px) 132px, 164px"}
+          unoptimized
+          priority={priority}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          style={{
+            fontSize: footer ? "1.1rem" : "0.9rem",
+            fontWeight: 900,
+            lineHeight: 1,
+            letterSpacing: "-0.045em",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {tenantWordmarkLabel}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+const tenantStoragePrefix = activeTenant.identity.slug;
+
+function bookingStorageKey(reference: string) {
+  return `${tenantStoragePrefix}:booking:${reference}`;
+}
+
+function pendingBookingStorageKey(clientRequestId: string) {
+  return `${tenantStoragePrefix}:pending:${clientRequestId}`;
+}
+
+function bookingStorageProbeKey(clientRequestId: string) {
+  return `${tenantStoragePrefix}:storage-probe:${clientRequestId}`;
+}
+
+const activeHoldStorageKey = `${tenantStoragePrefix}:active-hold`;
+
+function tenantPlaceholderEmail(clientRequestId: string) {
+  return `booking-${clientRequestId}@pending.${activeTenant.identity.slug}.invalid`;
+}
+
+function tenantCalendarUidDomain() {
+  const configuredDomain = activeTenant.identity.productionDomain;
+  if (typeof configuredDomain === "string" && configuredDomain.trim()) {
+    try {
+      return new URL(
+        configuredDomain.includes("://")
+          ? configuredDomain
+          : `https://${configuredDomain}`,
+      ).hostname;
+    } catch {
+      // A missing or malformed production domain must not leak another tenant's host.
+    }
+  }
+  return `${activeTenant.identity.slug}.invalid`;
+}
 
 function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
   return publicCourts.map((court, index) => ({
@@ -193,7 +306,7 @@ function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
     number: String(index + 1).padStart(2, "0"),
     name: court.name,
     descriptor: court.description || "Pickleball court",
-    mood: court.description || "Configured for Dinktopia play",
+    mood: court.description || `Configured for ${activeTenant.identity.shortName} play`,
     color: index % 2 === 0 ? "blue" : "coral",
   }));
 }
@@ -210,7 +323,7 @@ function trustedGallerySource(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return null;
   const source = value.trim();
   try {
-    const localOrigin = "https://dinktopia.invalid";
+    const localOrigin = `https://${activeTenant.identity.slug}.invalid`;
     const localUrl = new URL(source, localOrigin);
     if (
       source.startsWith("/") &&
@@ -556,12 +669,23 @@ function groupSelectionDetails(items: SelectionDetail[]) {
 }
 
 function getPrice(startHour: number, durationHours: number) {
+  const booking = activeTenant.booking as typeof activeTenant.booking & {
+    offPeakEndsAt?: string | null;
+    offPeakHourlyRate?: number | null;
+    peakHourlyRate?: number | null;
+  };
+  const offPeakRate = optionalBookingNumber(booking.offPeakHourlyRate);
+  const peakRate = optionalBookingNumber(booking.peakHourlyRate);
+  const offPeakEndsAt = typeof booking.offPeakEndsAt === "string"
+    ? Number(booking.offPeakEndsAt.slice(0, 2))
+    : Number.NaN;
+  if (offPeakRate === null || peakRate === null || !Number.isFinite(offPeakEndsAt)) {
+    throw new Error("Court pricing is not available yet.");
+  }
   return Array.from({ length: durationHours }, (_, index) => startHour + index)
     .map((hour) => {
       const clockHour = ((hour % 24) + 24) % 24;
-      return clockHour >= Number(activeTenant.booking.offPeakEndsAt.slice(0, 2))
-        ? activeTenant.booking.peakHourlyRate
-        : activeTenant.booking.offPeakHourlyRate;
+      return clockHour >= offPeakEndsAt ? peakRate : offPeakRate;
     })
     .reduce((total, price) => total + price, 0);
 }
@@ -890,7 +1014,7 @@ function readStoredBooking(reference: string): {
   token: string;
 } | null {
   try {
-    const stored = sessionStorage.getItem(`dinktopia:booking:${reference}`);
+    const stored = sessionStorage.getItem(bookingStorageKey(reference));
     if (!stored) return null;
     const parsed = JSON.parse(stored) as { record?: unknown; token?: unknown };
     if (
@@ -943,6 +1067,9 @@ const platformAdapter: BookingAdapter = {
         | undefined;
       const minimumLeadMinutes =
         publicConfig?.minimumLeadMinutes ?? activeTenant.booking.minimumLeadMinutes;
+      if (typeof minimumLeadMinutes !== "number" || !Number.isFinite(minimumLeadMinutes)) {
+        throw new Error("The court booking window is not configured yet.");
+      }
       const slots = Array.from(
         { length: Math.max(0, closingHour - openingHour) },
         (_, index) => index + openingHour,
@@ -1040,8 +1167,8 @@ const platformAdapter: BookingAdapter = {
     if (!serializedDate || !Number.isInteger(serializedStartHour)) {
       throw new Error("The selected start time could not be prepared for checkout.");
     }
-    const pendingKey = `dinktopia:pending:${request.clientRequestId}`;
-    const probeKey = `dinktopia:storage-probe:${request.clientRequestId}`;
+    const pendingKey = pendingBookingStorageKey(request.clientRequestId);
+    const probeKey = bookingStorageProbeKey(request.clientRequestId);
     try {
       sessionStorage.setItem(probeKey, "available");
       sessionStorage.removeItem(probeKey);
@@ -1056,7 +1183,7 @@ const platformAdapter: BookingAdapter = {
     const bookingCustomer = request.detailsPending
       ? {
           name: "Booking details pending",
-          email: `booking-${request.clientRequestId}@pending.dinktopia.invalid`,
+          email: tenantPlaceholderEmail(request.clientRequestId),
           phone: "0000000000",
         }
       : {
@@ -1153,7 +1280,7 @@ const platformAdapter: BookingAdapter = {
       detailsComplete: !request.detailsPending,
     };
 
-    const bookingKey = `dinktopia:booking:${record.reference}`;
+    const bookingKey = bookingStorageKey(record.reference);
     try {
       sessionStorage.setItem(pendingKey, JSON.stringify(confirmation));
       sessionStorage.setItem(
@@ -1161,7 +1288,7 @@ const platformAdapter: BookingAdapter = {
         JSON.stringify({ record, token: confirmation.bookingToken }),
       );
       sessionStorage.setItem(
-        "dinktopia:active-hold",
+        activeHoldStorageKey,
         JSON.stringify({
           reference: record.reference,
           clientRequestId: request.clientRequestId,
@@ -1171,7 +1298,7 @@ const platformAdapter: BookingAdapter = {
       try {
         sessionStorage.removeItem(pendingKey);
         sessionStorage.removeItem(bookingKey);
-        sessionStorage.removeItem("dinktopia:active-hold");
+        sessionStorage.removeItem(activeHoldStorageKey);
       } catch {
         // Continue to the best-effort server release below.
       }
@@ -1216,7 +1343,7 @@ const platformAdapter: BookingAdapter = {
     };
     try {
       sessionStorage.setItem(
-        `dinktopia:booking:${record.reference}`,
+        bookingStorageKey(record.reference),
         JSON.stringify({ ...parsed, record }),
       );
     } catch {
@@ -1233,7 +1360,7 @@ const platformAdapter: BookingAdapter = {
         "Preview validation could not match that sample reference. No payment was attempted.",
       );
     }
-    const storageKey = `dinktopia:booking:${request.booking.reference}`;
+    const storageKey = bookingStorageKey(request.booking.reference);
     const parsed = readStoredBooking(request.booking.reference);
     if (!parsed) {
       throw new Error("This payment hold is no longer available. Start a new booking.");
@@ -1283,8 +1410,8 @@ const platformAdapter: BookingAdapter = {
     };
     try {
       sessionStorage.setItem(storageKey, JSON.stringify({ ...parsed, record }));
-      sessionStorage.removeItem(`dinktopia:pending:${request.clientRequestId}`);
-      sessionStorage.removeItem("dinktopia:active-hold");
+      sessionStorage.removeItem(pendingBookingStorageKey(request.clientRequestId));
+      sessionStorage.removeItem(activeHoldStorageKey);
     } catch {
       // The server response is authoritative; returning it prevents duplicate uploads.
     }
@@ -1308,7 +1435,7 @@ const platformAdapter: BookingAdapter = {
       };
       try {
         sessionStorage.setItem(
-          `dinktopia:booking:${normalizedReference}`,
+          bookingStorageKey(normalizedReference),
           JSON.stringify({ ...parsed, record }),
         );
       } catch {
@@ -1320,6 +1447,7 @@ const platformAdapter: BookingAdapter = {
     await delay(450);
     if (
       platformMode() !== "preview" ||
+      !seededPreviewCourt ||
       normalizedReference !== "DT-260808-018" ||
       email.trim().toLowerCase() !== "mika@example.com"
     ) return null;
@@ -1327,7 +1455,7 @@ const platformAdapter: BookingAdapter = {
       reference: "DT-260808-018",
       status: "pending_payment",
       date: "2026-08-16",
-      courtId: previewCourts[0].id,
+      courtId: seededPreviewCourt.id,
       startHour: 18,
       durationHours: 2,
       amount: 800,
@@ -1341,14 +1469,14 @@ const platformAdapter: BookingAdapter = {
       const cancelled = { ...parsed.record, status: "cancelled" as const };
       try {
         sessionStorage.setItem(
-          `dinktopia:booking:${reference}`,
+          bookingStorageKey(reference),
           JSON.stringify({ ...parsed, record: cancelled }),
         );
-        const activeHold = sessionStorage.getItem("dinktopia:active-hold");
+        const activeHold = sessionStorage.getItem(activeHoldStorageKey);
         if (activeHold) {
           const pointer = JSON.parse(activeHold) as { reference?: unknown };
           if (pointer.reference === reference) {
-            sessionStorage.removeItem("dinktopia:active-hold");
+            sessionStorage.removeItem(activeHoldStorageKey);
           }
         }
       } catch {
@@ -1359,12 +1487,15 @@ const platformAdapter: BookingAdapter = {
     if (platformMode() !== "preview") {
       throw new Error("This booking can no longer be cancelled online.");
     }
+    if (!seededPreviewCourt) {
+      throw new Error("No preview booking exists for this tenant.");
+    }
     await delay(450);
     return {
       reference,
       status: "cancelled",
       date: "2026-08-16",
-      courtId: previewCourts[0].id,
+      courtId: seededPreviewCourt.id,
       startHour: 18,
       durationHours: 2,
       amount: 800,
@@ -1373,9 +1504,9 @@ const platformAdapter: BookingAdapter = {
   },
 };
 
-function getManilaToday() {
+function getTenantToday() {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: "Asia/Manila",
+    timeZone: activeTenant.identity.timezone,
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
@@ -1387,7 +1518,7 @@ function getManilaToday() {
 }
 
 function getDateOptions(count = 14) {
-  const today = getManilaToday();
+  const today = getTenantToday();
 
   return Array.from({ length: count }, (_, index) => {
     const date = new Date(today);
@@ -1408,7 +1539,7 @@ function getDateOptions(count = 14) {
         month: "short",
         timeZone: "UTC",
       }).format(date),
-      long: new Intl.DateTimeFormat("en-PH", {
+      long: new Intl.DateTimeFormat(activeTenant.identity.locale, {
         weekday: "long",
         month: "long",
         day: "numeric",
@@ -1422,9 +1553,9 @@ function getDateOptions(count = 14) {
 
 function peso(amount: number) {
   const hasCentavos = Math.abs(amount - Math.round(amount)) > 0.0001;
-  return new Intl.NumberFormat("en-PH", {
+  return new Intl.NumberFormat(activeTenant.identity.locale, {
     style: "currency",
-    currency: "PHP",
+    currency: activeTenant.identity.currency,
     minimumFractionDigits: hasCentavos ? 2 : 0,
     maximumFractionDigits: 2,
   }).format(amount);
@@ -1461,7 +1592,16 @@ export function BookingExperience({
   const isHome = surface === "home";
   const isCourtsPage = surface === "courts";
   const isBookingPage = surface === "booking";
-  const [dateHorizon, setDateHorizon] = useState<number>(activeTenant.booking.maximumAdvanceDays);
+  const configuredAdvanceDays = optionalBookingNumber(activeTenant.booking.maximumAdvanceDays);
+  const previewHours = configuredPreviewHours();
+  const previewSetupReady =
+    previewCourts.length > 0 &&
+    previewHourlyRates().length > 0 &&
+    previewHours !== null &&
+    optionalBookingNumber(activeTenant.booking.minimumHours) !== null &&
+    optionalBookingNumber(activeTenant.booking.maximumHours) !== null &&
+    configuredAdvanceDays !== null;
+  const [dateHorizon, setDateHorizon] = useState<number>(configuredAdvanceDays ?? 1);
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
@@ -1473,8 +1613,8 @@ export function BookingExperience({
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
   const [, setSelectedCourtId] = useState(() => {
-    if (isLive) return previewCourts[0].id;
-    return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0].id;
+    if (isLive) return "";
+    return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0]?.id ?? "";
   });
   const [selectionState, dispatchSelection] = useReducer(selectionReducer, {
     items: [],
@@ -1531,14 +1671,20 @@ export function BookingExperience({
     return displayCourtsFromPlatform(bootstrap?.courts ?? []);
   }, [bootstrap, bootstrapState, isLive]);
   const galleryPhotos = useMemo(() => galleryPhotosFromPlatform(bootstrap), [bootstrap]);
+  const venueLocationLabel =
+    (typeof bootstrap?.business?.locationLabel === "string"
+      ? bootstrap.business.locationLabel.trim()
+      : "") ||
+    activeTenant.venue.locationLabel ||
+    activeTenant.venue.address ||
+    null;
   const startingHourlyRate = useMemo(
     () =>
       isLive
         ? getMinimumConfiguredHourlyRate(bootstrap?.courts ?? [])
-        : Math.min(
-            activeTenant.booking.offPeakHourlyRate,
-            activeTenant.booking.peakHourlyRate,
-          ),
+        : previewHourlyRates().length
+          ? Math.min(...previewHourlyRates())
+          : null,
     [bootstrap, isLive],
   );
   const selectedSlotDetails = useMemo(
@@ -1604,7 +1750,7 @@ export function BookingExperience({
     (method) => (method.methodCode ?? method.code ?? "").toLowerCase() === "gcash",
   ) ?? null;
   const paymentMethodCode = paymentMethod?.methodCode ?? paymentMethod?.code ?? "gcash";
-  const paymentLabel = paymentMethod?.displayName ?? "GCash";
+  const paymentLabel = paymentMethod?.displayName ?? "Payment";
   const paymentAccountName = paymentMethod?.accountName?.trim() ?? "";
   const paymentAccountNumber = (
     paymentMethod?.accountNumber ?? paymentMethod?.accountReference ?? ""
@@ -1673,12 +1819,15 @@ export function BookingExperience({
       ? Math.max(0, Math.ceil((holdExpiryTimestamp - holdNow) / 1000))
       : null;
   const liveBookingReady =
-    !isLive ||
-    (bootstrapState === "ready" &&
+    Boolean(activeTenant.activation.publicBookingEnabled) &&
+      bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
+      Boolean(bootstrap?.courts.length) &&
       paymentAccountReady &&
       Boolean(policyVersion) &&
-      bookingFee !== null);
+      bookingFee !== null;
+  const bookingSetupReady = isLive ? liveBookingReady : previewSetupReady;
+  const checkingLiveSetup = isLive && bootstrapState === "loading";
   const availabilityBootstrapState = isLive ? bootstrapState : "ready";
   const visibleAvailabilityState =
     scheduleDate === selectedDate ? availabilityState : "loading";
@@ -1733,7 +1882,7 @@ export function BookingExperience({
       let parsed: { record: BookingRecord; token: string };
 
       try {
-        const pointerValue = sessionStorage.getItem("dinktopia:active-hold");
+        const pointerValue = sessionStorage.getItem(activeHoldStorageKey);
         if (!pointerValue) return;
         const candidatePointer = JSON.parse(pointerValue) as Partial<typeof pointer>;
         if (
@@ -1742,7 +1891,7 @@ export function BookingExperience({
           typeof candidatePointer.clientRequestId !== "string" ||
           !candidatePointer.clientRequestId
         ) {
-          sessionStorage.removeItem("dinktopia:active-hold");
+          sessionStorage.removeItem(activeHoldStorageKey);
           return;
         }
         pointer = {
@@ -1751,10 +1900,10 @@ export function BookingExperience({
         };
 
         const storedValue = sessionStorage.getItem(
-          `dinktopia:booking:${pointer.reference}`,
+          bookingStorageKey(pointer.reference),
         );
         if (!storedValue) {
-          sessionStorage.removeItem("dinktopia:active-hold");
+          sessionStorage.removeItem(activeHoldStorageKey);
           return;
         }
         const candidateStored = JSON.parse(storedValue) as {
@@ -1767,7 +1916,7 @@ export function BookingExperience({
           typeof candidateStored.token !== "string" ||
           !candidateStored.token
         ) {
-          sessionStorage.removeItem("dinktopia:active-hold");
+          sessionStorage.removeItem(activeHoldStorageKey);
           return;
         }
         parsed = {
@@ -1776,7 +1925,7 @@ export function BookingExperience({
         };
       } catch {
         try {
-          sessionStorage.removeItem("dinktopia:active-hold");
+          sessionStorage.removeItem(activeHoldStorageKey);
         } catch {
           // Storage can be unavailable in hardened browser modes.
         }
@@ -1819,7 +1968,7 @@ export function BookingExperience({
       };
       try {
         sessionStorage.setItem(
-          `dinktopia:booking:${restored.reference}`,
+          bookingStorageKey(restored.reference),
           JSON.stringify({ ...parsed, record: restored }),
         );
       } catch {
@@ -1850,8 +1999,8 @@ export function BookingExperience({
 
       if (restored.status === "confirmed" || restored.status === "payment_review") {
         try {
-          sessionStorage.removeItem("dinktopia:active-hold");
-          sessionStorage.removeItem(`dinktopia:pending:${pointer.clientRequestId}`);
+          sessionStorage.removeItem(activeHoldStorageKey);
+          sessionStorage.removeItem(pendingBookingStorageKey(pointer.clientRequestId));
         } catch {
           // The authoritative status is still safe to show without payment controls.
         }
@@ -1905,7 +2054,7 @@ export function BookingExperience({
   }, [isBookingPage, step]);
 
   useEffect(() => {
-    if (!isBookingPage) return;
+    if (!isBookingPage || !bookingSetupReady) return;
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
@@ -1925,7 +2074,7 @@ export function BookingExperience({
 
     adapter
       .getAvailability({
-        tenantSlug: "dinktopia",
+        tenantSlug: activeTenant.identity.slug,
         date: selectedDate,
       })
       .then((nextSchedule) => {
@@ -1954,7 +2103,7 @@ export function BookingExperience({
     return () => {
       active = false;
     };
-  }, [adapter, availabilityBootstrapState, availabilityRetry, isBookingPage, isLive, selectedDate]);
+  }, [adapter, availabilityBootstrapState, availabilityRetry, bookingSetupReady, isBookingPage, isLive, selectedDate]);
 
   useEffect(() => {
     if (!pendingBooking) bookingAttemptIdRef.current = "";
@@ -2065,7 +2214,11 @@ export function BookingExperience({
       setPaymentError("Booking setup could not be loaded. Refresh the page before trying again.");
       return;
     }
-    if (isLive && !bootstrap?.readiness.publicBookingEnabled) {
+    if (
+      isLive &&
+      (!activeTenant.activation.publicBookingEnabled ||
+        !bootstrap?.readiness.publicBookingEnabled)
+    ) {
       setPaymentError("Online booking is not active for this venue yet.");
       return;
     }
@@ -2100,7 +2253,7 @@ export function BookingExperience({
         durationHours: 1,
       };
       const booking = await adapter.createHold({
-        tenantSlug: "dinktopia",
+        tenantSlug: activeTenant.identity.slug,
         date: selectedDate,
         courtId: primary.courtId,
         startHour: primary.startHour,
@@ -2109,7 +2262,7 @@ export function BookingExperience({
         items: selectedSlots,
         customer,
         policyAccepted: true,
-        policyVersion: isLive ? policyVersion : "dinktopia-provisional-v1",
+        policyVersion: isLive ? policyVersion : `${activeTenant.identity.slug}-provisional-v1`,
         clientRequestId,
         atomicMultiSessionBooking,
         detailsPending: true,
@@ -2259,27 +2412,32 @@ export function BookingExperience({
       ? Math.max(...sessions.map((item) => item.startHour + item.durationHours))
       : confirmedBooking.startHour + confirmedBooking.durationHours;
     const calendarDate = confirmedBooking.date.replaceAll("-", "");
-    const courtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || "Dinktopia court";
+    const courtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || `${activeTenant.identity.shortName} court`;
     const escapeCalendar = (value: string) => value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll(";", "\\;").replaceAll("\n", "\\n");
+    const uidDomain = tenantCalendarUidDomain();
     const calendar = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//Dinktopia//Court Booking//EN",
+      `PRODID:-//${activeTenant.identity.name}//Court Booking//EN`,
       "BEGIN:VEVENT",
-      `UID:${escapeCalendar(confirmedBooking.reference)}@dinktopia.pages.dev`,
+      `UID:${escapeCalendar(confirmedBooking.reference)}@${uidDomain}`,
       `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`,
-      `DTSTART;TZID=Asia/Manila:${calendarDate}T${String(earliestHour).padStart(2, "0")}0000`,
-      `DTEND;TZID=Asia/Manila:${calendarDate}T${String(latestHour).padStart(2, "0")}0000`,
-      `SUMMARY:${escapeCalendar(`Pickleball at Dinktopia · ${courtNames}`)}`,
+      `DTSTART;TZID=${activeTenant.identity.timezone}:${calendarDate}T${String(earliestHour).padStart(2, "0")}0000`,
+      `DTEND;TZID=${activeTenant.identity.timezone}:${calendarDate}T${String(latestHour).padStart(2, "0")}0000`,
+      `SUMMARY:${escapeCalendar(`Pickleball at ${activeTenant.identity.shortName} · ${courtNames}`)}`,
       `DESCRIPTION:${escapeCalendar(`Booking reference: ${confirmedBooking.reference}`)}`,
-      `LOCATION:${escapeCalendar(bootstrap?.tenant.locationLabel || "Dinktopia Court Hub")}`,
+      `LOCATION:${escapeCalendar(
+        (typeof bootstrap?.business?.locationLabel === "string"
+          ? bootstrap.business.locationLabel
+          : null) || activeTenant.venue.locationLabel || "Location details coming soon",
+      )}`,
       "END:VEVENT",
       "END:VCALENDAR",
     ].join("\r\n");
     const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = `dinktopia-${confirmedBooking.reference.toLowerCase()}.ics`;
+    link.download = `${activeTenant.identity.slug}-${confirmedBooking.reference.toLowerCase()}.ics`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -2288,12 +2446,13 @@ export function BookingExperience({
 
   async function shareConfirmation() {
     if (!confirmedBooking) return;
-    const shareText = `Dinktopia booking ${confirmedBooking.reference} · ${selectedBookingDateLabel || confirmedBooking.date} · ${selectedCourtCount} court${selectedCourtCount === 1 ? "" : "s"}`;
+    const shareText = `${activeTenant.identity.shortName} booking ${confirmedBooking.reference} · ${selectedBookingDateLabel || confirmedBooking.date} · ${selectedCourtCount} court${selectedCourtCount === 1 ? "" : "s"}`;
+    const shareUrl = `${window.location.origin}/book`;
     try {
       if (navigator.share) {
-        await navigator.share({ title: "Dinktopia court booking", text: shareText, url: window.location.origin + "/book" });
+        await navigator.share({ title: `${activeTenant.identity.name} court booking`, text: shareText, url: shareUrl });
       } else {
-        await navigator.clipboard?.writeText(`${shareText}\n${window.location.origin}/book`);
+        await navigator.clipboard?.writeText(`${shareText}\n${shareUrl}`);
         setLiveMessage("Booking details copied. Share them with your players.");
       }
     } catch {
@@ -2303,10 +2462,10 @@ export function BookingExperience({
 
   function clearHoldForReselection(message: string) {
     try {
-      sessionStorage.removeItem("dinktopia:active-hold");
+      sessionStorage.removeItem(activeHoldStorageKey);
       if (bookingAttemptIdRef.current) {
         sessionStorage.removeItem(
-          `dinktopia:pending:${bookingAttemptIdRef.current}`,
+          pendingBookingStorageKey(bookingAttemptIdRef.current),
         );
       }
     } catch {
@@ -2434,21 +2593,28 @@ export function BookingExperience({
   const confirmationEarliestHour = selectedSlots.length ? Math.min(...selectedSlots.map((item) => item.startHour)) : confirmedBooking?.startHour ?? 0;
   const confirmationLatestHour = selectedSlots.length ? Math.max(...selectedSlots.map((item) => item.startHour + item.durationHours)) : (confirmedBooking?.startHour ?? 0) + (confirmedBooking?.durationHours ?? 1);
   const confirmationTimeLabel = selectedSlots.length ? formatHourRange(confirmationEarliestHour, confirmationLatestHour) : "Time in booking record";
+  const tenantBrandStyle = {
+    "--tenant-primary": activeTenant.brand.primary,
+    "--tenant-paper": activeTenant.brand.paper,
+    "--tenant-electric": activeTenant.brand.electric,
+    "--tenant-accent": activeTenant.brand.citrus,
+    "--tenant-warm": activeTenant.brand.coral,
+  } as CSSProperties;
   const gallerySection = (
     <section className="club-gallery section-pad" id="gallery" aria-labelledby="gallery-heading">
       <div className="site-container">
         <div className="gallery-heading">
           <div>
             <p className="eyebrow eyebrow-dark">Court gallery</p>
-            <h2 id="gallery-heading">See the space before you play.</h2>
+            <h2 id="gallery-heading">Get to know the K&amp;L courts.</h2>
           </div>
-          <p>Fresh photos published by the Dinktopia team.</p>
+          <p>Only verified venue photos published by the {activeTenant.identity.shortName} team appear here.</p>
         </div>
 
         {galleryPhotos.length ? (
           <div
             className={`gallery-grid${galleryPhotos.length === 5 ? " is-bento" : ""}`}
-            aria-label="Dinktopia court gallery"
+            aria-label={`${activeTenant.identity.name} court gallery`}
             role="region"
             tabIndex={0}
           >
@@ -2468,15 +2634,13 @@ export function BookingExperience({
             ))}
           </div>
         ) : (
-          <div className="gallery-empty">
-            <div className="gallery-empty-frames" aria-hidden="true">
-              <span>01</span><span>02</span><span>+</span>
-            </div>
-            <div>
-              <p className="eyebrow eyebrow-dark">Gallery ready</p>
-              <h3>Court photos are coming soon.</h3>
-              <p>Fresh court photos will appear here after the Dinktopia team publishes them.</p>
-            </div>
+          <div className="gallery-grid gallery-grid-placeholder" aria-label="Court gallery setup status">
+            {["Court photos pending", "Venue photos pending", "K&L updates pending"].map((label, index) => (
+              <figure className={`gallery-card gallery-placeholder gallery-placeholder-${index + 1}`} key={label}>
+                <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
+                <figcaption>{label}</figcaption>
+              </figure>
+            ))}
           </div>
         )}
       </div>
@@ -2484,19 +2648,22 @@ export function BookingExperience({
   );
 
   return (
-    <div className={`dinktopia-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}>
+    <div
+      className={`dinktopia-site kl-court-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}
+      style={tenantBrandStyle}
+    >
       {isBookingPage ? (
         <div className="preview-ribbon" role="status">
-          <strong>{isLive ? "Live booking" : "Setup preview"}</strong>
-          <span>{isLive ? "Court availability and payments are connected." : "No live reservations or payments are created."}</span>
+          <strong>{bookingSetupReady ? "Live booking" : "Setup in progress"}</strong>
+          <span>{bookingSetupReady ? "Court availability and payments are connected." : "Public reservations and payments remain disabled."}</span>
         </div>
-      ) : !isLive && (
+      ) : !bookingSetupReady && (
         <div className="preview-ribbon" role="status">
-          <strong>Setup preview</strong><span>No live reservations or payments are created.</span>
+          <strong>Setup in progress</strong><span>Public reservations and payments remain disabled.</span>
         </div>
       )}
       {isBookingPage && (
-        <header className={`booking-app-header ${!isLive ? "has-preview-ribbon" : ""}`}>
+        <header className={`booking-app-header ${!bookingSetupReady ? "has-preview-ribbon" : ""}`}>
           <div className="booking-app-mobile-bar">
             <button
               className="booking-app-menu-button"
@@ -2512,16 +2679,14 @@ export function BookingExperience({
           </div>
           <div className="booking-app-desktop-bar">
             <div className="booking-app-title">
-              <small>Dinktopia Court Hub</small>
+              <small>{activeTenant.identity.name}</small>
               <strong>Book a court</strong>
             </div>
             <div className="booking-app-actions">
-              <label className="booking-app-search">
-                <span aria-hidden="true">⌕</span>
-                <input type="search" placeholder="Search bookings and players" aria-label="Search bookings and players" />
-                <kbd>⌘ K</kbd>
-              </label>
-              <Link className="booking-app-notification" href="/book?mode=manage" aria-label="Manage booking notifications">♧<b>2</b></Link>
+              <span className={`booking-app-status ${bookingSetupReady ? "is-live" : "is-setup"}`}>
+                <i aria-hidden="true" /> {bookingSetupReady ? "Booking live" : "Setup in progress"}
+              </span>
+              <Link className="booking-app-manage-link" href="/book?mode=manage">Manage booking</Link>
             </div>
           </div>
           <nav
@@ -2536,20 +2701,9 @@ export function BookingExperience({
           </nav>
         </header>
       )}
-      {!isBookingPage && <header className={`site-header ${!isLive ? "has-preview-ribbon" : ""}`}>
+      {!isBookingPage && <header className={`site-header ${!bookingSetupReady ? "has-preview-ribbon" : ""}`}>
         <div className="site-container header-inner">
-          <Link className="wordmark" href="/" aria-label="Dinktopia home">
-            <Image
-              className="brand-logo"
-              src="/dinktopia-logo.png"
-              alt=""
-              width={2046}
-              height={769}
-              sizes="(max-width: 390px) 128px, (max-width: 779px) 132px, 164px"
-              unoptimized
-              priority
-            />
-          </Link>
+          <TenantWordmark priority />
           <button
             className="menu-button"
             type="button"
@@ -2599,15 +2753,29 @@ export function BookingExperience({
         {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
-              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>Welcome to your next favorite habit</span></p>
+              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>{activeTenant.identity.name} · {bookingSetupReady ? "Live booking" : "Setup preview"}</span></p>
               <h1>
-                Your next rally
-                <span>starts here.</span>
+                A court for your crew.
+                <span>A place to rally.</span>
               </h1>
               <p className="hero-lede">
-                Good games should be easy to find. Pick your court, lock in an hour,
-                and meet your crew on the bright side of the net.
+                {bookingSetupReady
+                  ? `Choose an available ${activeTenant.identity.shortName} court, reserve your time, and bring your crew.`
+                  : `${activeTenant.identity.name} is preparing its online court guide and booking experience. Verified venue details will appear as they are published.`}
               </p>
+              {venueLocationLabel ? (
+                <div className="hero-location">
+                  <span className="hero-location-icon" aria-hidden="true">⌖</span>
+                  <span className="hero-location-copy"><small>Find the venue</small><strong>{venueLocationLabel}</strong></span>
+                  <span className="hero-location-action" aria-hidden="true">↗</span>
+                </div>
+              ) : (
+                <div className="hero-location hero-location-pending" role="status">
+                  <span className="hero-location-icon" aria-hidden="true">⌖</span>
+                  <span className="hero-location-copy"><small>Venue location</small><strong>Location details coming soon</strong></span>
+                  <span className="hero-location-action" aria-hidden="true">•••</span>
+                </div>
+              )}
               <div className="hero-actions">
                 <Link className="button button-lime button-large" href="/book">
                   Book a court <span aria-hidden="true">→</span>
@@ -2617,9 +2785,9 @@ export function BookingExperience({
                 </a>
               </div>
               <ul className="hero-proof" aria-label="Booking highlights">
-                <li><strong>{displayCourts.length}</strong><span>{isLive ? "bookable courts" : "preview courts"}</span></li>
+                <li><strong>{displayCourts.length || "Courts soon"}</strong><span>{displayCourts.length ? (isLive ? "bookable courts" : "preview courts") : "setup in progress"}</span></li>
                 <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>per court-hour</span></li>
-                <li><strong>24/7</strong><span>live availability</span></li>
+                <li><strong>{bookingSetupReady ? "24/7" : "Coming soon"}</strong><span>{bookingSetupReady ? "live availability" : "booking access"}</span></li>
               </ul>
             </div>
 
@@ -2633,23 +2801,19 @@ export function BookingExperience({
                 <div className="court-player court-player-one" />
                 <div className="court-player court-player-two" />
                 <div className="court-ball" />
-                <span className="court-label court-label-one">DINK</span>
-                <span className="court-label court-label-two">TOPIA</span>
+                <span className="court-label court-label-one">{tenantHeroCourtLabels[0]}</span>
+                <span className="court-label court-label-two">{tenantHeroCourtLabels[1]}</span>
               </div>
-              <div className="score-card">
-                <div><span>COURT</span><strong>01</strong></div>
-                <div><span>NEXT OPEN</span><strong>07:00</strong></div>
-                <span className="score-live"><i aria-hidden="true" /> LIVE</span>
-              </div>
-              <div className="floating-note">
-                <span className="floating-note-icon" aria-hidden="true">↗</span>
-                <p><strong>One tap closer</strong><br />to your next game</p>
+              <div className="hero-visual-note">
+                <small>{bookingSetupReady ? "Ready when you are" : "Venue setup"}</small>
+                <strong>{bookingSetupReady ? "Book your next rally" : "Details coming soon"}</strong>
+                <span>{bookingSetupReady ? "Live court availability" : "No live reservations yet"}</span>
               </div>
             </div>
           </div>
-          <div className="ticker">
+          <div className="home-benefits">
             <p id={`${formId}-ticker-copy`} className="sr-only">
-              Play more. Rally often. Stay focused. New habit.
+              Local courts. Good rallies. Your crew. K&amp;L Pickleball.
             </p>
             <input
               id={`${formId}-ticker-motion`}
@@ -2657,11 +2821,11 @@ export function BookingExperience({
               type="checkbox"
               aria-label="Pause or resume moving club phrases"
             />
-            <label className="ticker-viewport" htmlFor={`${formId}-ticker-motion`}>
+            <label className="home-marquee ticker-viewport" htmlFor={`${formId}-ticker-motion`}>
               <span className="ticker-track" aria-hidden="true">
                 {[0, 1].map((copy) => (
                   <span
-                    className={`ticker-group${copy === 1 ? " ticker-group-clone" : ""}`}
+                    className={`home-marquee-sequence ticker-group${copy === 1 ? " ticker-group-clone" : ""}`}
                     key={copy}
                   >
                     {tickerPhrases.map((phrase) => (
@@ -2678,6 +2842,23 @@ export function BookingExperience({
 
         {isHome && gallerySection}
 
+        {isHome && <section className="club-note">
+          <div className="site-container club-note-inner community-hub">
+            <div className="community-intro">
+              <p className="eyebrow">Built for K&amp;L</p>
+              <h2>The local court board is taking shape.</h2>
+              <p>Verified announcements and official community channels will appear after the {activeTenant.identity.shortName} team publishes them.</p>
+            </div>
+            <div className="community-links" aria-label="Community channels setup status">
+              <article className="community-card community-card-featured">
+                <span className="community-mark" aria-hidden="true">{activeTenant.identity.shortName}</span>
+                <span className="community-card-copy"><small>Launch status</small><strong>Official updates coming soon</strong></span>
+                <span className="community-status-dot" aria-hidden="true" />
+              </article>
+            </div>
+          </div>
+        </section>}
+
         {isCourtsPage && <section className="court-discovery section-pad" id="courts">
           <div className="site-container">
             <div className="section-heading">
@@ -2688,7 +2869,9 @@ export function BookingExperience({
               <p>
                 {isLive && bootstrapState !== "ready"
                   ? "Loading configured courts."
-                  : `${isLive ? `${courtDirectoryCourts.length} configured courts` : `${previewCourts.length} dedicated preview courts`}, designed for quick games, long rallies, and the happy blur in between.`}
+                  : courtDirectoryCourts.length
+                    ? `${isLive ? `${courtDirectoryCourts.length} configured courts` : `${previewCourts.length} dedicated preview courts`}, designed for quick games, long rallies, and the happy blur in between.`
+                    : "Court details will appear after management setup is complete."}
               </p>
             </div>
             {isLive && bootstrapState !== "ready" ? (
@@ -2713,7 +2896,7 @@ export function BookingExperience({
                   </h3>
                   <p>
                     {bootstrapState === "loading"
-                      ? "We’ll show booking links after the Dinktopia courts are verified."
+                      ? `We’ll show booking links after the ${activeTenant.identity.shortName} courts are verified.`
                       : "Please refresh before choosing a court. Preview links stay hidden in live mode."}
                   </p>
                 </div>
@@ -2737,7 +2920,7 @@ export function BookingExperience({
                       <h3>{court.name}</h3>
                       <div className="court-card-meta">
                         <span>{court.mood}</span>
-                        <span>From ₱300 / hour</span>
+                        <span>{startingHourlyRate === null ? "Rates coming soon" : `From ${peso(startingHourlyRate)} / hour`}</span>
                       </div>
                       <Link
                         className="button court-button"
@@ -2756,7 +2939,7 @@ export function BookingExperience({
                 <div>
                   <p className="eyebrow eyebrow-dark">No published courts</p>
                   <h3>Court booking is not open yet.</h3>
-                  <p>The Dinktopia team will publish bookable courts here when setup is complete.</p>
+                  <p>The {activeTenant.identity.shortName} team will publish bookable courts here when setup is complete.</p>
                 </div>
               </div>
             )}
@@ -2772,8 +2955,8 @@ export function BookingExperience({
             </div>
             <ol className="how-list">
               <li><span>01</span><div><h3>Build your court plan</h3><p>See every active court and select exact court-hours.</p></div></li>
-              <li><span>02</span><div><h3>Bring your crew</h3><p>Book one to three whole hours, up to 30 days ahead.</p></div></li>
-              <li><span>03</span><div><h3>Pay, then play</h3><p>Send your GCash receipt and get a booking reference.</p></div></li>
+              <li><span>02</span><div><h3>Bring your crew</h3><p>{previewSetupReady ? `Book ${activeTenant.booking.minimumHours} to ${activeTenant.booking.maximumHours} whole hours, up to ${activeTenant.booking.maximumAdvanceDays} days ahead.` : "Booking limits and advance windows will appear after setup."}</p></div></li>
+              <li><span>03</span><div><h3>Pay, then play</h3><p>{previewSetupReady ? "Send your payment receipt and get a booking reference." : "Payment instructions will appear only after the venue publishes them."}</p></div></li>
             </ol>
           </div>
         </section>}
@@ -2804,31 +2987,31 @@ export function BookingExperience({
             </div>
 
             {mode === "book" && step === 1 && (
-              <div className="booking-venue-hero player-hero player-hero-image" aria-label="Dinktopia Court Hub booking">
+              <div className="booking-venue-hero player-hero player-hero-image" aria-label={`${activeTenant.identity.name} booking`}>
                 <div className="booking-venue-hero-copy">
-                  <span className="booking-venue-mark" aria-hidden="true">DT</span>
+                  <span className="booking-venue-mark" aria-hidden="true">{activeTenant.identity.shortName}</span>
                   <div>
                     <p>Book direct</p>
-                    <h2>Book court time in seconds.</h2>
-                    <span>Tap any open slot. Choose as many courts and times as you need, then check out once.</span>
+                    <h2>Choose your K&amp;L court time.</h2>
+                    <span>{bookingSetupReady ? "Tap an open slot, review your court time, and check out once." : "Live courts and times will appear only after the K&L setup is verified."}</span>
                   </div>
                 </div>
                 <span className="booking-venue-location">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
-                  Dinktopia Court Hub
+                  {activeTenant.identity.name}
                 </span>
               </div>
             )}
 
-            {mode === "book" && isLive && !liveBookingReady ? (
-              <div className="setup-unavailable-card" role={bootstrapState === "loading" ? "status" : "alert"}>
-                <span className={bootstrapState === "loading" ? "spinner" : "setup-unavailable-symbol"} aria-hidden="true">{bootstrapState === "loading" ? "" : "!"}</span>
+            {mode === "book" && !bookingSetupReady ? (
+              <div className="setup-unavailable-card" role={checkingLiveSetup || !isLive ? "status" : "alert"}>
+                <span className={checkingLiveSetup ? "spinner" : "setup-unavailable-symbol"} aria-hidden="true">{checkingLiveSetup ? "" : "!"}</span>
                 <div>
-                  <p className="eyebrow eyebrow-dark">{bootstrapState === "loading" ? "Checking venue setup" : "Online booking unavailable"}</p>
-                  <h3>{bootstrapState === "loading" ? "Loading the court board…" : "The clubhouse is still getting ready."}</h3>
-                  <p>{bootstrapState === "loading" ? "We’re confirming courts, policies, payment, and security." : "No payment instructions are shown until the venue, published policy, payment method, and security check are all active."}</p>
+                  <p className="eyebrow eyebrow-dark">{checkingLiveSetup ? "Checking venue setup" : !isLive ? "Setup in progress" : "Online booking unavailable"}</p>
+                  <h3>{checkingLiveSetup ? "Loading the court board…" : !isLive ? "Booking details are coming soon." : "K&L online booking is still being prepared."}</h3>
+                  <p>{checkingLiveSetup ? "We’re confirming courts, policies, payment, and security." : !isLive ? "Courts, hours, rates, payment instructions, and policies will appear after they are configured in the management system." : "No payment instructions are shown until the venue, published policy, payment method, and security check are all active."}</p>
                 </div>
-                {bootstrapState !== "loading" && <Link className="button button-outline" href="/courts">Explore the preview courts</Link>}
+                {(isLive ? bootstrapState !== "loading" : true) && <Link className="button button-outline" href="/courts">View court setup status</Link>}
               </div>
             ) : mode === "book" ? (
               <div className="booking-shell">
@@ -3227,13 +3410,13 @@ export function BookingExperience({
                         </div>
                       ) : !heldPaymentReady ? (
                         <div className="payment-error" role="alert">
-                          <span aria-hidden="true">!</span><div><strong>GCash setup is incomplete</strong><p>The court owner must publish a GCash account in System Setup before payment can continue.</p></div>
+                          <span aria-hidden="true">!</span><div><strong>Payment setup is incomplete</strong><p>The court owner must publish a payment account in System Setup before payment can continue.</p></div>
                         </div>
                       ) : (
                         <>
                           <div className="owner-payment-note">
                             <span aria-hidden="true">✦</span>
-                            <div><strong>Pay the court owner directly</strong><small>Use the verified GCash details saved by the venue in System Setup.</small></div>
+                            <div><strong>Pay the court owner directly</strong><small>Use the verified {paymentLabel} details saved by the venue in System Setup.</small></div>
                           </div>
                           <div className="gcash-account-field">
                             <span>{paymentLabel} mobile number</span>
@@ -3295,7 +3478,7 @@ export function BookingExperience({
                         {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>Submit receipt · {peso(checkoutTotal)} <span aria-hidden="true">→</span></>}
                       </button>}
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
-                      <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s GCash details come directly from System Setup.</p>
+                      <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s payment details come directly from System Setup.</p>
                     </form>
                     <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} />
                   </div>
@@ -3317,7 +3500,7 @@ export function BookingExperience({
                             ? selectedCourtCount === 1 ? "Your court is ready." : "Your courts are ready."
                             : confirmationNeedsAttention
                               ? "Please review your payment."
-                              : "Dinktopia is reviewing your receipt."}
+                              : `${activeTenant.identity.shortName} is reviewing your receipt.`}
                       </h3>
                       <p className="rally-confirmation-lead">
                         {!isLive
@@ -3325,8 +3508,8 @@ export function BookingExperience({
                           : confirmationApproved
                             ? "Your payment is verified and your booking is confirmed. We’ll see you on court."
                             : confirmationNeedsAttention
-                              ? "The submitted receipt could not be approved. Check your payment details and use your booking reference when contacting the Dinktopia team."
-                              : "Your receipt was submitted successfully. The Dinktopia team is reviewing it now, and your booking will remain pending until payment is approved."}
+                              ? `The submitted receipt could not be approved. Check your payment details and use your booking reference when contacting the ${activeTenant.identity.shortName} team.`
+                              : `Your receipt was submitted successfully. The ${activeTenant.identity.shortName} team is reviewing it now, and your booking will remain pending until payment is approved.`}
                       </p>
 
                       <div className="rally-confirmation-reference">
@@ -3341,7 +3524,7 @@ export function BookingExperience({
                       <div className="rally-confirmation-details" aria-label="Booking summary">
                         <div><CalendarDays aria-hidden="true" /><span>Date &amp; time</span><strong>{selectedBookingDateLabel || confirmedBooking.date} · {confirmationTimeLabel}</strong></div>
                         <div><Grid2X2 aria-hidden="true" /><span>{selectedCourtCount === 1 ? "Court" : "Courts"}</span><strong>{confirmationCourtNames}</strong></div>
-                        <div><WalletCards aria-hidden="true" /><span>Paid with GCash</span><strong>{peso(confirmedBooking.amount)} · {confirmationApproved ? "Payment verified" : confirmationNeedsAttention ? "Needs attention" : "Review pending"}</strong></div>
+                        <div><WalletCards aria-hidden="true" /><span>Paid with {paymentLabel}</span><strong>{peso(confirmedBooking.amount)} · {confirmationApproved ? "Payment verified" : confirmationNeedsAttention ? "Needs attention" : "Review pending"}</strong></div>
                       </div>
 
                       <div className="rally-confirmation-actions">
@@ -3389,23 +3572,16 @@ export function BookingExperience({
           </div>
         </section>}
 
-        {isHome && <section className="club-note">
-          <div className="site-container club-note-inner">
-            <p className="eyebrow">Welcome to your next favorite habit</p>
-            <h2>Serious court.<br /><span>Playful spirit.</span></h2>
-            <Link className="button button-lime button-large" href="/book">Book a court <span aria-hidden="true">→</span></Link>
-          </div>
-        </section>}
       </main>
 
       <footer className="site-footer">
         <div className="site-container footer-grid">
-          <div><Link className="wordmark wordmark-footer" href="/" aria-label="Dinktopia home"><Image className="brand-logo" src="/dinktopia-logo.png" alt="" width={2046} height={769} sizes="212px" unoptimized /></Link><p>Good games live here.</p></div>
+          <div><TenantWordmark footer /><p>Local court time, made easy.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
-          <div><h2>Club hours</h2><p>Daily<br /><strong>6:00 AM–10:00 PM</strong></p><small>Asia/Manila · PHP</small></div>
+          <div><h2>Club hours</h2><p>{previewHours ? <>Daily<br /><strong>{formatClockLabel(previewHours.openingHour)}–{formatClockLabel(previewHours.closingHour)}</strong></> : <strong>Hours coming soon</strong>}</p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
         </div>
-        <div className="site-container footer-bottom"><span>© 2026 Dinktopia Pickleball Club</span><span>Made for longer rallies.</span></div>
+        <div className="site-container footer-bottom"><span>© 2026 {activeTenant.identity.name}</span><span>K&amp;L booking setup</span></div>
       </footer>
       <p className="sr-live" aria-live="polite" aria-atomic="true">{liveMessage}</p>
       <p className="sr-live" aria-live="polite" aria-atomic="true">{selectionState.announcement}</p>
@@ -3457,14 +3633,14 @@ function RallyBookingSummary({
       </div>
       <div className="summary-detail">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
-        <span><strong>Dinktopia Court Hub</strong><small>{activeTenant.venue.locationLabel}</small></span>
+        <span><strong>{activeTenant.identity.name}</strong><small>{activeTenant.venue.locationLabel || "Location details coming soon"}</small></span>
       </div>
       <div className="summary-price-lines">
         <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
         {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
       </div>
       <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
-      <p className="summary-note">Free cancellation up to 12 hours before your booking.</p>
+      <p className="summary-note">{activeTenant.booking.cancellation || "Cancellation details will appear after the venue publishes its policy."}</p>
     </aside>
   );
 }
@@ -3514,7 +3690,7 @@ function ManageBooking({
 }: ManageBookingProps) {
   const court = courts.find((item) => item.id === booking?.courtId) ?? courts[0];
   const formattedDate = booking
-    ? new Intl.DateTimeFormat("en-PH", {
+    ? new Intl.DateTimeFormat(activeTenant.identity.locale, {
         weekday: "long",
         month: "long",
         day: "numeric",
@@ -3533,13 +3709,13 @@ function ManageBooking({
         <p className="eyebrow">Your booking, your call</p>
         <h3>Check status or change plans.</h3>
         <p>Use the same device, booking reference, and email from checkout. No password or account required.</p>
-        {isPreview && <div className="manage-demo-note"><strong>Preview a found booking</strong><span>Reference: DT-260808-018<br />Email: mika@example.com</span></div>}
+        {isPreview && seededPreviewCourt && <div className="manage-demo-note"><strong>Preview a found booking</strong><span>Reference: DT-260808-018<br />Email: mika@example.com</span></div>}
       </div>
       <div className="manage-panel">
         <form className="lookup-form" onSubmit={onLookup} noValidate>
           <div className="form-field">
             <label htmlFor={`${formId}-lookup-reference`}>Booking reference</label>
-            <input id={`${formId}-lookup-reference`} value={reference} onChange={(event) => onReferenceChange(event.target.value.toUpperCase())} placeholder="DT-YYMMDD-000" autoComplete="off" />
+            <input id={`${formId}-lookup-reference`} value={reference} onChange={(event) => onReferenceChange(event.target.value.toUpperCase())} placeholder={`${activeTenant.identity.shortName.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "BK"}-YYMMDD-000`} autoComplete="off" />
           </div>
           <div className="form-field">
             <label htmlFor={`${formId}-lookup-email`}>Email address</label>
@@ -3549,9 +3725,9 @@ function ManageBooking({
         </form>
 
         {lookupState === "idle" && <div className="manage-placeholder"><span aria-hidden="true">⌕</span><p>Your booking details will appear here.</p></div>}
-        {lookupState === "loading" && <div className="manage-loading" role="status"><span className="spinner" aria-hidden="true" /><div><strong>Looking up your booking…</strong><small>Checking the Dinktopia board.</small></div></div>}
+        {lookupState === "loading" && <div className="manage-loading" role="status"><span className="spinner" aria-hidden="true" /><div><strong>Looking up your booking…</strong><small>Checking the {activeTenant.identity.shortName} board.</small></div></div>}
         {lookupState === "error" && <div className="state-card state-error" role="alert"><span className="state-symbol" aria-hidden="true">!</span><div><h4>Check those details</h4><p>Enter your booking reference and the email used at checkout, then try again.</p></div></div>}
-        {lookupState === "empty" && <div className="state-card state-empty" role="status"><span className="state-symbol" aria-hidden="true">?</span><div><h4>We couldn&apos;t find that booking.</h4><p>Check for typos. If it still won&apos;t show, the clubhouse team can help.</p></div><button className="button button-outline" type="button" onClick={onBook}>Start a new booking</button></div>}
+        {lookupState === "empty" && <div className="state-card state-empty" role="status"><span className="state-symbol" aria-hidden="true">?</span><div><h4>We couldn&apos;t find that booking.</h4><p>Check for typos. If it still won&apos;t show, contact the {activeTenant.identity.shortName} team through its verified support channel.</p></div><button className="button button-outline" type="button" onClick={onBook}>Start a new booking</button></div>}
 
         {lookupState === "found" && booking && (
           <div className={`managed-booking ${booking.status === "cancelled" ? "is-cancelled" : ""}`}>
@@ -3574,7 +3750,7 @@ function ManageBooking({
             {showRescheduleHelp && booking.status !== "cancelled" && !showCancel && (
               <div className="reschedule-help" role="status">
                 <span aria-hidden="true">↺</span>
-                <div><strong>{isPreview ? "Rescheduling preview" : "Rescheduling is owner-assisted"}</strong><p>{isPreview ? "This demonstrates where change options appear. No real court has been reserved." : "The venue owner or administrator moves confirmed bookings through the platform’s protected rescheduling flow. Online requests will become available after the clubhouse contact channel is activated."}</p><button type="button" onClick={() => navigator.clipboard?.writeText(booking.reference)}>Copy booking reference</button></div>
+                <div><strong>{isPreview ? "Rescheduling preview" : "Rescheduling is owner-assisted"}</strong><p>{isPreview ? "This demonstrates where change options appear. No real court has been reserved." : `The ${activeTenant.identity.shortName} owner or administrator moves confirmed bookings through the platform’s protected rescheduling flow. Online requests will become available after a verified support channel is activated.`}</p><button type="button" onClick={() => navigator.clipboard?.writeText(booking.reference)}>Copy booking reference</button></div>
               </div>
             )}
             {showCancel && booking.status === "pending_payment" && (

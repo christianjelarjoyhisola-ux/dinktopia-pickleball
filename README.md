@@ -1,37 +1,59 @@
-# Dinktopia Pickleball tenant frontend
+# K&L Pickleball Court tenant frontend
 
-Dinktopia is an original, responsive presentation layer for the shared
-multi-tenant pickleball booking platform. It does not contain a copied booking
-engine or a separate booking database. Public and manager operations use the
-existing Supabase control plane with the immutable slug `dinktopia`.
+This deployment is the K&L Pickleball Court tenant of the shared multi-tenant
+pickleball booking platform. It preserves the Dinktopia implementation as the
+design and functional reference while resolving customer-facing identity and
+tenant scope through `activeTenant`.
 
-## Safety state
+The original Dinktopia tenant configuration remains registered for its own
+deployment. This build fixes the active tenant at `kl-pickleball-court`;
+browser input cannot select or override that scope.
 
-The approved business values are provisional. The shared tenant is provisioned
-as `setup_required`, and live public booking stays disabled until the platform
-owner configures an exact domain, real courts and prices, billing and remittance
-details, a payment destination, contact information, and the first owner.
+## Safety and setup state
+
+K&L is intentionally provisioned as `setup_required`, with provisional preview
+mode enabled and public booking disabled. The deployment hostname
+`klpickleball.pages.dev` is configured as the tenant's production origin. No
+venue address, court inventory, operating hours, prices, payment destination,
+contact details, or booking policies are invented in this repository. Missing
+operational data is shown as setup-in-progress or coming-soon content and must
+later be entered through the management system.
+
+The initial K&L brand direction is a warm, welcoming neighborhood club, using
+the tagline “Your local court. Your next rally.” and a forest, cream, citrus, and coral
+palette. The current text wordmark remains temporary, and no social sharing
+image is configured until an approved K&L-owned asset is available.
 
 When the public Supabase values are absent, the UI runs in a clearly marked
-private preview mode. Preview submissions are simulated in memory and never
-write customer data. When those values are present, the adapter uses only:
+private preview mode. Preview activity is non-authoritative and must not write
+customer data. A live transport is allowed only when the tenant has a configured
+production domain and the current origin exactly matches it; a missing or
+mismatched origin fails closed. Public booking and live mutations remain gated
+by platform readiness, authentication, authorization, and tenant checks.
 
-- the fixed `dinktopia` tenant slug;
-- the shared Supabase project URL;
-- a browser-safe publishable key; and
-- the public Turnstile site key.
+The browser supplies the immutable active slug, never a tenant UUID. The shared
+backend derives the tenant from that slug and the registered request origin,
+then enforces tenant scope with RLS and tenant-aware database constraints.
+Booking recovery, browser storage, policy versions, calendar exports, download
+filenames, email context, and share content are likewise namespaced from the
+active tenant configuration.
 
-The browser never supplies a tenant UUID. The shared backend derives the tenant
-from the exact slug and registered request origin, then enforces tenant scope
-with RLS and tenant-aware database constraints.
+## Configuration still required
 
-The current `/manage` route is a private onboarding and operations preview. In
-live mode it can authenticate and read tenant-scoped bookings, blocks, and
-activation readiness, but all owner mutations remain deliberately disabled.
-The shared backend already owns the guarded court, schedule, block, booking,
-payment-review, and rescheduling contracts; those must be connected and tested
-from Dinktopia's final registered origin after the first owner and real venue
-configuration exist. The preview does not imitate production authority.
+Configure these through the management system before launch:
+
+- official logo and brand assets;
+- address, map/location information, and contact details;
+- court count and court information;
+- operating hours, rates, and pricing periods;
+- confirmation that `klpickleball.pages.dev` is registered as the verified
+  production origin in the shared platform;
+- payment methods, recipient details, and instructions;
+- cancellation, rescheduling, refund, and booking policies; and
+- the initial authorized owner and platform readiness approvals.
+
+The temporary text wordmark uses the existing logo container dimensions, so an
+official K&L logo can replace it without redesigning the pages.
 
 ## Local development
 
@@ -50,26 +72,27 @@ secrets, or court-owner passwords in this repository.
 
 ```text
 npm run lint
-npm run build
+npx tsc --noEmit
 npm test
 ```
 
-The frontend contract tests verify the tenant registry boundary, browser-safe
-configuration, rendered customer and manager routes, accessibility landmarks,
-and removal of the starter preview. The shared backend repository owns the
-database/RLS/concurrency tests.
+`npm test` runs the production build before the Node contract tests. The tests
+verify the active K&L registry boundary, preservation of Dinktopia's registered
+configuration, browser-safe and origin-bound platform access, tenant-scoped
+customer artifacts, setup gates, rendered customer and manager routes, and
+accessibility behavior. The shared backend remains authoritative for database,
+RLS, and concurrency verification.
 
 ## Architecture map
 
-- `app/tenants/dinktopia/` — provisional Dinktopia-owned configuration.
-- `app/tenants/registry.ts` — the single tenant registry boundary.
+- `app/tenants/kl-pickleball-court/` — K&L identity with nullable operational setup values.
+- `app/tenants/dinktopia/` — preserved Dinktopia tenant configuration.
+- `app/tenants/registry.ts` — fixed deployment registry and `activeTenant` boundary.
 - `app/lib/platform/` — shared Supabase/Edge Function adapter and public types.
-- `app/booking-experience.tsx` — customer booking composition.
-- `app/manage/` — tenant-scoped owner workspace.
-- `operations/` — impact inventory and guarded production onboarding notes.
-- `public/og.png` — original Dinktopia social artwork generated for this site.
+- `app/booking-experience.tsx` — tenant-aware customer booking composition.
+- `app/manage/` — tenant-scoped onboarding and owner workspace.
+- `operations/` — tenant-aware backend migrations and production onboarding notes.
 
 Shared booking, availability, payment, email, cancellation, rescheduling,
-management, audit, RLS, and overlap protection remain in:
-
-`D:\pickleball-booking-platform-backend-email-fix`
+management, audit, RLS, and overlap protection remain in the shared Supabase
+control plane.

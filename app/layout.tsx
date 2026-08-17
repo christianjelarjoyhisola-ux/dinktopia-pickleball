@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Sora } from "next/font/google";
 import { headers } from "next/headers";
+import { activeTenant } from "./tenants/registry";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -13,19 +14,23 @@ const sora = Sora({
   subsets: ["latin"],
 });
 
-const title = "Dinktopia Pickleball — Find your hour";
+const title = `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "Court booking"}`;
 const description =
-  "Discover courts, compare live hours, and plan your next rally with Dinktopia Pickleball.";
+  `${activeTenant.identity.name} is a local pickleball court community in setup. Verified court, schedule, pricing, and booking details will be published before public booking opens.`;
+
+function configuredTenantOrigin(): string | null {
+  const domain = activeTenant.identity.productionDomain?.trim().toLowerCase();
+  if (!domain || !/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(domain)) return null;
+  try {
+    return new URL(`https://${domain}`).origin;
+  } catch {
+    return null;
+  }
+}
 
 function safeRequestOrigin(requestHeaders: Headers): string {
-  const configured = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (configured) {
-    try {
-      return new URL(configured).origin;
-    } catch {
-      // Fall through to the current request host.
-    }
-  }
+  const configured = configuredTenantOrigin();
+  if (configured) return configured;
   const host =
     requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "";
   if (!/^[a-z0-9.-]+(?::\d{1,5})?$/i.test(host)) {
@@ -38,27 +43,44 @@ function safeRequestOrigin(requestHeaders: Headers): string {
 
 export async function generateMetadata(): Promise<Metadata> {
   const origin = safeRequestOrigin(await headers());
-  const socialImage = new URL("/og.png", origin).toString();
+  const socialImagePath = activeTenant.brand.socialImagePath;
+  const socialImage = socialImagePath
+    ? new URL(socialImagePath, origin).toString()
+    : null;
   return {
     metadataBase: new URL(origin),
-    title: { default: title, template: "%s · Dinktopia Pickleball" },
+    title: { default: title, template: `%s · ${activeTenant.identity.name}` },
     description,
-    applicationName: "Dinktopia Pickleball",
-    keywords: ["pickleball", "court booking", "Dinktopia", "Philippines"],
+    applicationName: activeTenant.identity.name,
+    keywords: [
+      "pickleball",
+      "pickleball court",
+      "court booking",
+      activeTenant.identity.name,
+    ],
     robots: { index: false, follow: false },
     openGraph: {
       type: "website",
-      locale: "en_PH",
-      siteName: "Dinktopia Pickleball",
+      locale: activeTenant.identity.locale.replace("-", "_"),
+      siteName: activeTenant.identity.name,
       title,
       description,
-      images: [{ url: socialImage, width: 1727, height: 911, alt: "Dinktopia — Your next rally starts here." }],
+      ...(socialImage
+        ? {
+            images: [{
+              url: socialImage,
+              width: 1734,
+              height: 907,
+              alt: `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "pickleball court"}`,
+            }],
+          }
+        : {}),
     },
     twitter: {
-      card: "summary_large_image",
+      card: socialImage ? "summary_large_image" : "summary",
       title,
       description,
-      images: [socialImage],
+      ...(socialImage ? { images: [socialImage] } : {}),
     },
   };
 }
@@ -69,7 +91,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en-PH">
+    <html lang={activeTenant.identity.locale}>
       <body
         className={`${dmSans.variable} ${sora.variable}`}
       >

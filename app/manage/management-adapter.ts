@@ -1,4 +1,5 @@
 import { activeTenant } from "../tenants/registry";
+import { dinktopiaConfig } from "../tenants/dinktopia/config";
 import { normalizeTwoBandSchedule } from "../lib/operating-hours";
 import {
   PlatformRequestError,
@@ -528,7 +529,7 @@ export type ManagementSnapshot = {
     name: string;
     venueLabel: string;
     timezone: string;
-    currency: "PHP";
+    currency: string;
     mode: "preview" | "live";
     lastSynced: string;
   };
@@ -625,28 +626,28 @@ export const previewRoleSessions: Record<TenantRole, ManagementCapability[]> = {
   host: [],
 };
 
-export const previewSnapshot: ManagementSnapshot = {
+const dinktopiaPreviewSnapshot: ManagementSnapshot = {
   tenant: {
-    slug: activeTenant.identity.slug,
-    name: activeTenant.identity.shortName,
-    venueLabel: `${activeTenant.identity.shortName} · Preview venue`,
-    timezone: activeTenant.identity.timezone,
-    currency: activeTenant.identity.currency,
+    slug: dinktopiaConfig.identity.slug,
+    name: dinktopiaConfig.identity.shortName,
+    venueLabel: `${dinktopiaConfig.identity.shortName} · Preview venue`,
+    timezone: dinktopiaConfig.identity.timezone,
+    currency: dinktopiaConfig.identity.currency,
     mode: "preview",
     lastSynced: "Today, 2:18 PM",
   },
-  courts: activeTenant.previewCourts.map((court) => ({
+  courts: dinktopiaConfig.previewCourts.map((court) => ({
     id: court.id,
     slug: court.slug,
     name: court.name,
     description: court.description,
     surface: court.surface,
     status: "active",
-    sortOrder: activeTenant.previewCourts.findIndex((item) => item.id === court.id),
-    opensAt: activeTenant.venue.opensAt,
-    closesAt: activeTenant.venue.closesAt,
-    rateDay: activeTenant.booking.offPeakHourlyRate,
-    ratePeak: activeTenant.booking.peakHourlyRate,
+    sortOrder: dinktopiaConfig.previewCourts.findIndex((item) => item.id === court.id),
+    opensAt: dinktopiaConfig.venue.opensAt,
+    closesAt: dinktopiaConfig.venue.closesAt,
+    rateDay: dinktopiaConfig.booking.offPeakHourlyRate,
+    ratePeak: dinktopiaConfig.booking.peakHourlyRate,
   })),
   bookings: [
     {
@@ -664,7 +665,7 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 400,
       status: "confirmed",
       payment: "paid",
-      courtId: activeTenant.previewCourts[0].id,
+      courtId: dinktopiaConfig.previewCourts[0].id,
       bookingDate: "2026-08-08",
       startTime: "18:00",
     },
@@ -683,7 +684,7 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 800,
       status: "awaiting_receipt",
       payment: "unpaid",
-      courtId: activeTenant.previewCourts[1].id,
+      courtId: dinktopiaConfig.previewCourts[1].id,
       bookingDate: "2026-08-08",
       startTime: "19:00",
     },
@@ -702,7 +703,7 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 400,
       status: "checked_in",
       payment: "paid",
-      courtId: activeTenant.previewCourts[0].id,
+      courtId: dinktopiaConfig.previewCourts[0].id,
       bookingDate: "2026-08-08",
       startTime: "20:00",
     },
@@ -721,7 +722,7 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 600,
       status: "completed",
       payment: "paid",
-      courtId: activeTenant.previewCourts[1].id,
+      courtId: dinktopiaConfig.previewCourts[1].id,
       bookingDate: "2026-08-08",
       startTime: "15:00",
     },
@@ -740,7 +741,7 @@ export const previewSnapshot: ManagementSnapshot = {
       amount: 300,
       status: "confirmed",
       payment: "paid",
-      courtId: activeTenant.previewCourts[1].id,
+      courtId: dinktopiaConfig.previewCourts[1].id,
       bookingDate: "2026-08-09",
       startTime: "09:00",
     },
@@ -748,7 +749,7 @@ export const previewSnapshot: ManagementSnapshot = {
   schedule: [
     {
       id: "slot-01",
-      courtId: activeTenant.previewCourts[0].id,
+      courtId: dinktopiaConfig.previewCourts[0].id,
       start: "09:00",
       end: "10:00",
       label: "Lara V.",
@@ -757,7 +758,7 @@ export const previewSnapshot: ManagementSnapshot = {
     },
     {
       id: "slot-02",
-      courtId: activeTenant.previewCourts[1].id,
+      courtId: dinktopiaConfig.previewCourts[1].id,
       start: "10:00",
       end: "12:00",
       label: "Team North",
@@ -766,7 +767,7 @@ export const previewSnapshot: ManagementSnapshot = {
     },
     {
       id: "slot-03",
-      courtId: activeTenant.previewCourts[0].id,
+      courtId: dinktopiaConfig.previewCourts[0].id,
       start: "13:00",
       end: "14:00",
       label: "Payment hold",
@@ -775,7 +776,7 @@ export const previewSnapshot: ManagementSnapshot = {
     },
     {
       id: "slot-04",
-      courtId: activeTenant.previewCourts[1].id,
+      courtId: dinktopiaConfig.previewCourts[1].id,
       start: "14:00",
       end: "15:00",
       label: "Maintenance",
@@ -784,7 +785,7 @@ export const previewSnapshot: ManagementSnapshot = {
     },
     {
       id: "slot-05",
-      courtId: activeTenant.previewCourts[0].id,
+      courtId: dinktopiaConfig.previewCourts[0].id,
       start: "18:00",
       end: "19:00",
       label: "Arielle S.",
@@ -793,7 +794,7 @@ export const previewSnapshot: ManagementSnapshot = {
     },
     {
       id: "slot-06",
-      courtId: activeTenant.previewCourts[1].id,
+      courtId: dinktopiaConfig.previewCourts[1].id,
       start: "19:00",
       end: "21:00",
       label: "Miguel T.",
@@ -875,7 +876,7 @@ export const previewSnapshot: ManagementSnapshot = {
     {
       id: "courts",
       label: "Court inventory",
-      detail: `${activeTenant.previewCourts.length} preview courts configured`,
+      detail: `${dinktopiaConfig.previewCourts.length} preview courts configured`,
       complete: true,
     },
     {
@@ -926,18 +927,18 @@ export const previewSnapshot: ManagementSnapshot = {
   },
   configuration: {
     sharedSchedule: {
-      opensAt: activeTenant.venue.opensAt,
-      closesAt: activeTenant.venue.closesAt,
+      opensAt: dinktopiaConfig.venue.opensAt,
+      closesAt: dinktopiaConfig.venue.closesAt,
       bands: [
         {
-          start: activeTenant.venue.opensAt,
-          end: activeTenant.booking.offPeakEndsAt,
-          hourlyRate: activeTenant.booking.offPeakHourlyRate,
+          start: dinktopiaConfig.venue.opensAt,
+          end: dinktopiaConfig.booking.offPeakEndsAt,
+          hourlyRate: dinktopiaConfig.booking.offPeakHourlyRate,
         },
         {
-          start: activeTenant.booking.offPeakEndsAt,
-          end: activeTenant.venue.closesAt,
-          hourlyRate: activeTenant.booking.peakHourlyRate,
+          start: dinktopiaConfig.booking.offPeakEndsAt,
+          end: dinktopiaConfig.venue.closesAt,
+          hourlyRate: dinktopiaConfig.booking.peakHourlyRate,
         },
       ],
     },
@@ -971,6 +972,71 @@ export const previewSnapshot: ManagementSnapshot = {
   },
 };
 
+const setupRequiredPreviewSnapshot: ManagementSnapshot = {
+  tenant: {
+    slug: activeTenant.identity.slug,
+    name: activeTenant.identity.name,
+    venueLabel: "Venue details coming soon",
+    timezone: activeTenant.identity.timezone,
+    currency: activeTenant.identity.currency,
+    mode: "preview",
+    lastSynced: "Not connected",
+  },
+  courts: [],
+  bookings: [],
+  schedule: [],
+  blocks: [],
+  customers: [],
+  setup: [
+    {
+      id: "brand",
+      label: "Tenant identity",
+      detail: `${activeTenant.identity.name} is registered in setup-required mode.`,
+      complete: true,
+    },
+    { id: "courts", label: "Court inventory", detail: "Add the real courts in management.", complete: false },
+    { id: "hours", label: "Operating hours", detail: "Configure real operating hours.", complete: false },
+    { id: "rates", label: "Rates and pricing", detail: "Configure approved rates and pricing periods.", complete: false },
+    { id: "venue", label: "Venue details", detail: "Add the verified address and contact details.", complete: false },
+    { id: "payment", label: "Payment instructions", detail: "Add a verified customer payment destination.", complete: false },
+    { id: "policy", label: "Customer rules", detail: "Publish cancellation, rescheduling, and refund policies.", complete: false },
+    { id: "owner", label: "Owner and domain", detail: "Verify tenant access and register the production domain.", complete: false },
+  ],
+  session: {
+    role: "host",
+    serverRole: "preview",
+    membershipRole: null,
+    isSystemOwner: false,
+    displayName: "Setup preview",
+    email: "Not signed in",
+    capabilities: [],
+  },
+  configuration: {
+    sharedSchedule: null,
+    scheduleIsUniform: true,
+    blockAccessExpiresAt: null,
+    blockAccessStatus: "unavailable",
+    businessPayments: null,
+    businessPaymentsStatus: "incomplete",
+    activationPermissions: {
+      canManageVenueSettings: false,
+      canManagePlatformBilling: false,
+      canActivatePublicBooking: false,
+    },
+    toolAvailability: {},
+    policy: null,
+    policyStatus: "unavailable",
+    remittanceDestination: null,
+    remittanceStatus: "missing",
+    launchRequirementsV2Required: true,
+  },
+};
+
+export const previewSnapshot: ManagementSnapshot =
+  String(activeTenant.identity.slug) === "dinktopia"
+    ? dinktopiaPreviewSnapshot
+    : setupRequiredPreviewSnapshot;
+
 const delay = (milliseconds: number) =>
   new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
@@ -981,7 +1047,7 @@ export const managementAdapter: ManagementAdapter = {
       return previewSnapshot;
     }
 
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
 
     const session = await currentOwnerSession();
     if (!session) {
@@ -1121,7 +1187,7 @@ export const managementAdapter: ManagementAdapter = {
       };
     }
 
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     if (
       current.tenant.mode !== "live" ||
       current.tenant.slug !== activeTenant.identity.slug
@@ -1151,7 +1217,7 @@ export const managementAdapter: ManagementAdapter = {
   },
   async loadReschedulePreview(context, bookingReference, date) {
     if (platformMode() === "preview") throw new Error("PREVIEW_RESCHEDULE_UNAVAILABLE");
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const authority = normalizeManagerSession(
@@ -1184,7 +1250,7 @@ export const managementAdapter: ManagementAdapter = {
       };
     }
 
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     const normalizedFilters = insightFilters(filters);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
@@ -1220,7 +1286,7 @@ export const managementAdapter: ManagementAdapter = {
   },
   async refreshOperations(context, current) {
     if (platformMode() === "preview") return previewSnapshot;
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     if (
       current.tenant.mode !== "live" ||
       current.tenant.slug !== activeTenant.identity.slug
@@ -1257,7 +1323,7 @@ export const managementAdapter: ManagementAdapter = {
     if (platformMode() === "preview") {
       throw new Error("PREVIEW_RECEIPT_UNAVAILABLE");
     }
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const authority = normalizeManagerSession(
@@ -1283,7 +1349,7 @@ export const managementAdapter: ManagementAdapter = {
   },
   async createPromotion(context, input) {
     if (platformMode() === "preview") throw new Error("PREVIEW_PROMOTION_UNAVAILABLE");
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const authority = normalizeManagerSession(await getManagerSession(session.access_token));
@@ -1297,7 +1363,7 @@ export const managementAdapter: ManagementAdapter = {
     if (platformMode() === "preview") {
       throw new Error("PREVIEW_PAYMENT_ASSET_UNAVAILABLE");
     }
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const authority = normalizeManagerSession(
@@ -1335,7 +1401,7 @@ export const managementAdapter: ManagementAdapter = {
       };
     }
 
-    assertDinktopiaContext(context);
+    assertActiveTenantContext(context);
     const session = await currentOwnerSession();
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const authority = normalizeManagerSession(
@@ -1491,7 +1557,7 @@ export const managementAdapter: ManagementAdapter = {
           action: "save",
           patch: courtMutationPatch(action.payload, true),
         });
-        return { ok: true, message: "The court was created for Dinktopia." };
+        return { ok: true, message: `The court was created for ${activeTenant.identity.shortName}.` };
       }
       if (action.type === "court:update") {
         await manageTenantCourt(session.access_token, {
@@ -1580,7 +1646,7 @@ export const managementAdapter: ManagementAdapter = {
         throw new Error("TENANT_ACTIVATION_ACCESS_DENIED");
       }
       await activateTenantInitially(session.access_token);
-      return { ok: true, message: "Dinktopia public booking was activated." };
+      return { ok: true, message: `${activeTenant.identity.shortName} public booking was activated.` };
     }
 
     throw new Error("LIVE_ACTION_UNSUPPORTED");
@@ -1668,11 +1734,8 @@ function paymentQrMethodCode(candidate: unknown): string {
   return code;
 }
 
-function assertDinktopiaContext(context: ManagementContext): void {
-  if (
-    context.tenantSlug !== activeTenant.identity.slug ||
-    activeTenant.identity.slug !== "dinktopia"
-  ) {
+function assertActiveTenantContext(context: ManagementContext): void {
+  if (context.tenantSlug !== activeTenant.identity.slug) {
     throw new Error("LIVE_TENANT_SCOPE_MISMATCH");
   }
 }
@@ -3220,8 +3283,9 @@ function tenantPromotion(candidate: unknown): TenantPromotion {
   const weekdays = Array.isArray(row.weekdays)
     ? row.weekdays.filter((day): day is number => Number.isInteger(day) && day >= 0 && day <= 6)
     : [];
-  const courtIds = Array.isArray(row.courtIds ?? row.court_ids)
-    ? (row.courtIds ?? row.court_ids as unknown[]).filter(
+  const rawCourtIds = row.courtIds ?? row.court_ids;
+  const courtIds = Array.isArray(rawCourtIds)
+    ? rawCourtIds.filter(
         (id): id is string => typeof id === "string" && UUID_PATTERN.test(id),
       )
     : [];

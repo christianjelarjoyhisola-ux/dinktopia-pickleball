@@ -157,15 +157,26 @@ function previewBookingSession(
       "The preview booking session could not be prepared.",
     );
   }
-  const offPeakEndHour = Number(activeTenant.booking.offPeakEndsAt.slice(0, 2));
+  const { offPeakEndsAt, offPeakHourlyRate, peakHourlyRate } = activeTenant.booking;
+  if (
+    offPeakEndsAt === null || offPeakHourlyRate === null ||
+    peakHourlyRate === null
+  ) {
+    throw new PlatformRequestError(
+      503,
+      "TENANT_SETUP_REQUIRED",
+      "Booking rates are still being configured.",
+    );
+  }
+  const offPeakEndHour = Number(offPeakEndsAt.slice(0, 2));
   const subtotalAmount = Array.from(
     { length: session.durationHours },
     (_, offset) => new Date(startsAt + offset * 60 * 60 * 1_000).getUTCHours(),
   ).reduce(
     (total, hour) =>
       total + (hour < offPeakEndHour
-        ? activeTenant.booking.offPeakHourlyRate
-        : activeTenant.booking.peakHourlyRate),
+        ? offPeakHourlyRate
+        : peakHourlyRate),
     0,
   );
   const end = new Date(
@@ -175,7 +186,7 @@ function previewBookingSession(
     ...session,
     courtName:
       activeTenant.previewCourts.find((court) => court.id === session.courtId)?.name ||
-      "Dinktopia court",
+      `${activeTenant.identity.shortName} court`,
     startsAt: `${session.bookingDate}T${session.startTime}:00+08:00`,
     endsAt: `${end.slice(0, 10)}T${end.slice(11, 16)}:00+08:00`,
     subtotalAmount,
@@ -265,22 +276,36 @@ async function rpc<T>(
   return responseJson<T>(response);
 }
 
-const REGISTERED_MANAGEMENT_ORIGIN = "https://dinktopia.pages.dev";
+function registeredManagementOrigin(): string | null {
+  const domain = activeTenant.identity.productionDomain?.trim().toLowerCase();
+  if (!domain) return null;
+  try {
+    const url = new URL(`https://${domain}`);
+    return url.protocol === "https:" && !url.username && !url.password &&
+        !url.port && url.hostname === domain && url.pathname === "/" &&
+        !url.search && !url.hash
+      ? url.origin
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 function managementHostname(options: { mutation?: boolean } = {}): string {
+  const registeredOrigin = registeredManagementOrigin();
   if (typeof window === "undefined") {
     throw new PlatformRequestError(
       403,
       "LIVE_TENANT_ORIGIN_MISMATCH",
-      "Live tenant management requires the registered Dinktopia origin.",
+      `Live tenant management requires ${activeTenant.identity.shortName}'s registered origin.`,
     );
   }
   const origin = window.location.origin.toLowerCase();
-  if (options.mutation && origin !== REGISTERED_MANAGEMENT_ORIGIN) {
+  if (options.mutation && (!registeredOrigin || origin !== registeredOrigin)) {
     throw new PlatformRequestError(
       403,
       "LIVE_TENANT_ORIGIN_MISMATCH",
-      "Live changes are accepted only from the registered Dinktopia origin.",
+      `Live changes are accepted only from ${activeTenant.identity.shortName}'s registered origin.`,
     );
   }
   return window.location.hostname.toLowerCase();
@@ -288,6 +313,15 @@ function managementHostname(options: { mutation?: boolean } = {}): string {
 
 function previewBootstrap(): TenantBootstrap {
   const tenant = activeTenant;
+  const opensAt = tenant.venue.opensAt;
+  const closesAt = tenant.venue.closesAt;
+  const offPeakEndsAt = tenant.booking.offPeakEndsAt;
+  const offPeakHourlyRate = tenant.booking.offPeakHourlyRate;
+  const peakHourlyRate = tenant.booking.peakHourlyRate;
+  const scheduleConfigured = Boolean(
+    opensAt && closesAt && offPeakEndsAt &&
+    offPeakHourlyRate !== null && peakHourlyRate !== null,
+  );
   return {
     tenant: {
       slug: tenant.identity.slug,
@@ -297,13 +331,13 @@ function previewBootstrap(): TenantBootstrap {
       publicConfig: {
         publicBookingEnabled: false,
         provisional: true,
-        tagline: tenant.brand.tagline,
+        ...(tenant.brand.tagline ? { tagline: tenant.brand.tagline } : {}),
       },
     },
-    courts: tenant.previewCourts.map((court) => ({
+    courts: scheduleConfigured ? tenant.previewCourts.map((court) => ({
       ...court,
-      opensAt: tenant.venue.opensAt,
-      closesAt: tenant.venue.closesAt,
+      opensAt: opensAt!,
+      closesAt: closesAt!,
       currency: tenant.identity.currency,
       pricingConfig: {
         regular: {
@@ -311,14 +345,14 @@ function previewBootstrap(): TenantBootstrap {
           maximumHours: tenant.booking.maximumHours,
           bands: [
             {
-              start: tenant.venue.opensAt,
-              end: tenant.booking.offPeakEndsAt,
-              hourlyRate: tenant.booking.offPeakHourlyRate,
+              start: opensAt!,
+              end: offPeakEndsAt!,
+              hourlyRate: offPeakHourlyRate!,
             },
             {
-              start: tenant.booking.offPeakEndsAt,
-              end: tenant.venue.closesAt,
-              hourlyRate: tenant.booking.peakHourlyRate,
+              start: offPeakEndsAt!,
+              end: closesAt!,
+              hourlyRate: peakHourlyRate!,
             },
           ],
         },
@@ -327,7 +361,7 @@ function previewBootstrap(): TenantBootstrap {
         minimumLeadMinutes: tenant.booking.minimumLeadMinutes,
         maximumAdvanceDays: tenant.booking.maximumAdvanceDays,
       },
-    })),
+    })) : [],
     paymentMethods: [],
     settings: {},
     readiness: {
@@ -342,6 +376,7 @@ function previewBootstrap(): TenantBootstrap {
       blockingReasons: [
         "TENANT_SETUP_REQUIRED",
         "ACTIVE_DOMAIN_MISSING",
+        "COURT_PRICING_MISSING",
         "PAYMENT_METHOD_MISSING",
       ],
     },
@@ -368,7 +403,7 @@ export async function getTenantBootstrap(): Promise<TenantBootstrap> {
     throw new PlatformRequestError(
       404,
       "TENANT_ORIGIN_NOT_REGISTERED",
-      "This Dinktopia hostname is not registered with the booking platform.",
+      `This ${activeTenant.identity.shortName} hostname is not registered with the booking platform.`,
     );
   }
   return { ...result, promotions };
@@ -428,7 +463,7 @@ export async function createBooking(
       0,
     );
     return {
-      reference: `DINK-${clientRequestId.slice(0, 8).toUpperCase()}`,
+      reference: `${activeTenant.identity.shortName.replace(/[^A-Za-z0-9]/g, "").slice(0, 4).toUpperCase()}-${clientRequestId.slice(0, 8).toUpperCase()}`,
       status: "preview_only",
       expiresAt: null,
       courtName: primary.courtName,
