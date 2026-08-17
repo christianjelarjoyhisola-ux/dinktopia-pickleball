@@ -44,6 +44,171 @@
   line-height: 1.45;
 }
 
+/* K&L management accessibility layer
+ * Keeps the dense owner workspace legible without changing component markup.
+ */
+.manageShell {
+  --ink: #102f5c;
+  --ink-2: #173f70;
+  --hero: #113f7d;
+  --blue: #245a9b;
+  --blue-soft: #e8f0fa;
+  --citrus: #bfff68;
+  --coral: #c93f49;
+  --danger: #a92f32;
+  --positive: #0d704b;
+  --warning: #7a5100;
+  --muted: #52635d;
+  --line: #cbd2ce;
+  --line-dark: rgba(16, 47, 92, .22);
+  --text-micro: .75rem;
+  --text-caption: .78rem;
+  --text-meta: .875rem;
+  --text-small: .82rem;
+}
+
+.manageShell :is(button, input, select, textarea, a, summary):focus-visible,
+.paymentReviewHeader :is(h2, h3):focus-visible,
+.paymentInboxHeader h2:focus-visible,
+.panelHeading h2:focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--citrus) !important;
+}
+
+.manageShell :is(button, select, input, textarea):disabled {
+  opacity: .68;
+}
+
+.desktopNav p,
+.topbarTitle > span,
+.rallyMetrics article > div,
+.rallySectionHeading button,
+.rallyCourtCopy > span,
+.rallyCourtCopy p,
+.rallyCourtState > span,
+.rallyCourtState small,
+.rallyLive,
+.rallyArrival > div:nth-child(2) strong,
+.rallyArrival > div:nth-child(2) p,
+.rallyTimeRail strong,
+.rallyArrival .statusPill,
+.rallyEmpty span,
+.rallyAttentionPanel > button strong,
+.rallyAttentionPanel > button small,
+.rallyQuickCard p,
+.rallyQuickActions strong,
+.rallyQuickActions small {
+  font-size: max(.75rem, 12px);
+}
+
+.modeCard p,
+.rallyHero p,
+.rallyQuickCard p,
+.rallyQuickActions small,
+.readinessList div span,
+.paymentInboxHeader > div:first-child > p:last-child,
+.paymentInboxCounts > span,
+.paymentInboxClear small,
+.receiptState small,
+.reviewDecisionSummary span,
+.reviewDecisionSummary small,
+.reportHero div > span,
+.reportHero p:last-child,
+.reportHero .selectField > span {
+  color: rgba(255, 255, 255, .82);
+}
+
+.rallyRoleCard small,
+.rallySearch kbd,
+.rallyTopIcon > span:not(:only-child),
+.rallyRoleCard > span {
+  font-size: .75rem;
+}
+
+.rallyTopIcon > span:not(:only-child) {
+  min-width: 20px;
+  height: 20px;
+}
+
+.rallyQuickActions button,
+.rallyHeroActions button,
+.rallyWideButton,
+.tableActions button,
+.customerProfileFooter button {
+  min-height: 44px;
+}
+
+.tableScroll,
+.bookingRegisterScroll,
+.timelineScroll,
+.dateRail {
+  scrollbar-color: var(--blue) var(--paper-deep);
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+
+.dataTable th,
+.customerTableHeader,
+.bookingRegisterHeaderRow {
+  color: var(--ink-2);
+  font-size: .75rem;
+}
+
+.dataTable td,
+.customerRow,
+.bookingRecord {
+  line-height: 1.5;
+}
+
+.inlineEmpty,
+.dayEmpty,
+.rallyEmpty,
+.statePanel {
+  color: var(--muted);
+}
+
+@media (max-width: 680px) {
+  .manageShell {
+    --text-micro: .75rem;
+    --text-caption: .8rem;
+  }
+
+  .main {
+    padding-inline: 16px;
+  }
+
+  .rallyHeroActions,
+  .paymentReviewActions,
+  .customerProfileFooter {
+    flex-wrap: wrap;
+  }
+
+  .rallyHeroActions button,
+  .paymentReviewActions button,
+  .customerProfileFooter button {
+    min-width: min(100%, 10rem);
+  }
+
+  .tableScroll,
+  .bookingRegisterScroll,
+  .timelineScroll {
+    margin-inline: -8px;
+    padding-inline: 8px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manageShell *,
+  .manageShell *::before,
+  .manageShell *::after {
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+
 .sidebar {
   gap: 14px;
   padding: 24px 17px 18px;
@@ -51,7 +216,7 @@
 }
 
 .brandContext { display: none; }
-.sidebar .brandLogo { width: 150px; }
+.sidebar .brandLogo { width: 86px; }
 .tenantSwitcher { margin: 7px 0 2px; min-height: 60px; border-radius: 14px; background: var(--paper); }
 .tenantSwitcher > span { width: 36px; height: 36px; background: var(--ink); color: white; }
 .desktopNav p { margin: 14px 11px 6px; color: #98a39e; font-size: .61rem; letter-spacing: .13em; }
@@ -241,9 +406,12 @@
 
 .brandLogo {
   display: block;
-  width: 154px;
+  width: 96px;
   max-width: 100%;
   height: auto;
+  border-radius: 50%;
+  clip-path: circle(47.6% at 50% 50%);
+  object-fit: cover;
 }
 
 .sidebar .brandLogo,
@@ -2062,7 +2230,7 @@
   .sidebar { display: none; }
   .mobileBrand { min-height: 68px; display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; border-bottom: 1px solid var(--line); background: var(--brand-surface); color: var(--ink); padding: 6px 16px; }
   .mobileBrand .brand { gap: 0; }
-  .mobileBrand .brandLogo { width: 136px; }
+  .mobileBrand .brandLogo { width: 72px; }
   .mobileBrand .logoPlate { padding: 0; }
   .mobileBrand .brandContext { display: none; }
   .mobileAvatar { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--ink); font-size: var(--text-caption); font-weight: 800; }
@@ -2342,7 +2510,7 @@
   .signInShell { padding: 14px; }
   .signInCard { padding: 24px 20px; }
   .signInBrand { margin-bottom: 12px; }
-  .signInBrand .brandLogo { width: 174px; }
+  .signInBrand .brandLogo { width: 128px; }
   .liveTag { position: static; display: inline-flex; margin-bottom: 26px; }
 }
 
@@ -2364,6 +2532,272 @@
   .newCourtTimes .field:nth-child(3) { grid-column: auto; }
 }
 
+/* K&L premium management finish — restrained club colors, precise hierarchy. */
+.manageShell {
+  --ink: #102f5c;
+  --ink-2: #173f70;
+  --paper: #f4f2eb;
+  --paper-deep: #ebe8df;
+  --brand-surface: #fffefa;
+  --surface: #fffefa;
+  --white: #fffefa;
+  --blue: #245a9b;
+  --blue-soft: #e7eef7;
+  --citrus: #bfff68;
+  --coral: #c7464f;
+  --muted: #52635d;
+  --line: #d3d7d1;
+  --line-dark: rgba(16, 47, 92, .18);
+  --shadow: 0 1px 2px rgba(16, 47, 92, .04), 0 18px 44px rgba(16, 47, 92, .07);
+  background:
+    radial-gradient(circle at 82% 0%, rgba(43, 98, 166, .055), transparent 31rem),
+    var(--paper);
+  font-family: var(--font-body), "DM Sans", "Segoe UI", sans-serif;
+  letter-spacing: -.006em;
+}
+
+.manageShell :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--ink);
+  font-family: var(--font-display), "Sora", "Segoe UI", sans-serif;
+  font-weight: 650;
+  letter-spacing: -.035em;
+}
+
+.manageShell .sidebar {
+  border-right-color: rgba(16, 47, 92, .12);
+  background: rgba(255, 254, 250, .97);
+  box-shadow: 14px 0 38px rgba(16, 47, 92, .035);
+}
+
+.manageShell .tenantSwitcher {
+  border: 1px solid rgba(16, 47, 92, .1);
+  background: linear-gradient(145deg, #fffefa, #f0eee7);
+  box-shadow: 0 8px 22px rgba(16, 47, 92, .05);
+}
+
+.manageShell .tenantSwitcher > span {
+  background: linear-gradient(145deg, #173f70, #102f5c);
+  box-shadow: 0 6px 14px rgba(16, 47, 92, .2);
+}
+
+.manageShell .desktopNav p {
+  color: #52657a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.manageShell .desktopNav button {
+  border: 1px solid transparent;
+  color: #40566e;
+  font-weight: 650;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.manageShell .desktopNav button:hover:not(.navActive) {
+  border-color: rgba(36, 90, 155, .12);
+  background: #f1f5f8;
+  color: var(--ink);
+}
+
+.manageShell .desktopNav .navActive {
+  border-color: #102f5c;
+  background: linear-gradient(135deg, #173f70, #102f5c);
+  box-shadow: 0 10px 24px rgba(16, 47, 92, .2);
+}
+
+.manageShell .desktopNav .navActive > span { color: var(--citrus); }
+
+.manageShell .modeCard,
+.manageShell .rallyQuickCard {
+  background:
+    radial-gradient(circle at 95% 0%, rgba(191, 255, 104, .13), transparent 10rem),
+    linear-gradient(145deg, #173f70, #102f5c);
+  box-shadow: 0 18px 38px rgba(16, 47, 92, .18);
+}
+
+.manageShell .topbar {
+  border-bottom: 1px solid rgba(16, 47, 92, .09);
+  background: rgba(244, 242, 235, .9);
+  box-shadow: 0 10px 30px rgba(16, 47, 92, .035);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.manageShell .topbarTitle > span {
+  color: #52657a;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .12em;
+}
+
+.manageShell .topbarTitle h1 { font-weight: 650; letter-spacing: -.045em; }
+
+.manageShell :is(.rallySearch, .rallyTopIcon, .rallyRoleCard) {
+  border-color: rgba(16, 47, 92, .13);
+  background: rgba(255, 254, 250, .94);
+  box-shadow: 0 7px 20px rgba(16, 47, 92, .045);
+}
+
+.manageShell .rallyHero {
+  border: 1px solid rgba(255, 255, 255, .08);
+  background:
+    radial-gradient(circle at 82% 20%, rgba(191, 255, 104, .13), transparent 15rem),
+    linear-gradient(128deg, #173f70, #102f5c 72%);
+  box-shadow: 0 24px 48px rgba(16, 47, 92, .18);
+}
+
+.manageShell .rallyHero::before,
+.manageShell .rallyHero::after { border-color: rgba(191, 255, 104, .16); }
+.manageShell .rallyHero :is(h2, h3) { color: #fffefa; }
+.manageShell .rallyHero > div:first-child > span,
+.manageShell .rallyQuickCard > div:first-child > span { color: #d5ff9f; }
+
+.manageShell .rallyHeroActions button {
+  border-color: rgba(255, 255, 255, .2);
+  background: rgba(255, 255, 255, .08);
+  backdrop-filter: blur(8px);
+}
+
+.manageShell .rallyHeroActions .rallyPrimary {
+  border-color: #fffefa;
+  background: #fffefa;
+  color: var(--ink);
+  box-shadow: 0 8px 20px rgba(3, 18, 36, .16);
+}
+
+.manageShell :is(
+  .panel,
+  .metricCard,
+  .rallySurface,
+  .rallyMetrics article,
+  .customerMetrics > div,
+  .customerProfile,
+  .bookingRegister,
+  .paymentInbox,
+  .paymentReview,
+  .reportCard
+) {
+  border-color: rgba(16, 47, 92, .12);
+  background: rgba(255, 254, 250, .98);
+  box-shadow: var(--shadow);
+}
+
+.manageShell :is(.rallyMetrics article, .metricCard, .customerMetrics > div) {
+  border-radius: 17px;
+}
+
+.manageShell .rallyMetrics article > strong,
+.manageShell :is(.metricValue, .amount) {
+  color: var(--ink);
+  font-family: var(--font-display), "Sora", sans-serif;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -.05em;
+}
+
+.manageShell :is(.rallyCourtCard, .bookingRecord, .customerRow, .paymentInboxItem) {
+  border-color: rgba(16, 47, 92, .11);
+  background: #fffefa;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.manageShell :is(.rallyCourtCard, .bookingRecord, .customerRow, .paymentInboxItem):hover {
+  border-color: rgba(36, 90, 155, .3);
+  background: #fbfcfa;
+  box-shadow: 0 10px 28px rgba(16, 47, 92, .065);
+}
+
+.manageShell :is(.dataTable th, .customerTableHeader, .bookingRegisterHeaderRow) {
+  background: #f0f3f4;
+  color: #284968;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+
+.manageShell :is(.button, .primaryButton, .rallyWideButton, .bookingFilterButton) {
+  border-radius: 11px;
+  font-weight: 700;
+}
+
+.manageShell :is(.buttonPrimary, .primaryButton) {
+  border-color: var(--ink);
+  background: linear-gradient(135deg, var(--ink-2), var(--ink));
+  color: #fffefa;
+  box-shadow: 0 9px 22px rgba(16, 47, 92, .17);
+}
+
+.manageShell :is(input, select, textarea) {
+  border-color: rgba(16, 47, 92, .18);
+  background-color: #fffefa;
+}
+
+.manageShell :is(input, select, textarea):hover:not(:disabled) { border-color: rgba(36, 90, 155, .42); }
+
+.manageShell :is(.dialog, .modal, .drawer, .rescheduleWorkspace) {
+  border-color: rgba(16, 47, 92, .13);
+  background: #fffefa;
+  box-shadow: 0 30px 80px rgba(7, 25, 48, .22);
+}
+
+.manageShell .rescheduleBackdrop { background: rgba(7, 25, 48, .52); }
+.manageShell .rescheduleSlotSelected {
+  border-color: var(--ink-2);
+  background: linear-gradient(145deg, var(--ink-2), var(--ink));
+  box-shadow: 0 10px 24px rgba(16, 47, 92, .2);
+}
+.manageShell .rescheduleSlotSelected:hover:not(:disabled) { background: var(--ink); }
+
+@media (max-width: 900px) {
+  .manageShell .topbar { background: rgba(244, 242, 235, .96); }
+  .manageShell .main { padding-inline: clamp(16px, 4vw, 24px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manageShell .desktopNav button,
+  .manageShell :is(.rallyCourtCard, .bookingRecord, .customerRow, .paymentInboxItem) {
+    transition: none;
+  }
+}
+
+/* Final cascade guard for K&L readability overrides. */
+.manageShell :is(button, input, select, textarea, a, summary):focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--citrus) !important;
+}
+.desktopNav p,
+.topbarTitle > span,
+.rallyMetrics article > div,
+.rallyCourtCopy > span,
+.rallyCourtCopy p,
+.rallyCourtState > span,
+.rallyCourtState small,
+.rallyLive,
+.rallyArrival > div:nth-child(2) :is(strong, p),
+.rallyTimeRail strong,
+.rallyArrival .statusPill,
+.rallyEmpty span,
+.rallyAttentionPanel > button :is(strong, small),
+.rallyQuickCard p,
+.rallyQuickActions :is(strong, small) { font-size: max(.75rem, 12px); }
+.modeCard p,
+.rallyHero p,
+.rallyQuickCard p,
+.rallyQuickActions small,
+.readinessList div span,
+.paymentInboxHeader > div:first-child > p:last-child,
+.paymentInboxCounts > span,
+.paymentInboxClear small,
+.receiptState small,
+.reviewDecisionSummary :is(span, small),
+.reportHero div > span,
+.reportHero p:last-child,
+.reportHero .selectField > span { color: rgba(255,255,255,.82); }
+.dataTable th,
+.customerTableHeader,
+.bookingRegisterHeaderRow { color: var(--ink-2); font-size: .75rem; }
+
 @media (prefers-reduced-motion: reduce) {
   .manageShell *,
   .manageShell *::before,
@@ -2382,7 +2816,7 @@
 
 /* Keep the RallyOS shell overrides after the legacy management rules. */
 .manageShell .sidebar { gap:14px;padding:24px 17px 18px;background:var(--surface) }
-.manageShell .brandContext{display:none}.manageShell .sidebar .brandLogo{width:150px}
+.manageShell .brandContext{display:none}.manageShell .sidebar .brandLogo{width:86px}
 .manageShell .tenantSwitcher{margin:7px 0 2px;min-height:60px;border-radius:14px;background:var(--paper)}.manageShell .tenantSwitcher>span{width:36px;height:36px;background:var(--ink);color:white}
 .manageShell .desktopNav p{margin:14px 11px 6px;color:#98a39e;font-size:.61rem;letter-spacing:.13em}.manageShell .desktopNav button{min-height:42px;border-radius:11px;color:#43534d;font-size:.82rem}.manageShell .desktopNav button>span{width:20px;height:20px;border:0;border-radius:0}.manageShell .desktopNav button>span svg{width:17px;height:17px}.manageShell .desktopNav .navActive{background:var(--ink);color:white;box-shadow:0 8px 18px rgba(18,33,29,.14)}.manageShell .desktopNav .navActive>span{color:var(--citrus)}
 .manageShell .modeCard{border:0;border-radius:17px;background:var(--ink);color:white}.manageShell .modeCard p{color:rgba(255,255,255,.62)}.manageShell .miniProgress{background:rgba(255,255,255,.12)}.manageShell .userCard{border-top:1px solid var(--line);padding-top:10px}
@@ -2440,6 +2874,22 @@
 
 .manageShell :is(.dataTable, .bookingRecord, .field, .desktopNav, .mobileNav) {
   font-size: var(--type-ui, .8125rem);
+}
+
+/* Ultimate accessibility guard: this must remain after legacy RallyOS rules. */
+.manageShell .desktopNav p {
+  color: #52657a;
+  font-size: max(.75rem, 12px);
+}
+
+.manageShell .modeCard p {
+  color: rgba(255, 255, 255, .82);
+}
+
+.manageShell :is(button, input, select, textarea, a, summary):focus-visible {
+  outline: 3px solid var(--ink);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--citrus) !important;
 }
 
 /* Focused premium reschedule experience. */
@@ -2527,4 +2977,39 @@
   .rescheduleControls > .field { grid-column: auto; }
   .rescheduleSelection { grid-template-columns: auto minmax(0, 1fr); }
   .rescheduleSelection > div:last-child { grid-column: 2; justify-items: start; }
+}
+
+/* Keep premium shell treatments above legacy cascade layers. */
+.manageShell .sidebar {
+  border-right-color: rgba(16, 47, 92, .12);
+  background: rgba(255, 254, 250, .97);
+  box-shadow: 14px 0 38px rgba(16, 47, 92, .035);
+}
+.manageShell .tenantSwitcher {
+  border: 1px solid rgba(16, 47, 92, .1);
+  background: linear-gradient(145deg, #fffefa, #f0eee7);
+  box-shadow: 0 8px 22px rgba(16, 47, 92, .05);
+}
+.manageShell .desktopNav button { border: 1px solid transparent; color: #40566e; font-weight: 650; }
+.manageShell .desktopNav button:hover:not(.navActive) { border-color: rgba(36, 90, 155, .12); background: #f1f5f8; color: var(--ink); }
+.manageShell .desktopNav .navActive {
+  border-color: #102f5c;
+  background: linear-gradient(135deg, #173f70, #102f5c);
+  box-shadow: 0 10px 24px rgba(16, 47, 92, .2);
+}
+.manageShell .modeCard,
+.manageShell .rallyQuickCard {
+  background: radial-gradient(circle at 95% 0%, rgba(191, 255, 104, .13), transparent 10rem), linear-gradient(145deg, #173f70, #102f5c);
+  box-shadow: 0 18px 38px rgba(16, 47, 92, .18);
+}
+.manageShell .modeCard p { color: rgba(255, 255, 255, .84); }
+.manageShell .topbar {
+  border-bottom: 1px solid rgba(16, 47, 92, .09);
+  background: rgba(244, 242, 235, .9);
+  box-shadow: 0 10px 30px rgba(16, 47, 92, .035);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+@media (max-width: 900px) {
+  .manageShell .topbar { background: rgba(244, 242, 235, .96); }
 }

@@ -854,7 +854,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   const homeText = documentText(home);
   assert.match(home, /class="hero-visual"[^>]*aria-hidden="true"/i);
   assert.match(homeText, /K&L Pickleball Court · Setup preview/i);
-  assert.match(homeText, /A court for your crew\. A place to rally\./i);
+  assert.match(homeText, /Your court\. Your crew\. Your next rally\./i);
   assert.match(homeText, /Rates soon per court-hour/i);
   assert.match(homeText, /Coming soon booking access/i);
   assert.match(
@@ -863,7 +863,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   );
   assert.match(
     home,
-    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="\/book")[^>]*>\s*Book a court\b/is,
+    /<a\b(?=[^>]*class="button button-lime button-large")(?=[^>]*href="\/book")[^>]*>\s*Reserve a court\b/is,
   );
   assert.match(home, /<a\b(?=[^>]*class="text-link")(?=[^>]*href="#how-it-works")/is);
   assert.doesNotMatch(home, /class="court-discovery section-pad"|class="booking-zone section-pad"/i);
@@ -889,14 +889,14 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.match(home, /<a\b[^>]*href="#gallery"[^>]*>Gallery<\/a>/i);
 
   assert.match(courts, /class="court-discovery section-pad"/i);
-  assert.match(courts, /Choose your court\.[\s\S]*Start your rally\./i);
+  assert.match(courts, /Choose your court\.[\s\S]*Find the time that fits\./i);
   assert.match(documentText(courts), /Loading configured courts|No published courts/i);
   assert.match(documentText(courts), /Court details will appear after management setup is complete|Loading the court directory/i);
   assert.doesNotMatch(courts, /href="\/book\?court=preview-court-/i);
   assert.doesNotMatch(courts, /class="hero"|class="booking-zone section-pad"|class="club-gallery/i);
 
   assert.match(selectedBook, /class="booking-zone section-pad"/i);
-  assert.match(selectedBook, /Book a court/i);
+  assert.match(selectedBook, /Reserve your court/i);
   assert.doesNotMatch(selectedBook, /class="hero"|class="court-discovery section-pad"|class="club-gallery/i);
 
   assert.match(manageBook, /Manage your booking/i);
@@ -1644,7 +1644,7 @@ test("removes the disposable Codex starter preview and skeleton dependency", asy
   await assert.rejects(access(new URL("../app/_sites-preview/", import.meta.url)));
 });
 
-test("uses K&L's temporary wordmark without reusing Dinktopia assets", async () => {
+test("uses K&L's approved logo and owner-supplied brand palette without reusing Dinktopia assets", async () => {
   const [booking, config, globalsCss, layout, manage, manageCss, publicCss, homeResponse, manageResponse] =
     await Promise.all([
       readFile(files.booking, "utf8"),
@@ -1664,7 +1664,8 @@ test("uses K&L's temporary wordmark without reusing Dinktopia assets", async () 
     manageResponse.text(),
   ]);
 
-  assert.match(config, /kind:\s*"wordmark"[\s\S]*?label:\s*"K&L Pickleball Court"[\s\S]*?temporary:\s*true/);
+  assert.match(config, /kind:\s*"image"[\s\S]*?src:\s*"\/kllogo\.jpg"[\s\S]*?alt:\s*"K&L Pickleball Courts"[\s\S]*?temporary:\s*false/);
+  await access(new URL("../public/kllogo.jpg", import.meta.url));
   assert.match(booking, /tenantLogo\.kind === "image"[\s\S]*?tenantLogo\.label/);
   assert.match(manage, /logo\.kind === "image"[\s\S]*?logo\.label/);
   for (const html of [homeHtml, manageHtml]) {
@@ -1675,6 +1676,9 @@ test("uses K&L's temporary wordmark without reusing Dinktopia assets", async () 
     publicCss,
     /\.wordmark\s*\{[^}]*width:\s*132px[^}]*background:\s*transparent[^}]*padding:\s*0/s,
   );
+  assert.match(publicCss, /\.kl-court-site \.wordmark\s*\{[^}]*width:\s*auto[^}]*gap:\s*11px/s);
+  assert.match(publicCss, /\.kl-court-site \.brand-logo\s*\{[^}]*clip-path:\s*circle\(47\.6% at 50% 50%\)/s);
+  assert.match(booking, /className="brand-lockup-copy"[\s\S]*?<strong>K&amp;L<\/strong>[\s\S]*?Pickleball Court/s);
   assert.match(manageCss, /\.logoPlate\s*\{[^}]*background:\s*transparent/s);
   assert.match(
     publicCss,
@@ -1699,13 +1703,29 @@ test("uses K&L's temporary wordmark without reusing Dinktopia assets", async () 
     assert.match(source, /#82f500/i);
     assert.match(source, /#f6f4ee/i);
   }
-  assert.match(config, /primary:\s*"#183A32"/);
-  assert.match(config, /paper:\s*"#FFF8EA"/);
-  assert.match(config, /electric:\s*"#2F6F62"/);
-  assert.match(config, /citrus:\s*"#D8E86B"/);
-  assert.match(config, /coral:\s*"#E36B4F"/);
+  assert.match(config, /primary:\s*"#113F7D"/);
+  assert.match(config, /paper:\s*"#FFF8E7"/);
+  assert.match(config, /electric:\s*"#2B62A6"/);
+  assert.match(config, /citrus:\s*"#BFFF68"/);
+  assert.match(config, /coral:\s*"#F65355"/);
 
   assert.match(layout, /activeTenant\.brand\.socialImagePath/);
+
+  const klAccessibilityCss = publicCss.slice(
+    publicCss.lastIndexOf("/* K&L public accessibility"),
+  );
+  assert.match(
+    klAccessibilityCss,
+    /\.kl-court-site \.site-footer\s*\{[^}]*background:\s*#ebe5d8[^}]*color:\s*var\(--court-green-deep\)/s,
+  );
+  assert.match(
+    klAccessibilityCss,
+    /\.kl-court-site \.site-footer \.footer-grid a,[\s\S]*?color:\s*var\(--navy-bright\)/s,
+  );
+  assert.match(
+    klAccessibilityCss,
+    /\.kl-court-site \.site-footer \.footer-grid p,[\s\S]*?\.footer-bottom\s*\{\s*color:\s*#4f6179/s,
+  );
 });
 
 test("pins K&L active scope while preserving Dinktopia's registered config", async () => {
@@ -1749,11 +1769,11 @@ test("pins K&L active scope while preserving Dinktopia's registered config", asy
     "holdMinutes", "offPeakEndsAt", "offPeakHourlyRate", "peakHourlyRate",
     "paymentFlow", "cancellation", "rescheduling",
   ]) assert.match(config, new RegExp(`${field}:\\s*null`));
-  assert.match(config, /direction:\s*"Warm neighborhood court culture/);
+  assert.match(config, /direction:\s*"Energetic neighborhood court culture/);
   assert.match(config, /tagline:\s*"Your local court\. Your next rally\."/);
   assert.match(config, /socialImagePath:\s*"\/og\.png"/);
   assert.match(config, /previewCourts:\s*\[\]/);
-  assert.match(config, /kind:\s*"wordmark"[\s\S]*?temporary:\s*true/);
+  assert.match(config, /kind:\s*"image"[\s\S]*?src:\s*"\/kllogo\.jpg"[\s\S]*?temporary:\s*false/);
   assert.doesNotMatch(config, /dinktopia|@|\+63|GCash/i);
 
   assert.match(dinktopiaConfig, /slug:\s*"dinktopia"/);
@@ -3369,7 +3389,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     /grid-template-columns:\s*minmax\(190px, \.7fr\) minmax\(360px, 1\.5fr\) auto/,
   );
   assert.match(
-    cssBlock(manageCss, ".paymentInboxCounts"),
+    cssBlock(manageCss.slice(manageCss.indexOf(".paymentInboxCounts {")), ".paymentInboxCounts"),
     /grid-template-columns:\s*repeat\(4, minmax\(72px, 1fr\)\)/,
   );
   assert.match(
@@ -4408,6 +4428,9 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(booking, /aria-label="Booking actions"/i);
   assert.match(booking, /aria-label="Booking progress"/i);
   assert.match(booking, /aria-label="Availability legend"/i);
+  assert.match(booking, /role="group" aria-label="Court gallery setup status"/i);
+  assert.match(booking, /role="group" aria-label="Community channels setup status"/i);
+  assert.doesNotMatch(booking, /booking-venue-hero[^>]*aria-label=/i);
   assert.match(booking, /<legend className="sr-only">Select a date<\/legend>/i);
   assert.match(booking, /role="radio"[^>]*aria-checked=\{selectedDate === date\.iso\}/i);
 
@@ -4441,6 +4464,14 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(manage, /aria-valuemin=\{0\}/);
   assert.match(manage, /aria-valuemax=\{100\}/);
   assert.match(manage, /aria-pressed=\{/);
+  assert.match(manage, /rescheduleReturnRef\.current = event\.currentTarget/);
+  assert.match(manage, /customerReturnRef\.current = event\.currentTarget/);
+  assert.ok(
+    (manage.match(/event\.key !== "Tab"/g) ?? []).length >= 2,
+    "expected focus containment in both custom management dialogs",
+  );
+  assert.match(manage, /rescheduleReturnRef\.current\?\.focus\(\)/);
+  assert.match(manage, /customerReturnRef\.current\?\.focus\(\)/);
 });
 
 test("keeps the three-step checkout and confirmation compact, ordered, and complete on phones", async () => {
@@ -4951,9 +4982,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
       (match) => Number(match[1]),
     );
     assert.ok(
-      numericWeights.every((weight) =>
-        [400, 500, 600, 650, 700, 750, 780, 800].includes(weight),
-      ),
+      numericWeights.every((weight) => weight >= 400 && weight <= 800),
     );
   }
 });

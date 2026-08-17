@@ -451,8 +451,8 @@ function TenantBrandMark({ sizes, priority = false }: { sizes: string; priority?
         className={styles.brandLogo}
         src={logo.src}
         alt=""
-        width={2046}
-        height={769}
+        width={1024}
+        height={1024}
         sizes={sizes}
         unoptimized
         priority={priority}
@@ -1284,6 +1284,7 @@ function BookingsView({
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const bookingListHeadingRef = useRef<HTMLHeadingElement>(null);
   const rescheduleDialogRef = useRef<HTMLFormElement>(null);
+  const rescheduleReturnRef = useRef<HTMLButtonElement | null>(null);
   const canReviewPayments = can("payment:review");
   const [manual, setManual] = useState({
     courtId: courts[0]?.id ?? "",
@@ -1398,14 +1399,40 @@ function BookingsView({
     if (!rescheduling) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    window.requestAnimationFrame(() => rescheduleDialogRef.current?.focus());
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setRescheduling(null);
+    const dialog = rescheduleDialogRef.current;
+    const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), summary, [href], [tabindex]:not([tabindex='-1'])";
+    window.requestAnimationFrame(() => {
+      const firstFocusable = dialog?.querySelector<HTMLElement>(focusableSelector);
+      (firstFocusable ?? dialog)?.focus();
+    });
+    const containDialogFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setRescheduling(null);
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", containDialogFocus);
     return () => {
       document.body.style.overflow = previousOverflow;
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("keydown", containDialogFocus);
+      window.requestAnimationFrame(() => rescheduleReturnRef.current?.focus());
     };
   }, [rescheduling]);
 
@@ -1703,7 +1730,8 @@ function BookingsView({
                           type="button"
                           className={styles.miniButton}
                           disabled={!can("booking:update") || !booking.bookingDate || !booking.startTime}
-                          onClick={() => {
+                          onClick={(event) => {
+                            rescheduleReturnRef.current = event.currentTarget;
                             setRescheduling(booking);
                             setRescheduleDraft((current) => ({
                               ...current,
@@ -2221,6 +2249,8 @@ function BlocksView({
 function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo: (view: View) => void }) {
   const [query, setQuery] = useState("");
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
+  const customerDrawerRef = useRef<HTMLElement>(null);
+  const customerReturnRef = useRef<HTMLButtonElement | null>(null);
   const customers = snapshot.customers.filter((customer) =>
     `${customer.name} ${customer.contact} ${customer.phone ?? ""} ${customer.email ?? ""}`
       .toLowerCase()
@@ -2241,11 +2271,43 @@ function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo:
 
   useEffect(() => {
     if (!selectedCustomer) return;
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setSelectedCustomerId(null);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const dialog = customerDrawerRef.current;
+    const focusableSelector = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex='-1'])";
+    window.requestAnimationFrame(() => {
+      const firstFocusable = dialog?.querySelector<HTMLElement>(focusableSelector);
+      (firstFocusable ?? dialog)?.focus();
+    });
+    const containDialogFocus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setSelectedCustomerId(null);
+        return;
+      }
+      if (event.key !== "Tab" || !dialog) return;
+      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
+      if (!focusable.length) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
+    window.addEventListener("keydown", containDialogFocus);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", containDialogFocus);
+      window.requestAnimationFrame(() => customerReturnRef.current?.focus());
+    };
   }, [selectedCustomer]);
 
   return (
@@ -2281,7 +2343,7 @@ function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo:
                 <div><span className={styles.mobileLabel}>Upcoming</span><strong>{customer.upcomingBookings ?? 0}</strong><small>{customer.cancelledBookings ?? 0} cancelled</small></div>
                 <div><span className={styles.mobileLabel}>Paid value</span><strong>{formatPeso(customer.lifetimeValue)}</strong></div>
                 <div><span className={styles.mobileLabel}>Last visit</span><strong>{customer.lastVisit}</strong>{customer.note && <small>{customer.note}</small>}</div>
-                <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`} onClick={() => setSelectedCustomerId(customer.id)}>→</button>
+                <button type="button" className={styles.roundButton} aria-label={`Open ${customer.name}'s profile`} onClick={(event) => { customerReturnRef.current = event.currentTarget; setSelectedCustomerId(customer.id); }}>→</button>
               </article>
             ))}
           </div>
@@ -2291,7 +2353,7 @@ function CustomersView({ snapshot, goTo }: { snapshot: ManagementSnapshot; goTo:
       </section>
       {selectedCustomer ? (
         <div className={styles.customerDrawerBackdrop} role="presentation" onMouseDown={() => setSelectedCustomerId(null)}>
-          <aside className={styles.customerDrawer} role="dialog" aria-modal="true" aria-labelledby="customer-profile-title" onMouseDown={(event) => event.stopPropagation()}>
+          <aside ref={customerDrawerRef} className={styles.customerDrawer} role="dialog" aria-modal="true" aria-labelledby="customer-profile-title" tabIndex={-1} onMouseDown={(event) => event.stopPropagation()}>
             <header className={styles.customerProfileHeader}>
               <div className={styles.customerProfileIdentity}>
                 <Avatar initials={selectedCustomer.initials} tone={0} />

@@ -7,8 +7,7 @@ export type KlPickleballCourtTenantConfig = TenantConfig<"kl-pickleball-court">;
  *
  * Operational details deliberately remain null until they are entered and
  * approved through the shared management system. The brand direction and
- * palette establish a K&L-owned starting point while the temporary wordmark
- * awaits an approved logo asset.
+ * palette are derived from the approved K&L court badge supplied by the owner.
  */
 export const klPickleballCourtConfig = {
   identity: {
@@ -46,17 +45,18 @@ export const klPickleballCourtConfig = {
     rescheduling: null,
   },
   brand: {
-    direction: "Warm neighborhood court culture with an energetic, welcoming local-club feel",
+    direction: "Energetic neighborhood court culture led by the official blue, lime, coral, and cream badge",
     tagline: "Your local court. Your next rally.",
-    primary: "#183A32",
-    paper: "#FFF8EA",
-    electric: "#2F6F62",
-    citrus: "#D8E86B",
-    coral: "#E36B4F",
+    primary: "#113F7D",
+    paper: "#FFF8E7",
+    electric: "#2B62A6",
+    citrus: "#BFFF68",
+    coral: "#F65355",
     logo: {
-      kind: "wordmark",
-      label: "K&L Pickleball Court",
-      temporary: true,
+      kind: "image",
+      src: "/kllogo.jpg",
+      alt: "K&L Pickleball Courts",
+      temporary: false,
     },
     socialImagePath: "/og.png",
   },

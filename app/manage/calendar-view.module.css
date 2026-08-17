@@ -9,6 +9,98 @@
   box-shadow: var(--shadow-soft, 0 1px 2px rgba(16, 42, 67, 0.04));
 }
 
+/* Readable, keyboard-friendly states for the management calendar. */
+.calendar {
+  --calendar-muted: #52635d;
+  --calendar-blue: #245a9b;
+}
+
+.calendar button:focus-visible,
+.calendar input:focus-visible,
+.calendar select:focus-visible {
+  outline: 3px solid var(--ink, #102f5c);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--citrus, #bfff68);
+}
+
+.calendar button:disabled,
+.calendar input:disabled,
+.calendar select:disabled {
+  opacity: .68;
+}
+
+.titleBlock p,
+.courtEmpty,
+.emptyState p,
+.errorState p {
+  color: var(--calendar-muted);
+  font-size: max(.875rem, 14px);
+  line-height: 1.55;
+}
+
+.eyebrow,
+.semanticPill,
+.scheduleSummary > button small {
+  font-size: max(.75rem, 12px);
+}
+
+.scheduleSummary > button small {
+  color: rgba(255, 255, 255, .82);
+}
+
+.boardScroll {
+  scrollbar-color: var(--calendar-blue) #e9eeeb;
+  scrollbar-width: thin;
+  overscroll-behavior-inline: contain;
+}
+
+.emptyState,
+.errorState {
+  min-height: 220px;
+  border-block: 1px solid var(--line, #cbd2ce);
+}
+
+.errorState {
+  background: #fff5f3;
+}
+
+.errorState strong,
+.errorState button {
+  color: #8b2628;
+}
+
+.loadingState {
+  min-height: 220px;
+}
+
+@media (max-width: 640px) {
+  .calendarHeader {
+    padding: 16px;
+  }
+
+  .titleRow {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .blockButton,
+  .refreshButton,
+  .errorState button {
+    min-height: 44px;
+  }
+
+  .boardScroll {
+    margin-inline: -1px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loadingState span,
+  .spinning {
+    animation: none;
+  }
+}
+
 .calendar *,
 .calendar *::before,
 .calendar *::after {
@@ -1070,6 +1162,144 @@
   .bookingPreview { padding: 13px 14px; }
   .bookingPreview dl { grid-template-columns: 1fr 1fr; gap: 10px 0; }
   .bookingPreview dl > div:nth-child(3) { border-left: 0; padding-left: 0; }
+}
+
+/* Premium K&L schedule surface. */
+.calendar {
+  --calendar-muted: #52635d;
+  --calendar-blue: #245a9b;
+  border-color: rgba(16, 47, 92, .13);
+  border-radius: 18px;
+  background: #fffefa;
+  box-shadow: 0 1px 2px rgba(16, 47, 92, .04), 0 20px 48px rgba(16, 47, 92, .075);
+  font-family: var(--font-body), "DM Sans", "Segoe UI", sans-serif;
+}
+
+.calendar :is(h2, h3, strong) { letter-spacing: -.02em; }
+.calendarHeader {
+  gap: 15px;
+  border-bottom-color: rgba(16, 47, 92, .11);
+  background:
+    radial-gradient(circle at 93% -25%, rgba(191, 255, 104, .14), transparent 16rem),
+    linear-gradient(135deg, #fffefa, #f1f3ee);
+  padding: 20px 22px;
+}
+
+.eyebrow {
+  color: #1d4b84;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .11em;
+}
+
+.titleBlock h2 {
+  color: #102f5c;
+  font-family: var(--font-display), "Sora", sans-serif;
+  font-weight: 650;
+  letter-spacing: -.045em;
+}
+
+.blockButton {
+  border-color: #102f5c;
+  background: linear-gradient(135deg, #173f70, #102f5c);
+  box-shadow: 0 10px 24px rgba(16, 47, 92, .2);
+}
+
+.blockButton:hover:not(:disabled) { background: #102f5c; }
+
+.dateControl,
+.segmented,
+.courtFilter,
+.refreshButton {
+  border-color: rgba(16, 47, 92, .15);
+  background: rgba(255, 254, 250, .96);
+  box-shadow: 0 6px 18px rgba(16, 47, 92, .045);
+}
+
+.segmented button { color: #52635d; font-weight: 700; }
+.segmented button[aria-pressed="true"],
+.segmented button[data-active="true"] {
+  background: #102f5c;
+  color: #fffefa;
+  box-shadow: 0 6px 14px rgba(16, 47, 92, .16);
+}
+
+.summaryStrip,
+.scheduleSummary {
+  border-color: rgba(16, 47, 92, .11);
+  background: #f6f5f0;
+}
+
+.scheduleSummary > :is(article, button) {
+  border-color: rgba(16, 47, 92, .11);
+  background: #fffefa;
+}
+
+.scheduleSummary > button {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(191, 255, 104, .14), transparent 8rem),
+    linear-gradient(145deg, #173f70, #102f5c);
+  box-shadow: 0 12px 26px rgba(16, 47, 92, .16);
+}
+
+.boardMeta,
+.boardFooter { border-color: rgba(16, 47, 92, .11); }
+.scheduleBoard { background: #fbfaf6; }
+.courtBoard { border-color: rgba(16, 47, 92, .11); background: #fffefa; }
+.courtHeader { background: linear-gradient(180deg, #f4f6f5, #eef1ef); }
+
+.bookingBlock,
+.bookingItem,
+.agendaItem,
+.holdItem,
+.blockItem {
+  border-color: rgba(36, 90, 155, .25);
+  box-shadow: 0 7px 18px rgba(16, 47, 92, .075);
+}
+
+.reservedBlock { background: #e7eef7; color: #173f70; }
+.playingBlock { background: #e8f3e7; color: #1b5b3e; }
+.reviewBlock { background: #fff2df; color: #784d0b; }
+.blockedBlock { background: #f7e9e9; color: #842f36; }
+
+.bookingPreview {
+  border-color: rgba(16, 47, 92, .13);
+  border-radius: 14px;
+  background: #fffefa;
+  box-shadow: 0 16px 38px rgba(16, 47, 92, .1);
+}
+
+.hourHeader small,
+.rowCourt small,
+.bookingBlock span,
+.bookingBlock small,
+.bookingPreview dt,
+.bookingPreview dd,
+.scheduleSummary > button small { font-size: 12px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .calendar :is(button, .bookingBlock, .bookingItem, .agendaItem) { transition: none; }
+}
+
+/* Final cascade guard for accessible calendar interaction states. */
+.calendar button:focus-visible,
+.calendar input:focus-visible,
+.calendar select:focus-visible {
+  outline: 3px solid var(--ink, #102f5c);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 6px var(--citrus, #bfff68);
+}
+.titleBlock p,
+.courtEmpty,
+.emptyState p,
+.errorState p { color: #52635d; font-size: max(.875rem, 14px); line-height: 1.55; }
+.scheduleSummary > button small { color: rgba(255,255,255,.82); font-size: 12px; }
+.emptyState,
+.errorState { min-height: 220px; border-block: 1px solid var(--line, #cbd2ce); }
+.errorState { background: #fff5f3; }
+@media (prefers-reduced-motion: reduce) {
+  .loadingState span,
+  .spinning { animation: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {

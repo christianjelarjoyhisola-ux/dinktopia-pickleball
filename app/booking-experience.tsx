@@ -235,16 +235,22 @@ function TenantWordmark({ footer = false, priority = false }: { footer?: boolean
       aria-label={`${activeTenant.identity.name} home`}
     >
       {tenantLogoSrc ? (
-        <Image
-          className="brand-logo"
-          src={tenantLogoSrc}
-          alt=""
-          width={2046}
-          height={769}
-          sizes={footer ? "212px" : "(max-width: 390px) 128px, (max-width: 779px) 132px, 164px"}
-          unoptimized
-          priority={priority}
-        />
+        <>
+          <Image
+            className="brand-logo"
+            src={tenantLogoSrc}
+            alt=""
+            width={1024}
+            height={1024}
+            sizes={footer ? "92px" : "54px"}
+            unoptimized
+            priority={priority}
+          />
+          <span className="brand-lockup-copy" aria-hidden="true">
+            <strong>K&amp;L</strong>
+            <span>Pickleball Court</span>
+          </span>
+        </>
       ) : (
         <span
           aria-hidden="true"
@@ -2634,7 +2640,7 @@ export function BookingExperience({
             ))}
           </div>
         ) : (
-          <div className="gallery-grid gallery-grid-placeholder" aria-label="Court gallery setup status">
+          <div className="gallery-grid gallery-grid-placeholder" role="group" aria-label="Court gallery setup status">
             {["Court photos pending", "Venue photos pending", "K&L updates pending"].map((label, index) => (
               <figure className={`gallery-card gallery-placeholder gallery-placeholder-${index + 1}`} key={label}>
                 <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
@@ -2675,12 +2681,12 @@ export function BookingExperience({
             >
               <span className="menu-lines" aria-hidden="true" />
             </button>
-            <strong>Book a court</strong>
+            <strong>Reserve a court</strong>
           </div>
           <div className="booking-app-desktop-bar">
             <div className="booking-app-title">
               <small>{activeTenant.identity.name}</small>
-              <strong>Book a court</strong>
+              <strong>Reserve a court</strong>
             </div>
             <div className="booking-app-actions">
               <span className={`booking-app-status ${bookingSetupReady ? "is-live" : "is-setup"}`}>
@@ -2743,7 +2749,7 @@ export function BookingExperience({
               Manage booking
             </Link>
             <Link className="button button-small button-lime" href="/book" onClick={() => setMobileNavOpen(false)}>
-              Book a court <span aria-hidden="true">↗</span>
+              Reserve a court <span aria-hidden="true">↗</span>
             </Link>
           </nav>
         </div>
@@ -2755,13 +2761,13 @@ export function BookingExperience({
             <div className="hero-copy">
               <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>{activeTenant.identity.name} · {bookingSetupReady ? "Live booking" : "Setup preview"}</span></p>
               <h1>
-                A court for your crew.
-                <span>A place to rally.</span>
+                Your court. Your crew.
+                <span>Your next rally.</span>
               </h1>
               <p className="hero-lede">
                 {bookingSetupReady
-                  ? `Choose an available ${activeTenant.identity.shortName} court, reserve your time, and bring your crew.`
-                  : `${activeTenant.identity.name} is preparing its online court guide and booking experience. Verified venue details will appear as they are published.`}
+                  ? `Choose your court, reserve your time, and bring the people you play with.`
+                  : `A welcoming local court experience, built for good games, easy plans, and the people you play with. Verified venue and booking details will appear here as they’re published.`}
               </p>
               {venueLocationLabel ? (
                 <div className="hero-location">
@@ -2778,7 +2784,7 @@ export function BookingExperience({
               )}
               <div className="hero-actions">
                 <Link className="button button-lime button-large" href="/book">
-                  Book a court <span aria-hidden="true">→</span>
+                  Reserve a court <span aria-hidden="true">→</span>
                 </Link>
                 <a className="text-link" href="#how-it-works">
                   How booking works <span aria-hidden="true">↓</span>
@@ -2846,10 +2852,10 @@ export function BookingExperience({
           <div className="site-container club-note-inner community-hub">
             <div className="community-intro">
               <p className="eyebrow">Built for K&amp;L</p>
-              <h2>The local court board is taking shape.</h2>
+              <h2>More than a court. A club that feels local.</h2>
               <p>Verified announcements and official community channels will appear after the {activeTenant.identity.shortName} team publishes them.</p>
             </div>
-            <div className="community-links" aria-label="Community channels setup status">
+            <div className="community-links" role="group" aria-label="Community channels setup status">
               <article className="community-card community-card-featured">
                 <span className="community-mark" aria-hidden="true">{activeTenant.identity.shortName}</span>
                 <span className="community-card-copy"><small>Launch status</small><strong>Official updates coming soon</strong></span>
@@ -2863,8 +2869,8 @@ export function BookingExperience({
           <div className="site-container">
             <div className="section-heading">
               <div>
-                <p className="eyebrow eyebrow-dark">Pick your playground</p>
-                <h1>Choose your court.<br />Start your rally.</h1>
+                <p className="eyebrow eyebrow-dark">Find your game</p>
+                <h1>Choose your court.<br />Find the time that fits.</h1>
               </div>
               <p>
                 {isLive && bootstrapState !== "ready"
@@ -2949,9 +2955,9 @@ export function BookingExperience({
         {isHome && <section className="how-section section-pad" id="how-it-works">
           <div className="site-container how-grid">
             <div className="how-intro">
-              <p className="eyebrow">No back-and-forth</p>
-              <h2>From “game?” to booked.</h2>
-              <p>Everything you need, nothing that slows down the rally.</p>
+              <p className="eyebrow">Simple by design</p>
+              <h2>Three steps. One smooth booking.</h2>
+              <p>Clear choices, simple details, and no unnecessary back-and-forth.</p>
             </div>
             <ol className="how-list">
               <li><span>01</span><div><h3>Build your court plan</h3><p>See every active court and select exact court-hours.</p></div></li>
@@ -2965,8 +2971,8 @@ export function BookingExperience({
           <div className="site-container booking-container">
             <div className="booking-zone-heading">
               <div className="booking-zone-title">
-                <p className="eyebrow eyebrow-dark">Make your move</p>
-                <h1>{mode === "book" ? "Book a court" : "Manage your booking"}</h1>
+                <p className="eyebrow eyebrow-dark">Court reservations</p>
+                <h1>{mode === "book" ? "Reserve your court" : "Manage your booking"}</h1>
               </div>
               <nav className="mode-switch" aria-label="Booking actions">
                 <Link
@@ -2987,13 +2993,13 @@ export function BookingExperience({
             </div>
 
             {mode === "book" && step === 1 && (
-              <div className="booking-venue-hero player-hero player-hero-image" aria-label={`${activeTenant.identity.name} booking`}>
+              <div className="booking-venue-hero player-hero player-hero-image">
                 <div className="booking-venue-hero-copy">
                   <span className="booking-venue-mark" aria-hidden="true">{activeTenant.identity.shortName}</span>
                   <div>
-                    <p>Book direct</p>
-                    <h2>Choose your K&amp;L court time.</h2>
-                    <span>{bookingSetupReady ? "Tap an open slot, review your court time, and check out once." : "Live courts and times will appear only after the K&L setup is verified."}</span>
+                    <p>Direct reservations</p>
+                    <h2>Select your court and time.</h2>
+                    <span>{bookingSetupReady ? "Choose an open slot, review the details, and we’ll keep the rest simple." : "Live courts and times will appear only after the K&L setup is verified."}</span>
                   </div>
                 </div>
                 <span className="booking-venue-location">
@@ -3577,7 +3583,7 @@ export function BookingExperience({
       <footer className="site-footer">
         <div className="site-container footer-grid">
           <div><TenantWordmark footer /><p>Local court time, made easy.</p></div>
-          <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Book a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
+          <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Reserve a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p>{previewHours ? <>Daily<br /><strong>{formatClockLabel(previewHours.openingHour)}–{formatClockLabel(previewHours.closingHour)}</strong></> : <strong>Hours coming soon</strong>}</p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
           <div><h2>Setup status</h2><p>Preview booking experience.<br />Venue details coming next.</p></div>
         </div>
