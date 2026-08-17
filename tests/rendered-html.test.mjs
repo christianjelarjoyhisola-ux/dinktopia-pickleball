@@ -4659,8 +4659,11 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     stepThree,
-    /type="button" className="copy-payment-button"[\s\S]*?Copy \$\{paymentLabel\} payment number[\s\S]*?Copied[\s\S]*?className=\{`payment-copy-feedback[\s\S]*?role="status" aria-live="polite"/,
+    /type="button" className="copy-payment-button"[\s\S]*?aria-label="Copy payment number"[\s\S]*?Copied[\s\S]*?className=\{`payment-copy-feedback[\s\S]*?role="status" aria-live="polite"/,
   );
+  assert.match(stepThree, /<span>\{isGcashPayment \? "Mobile number" : "Account number"\}<\/span>/);
+  assert.match(stepThree, /<label htmlFor=\{`\$\{formId\}-payment-reference`\}>Reference number<\/label>/);
+  assert.doesNotMatch(stepThree, /\{paymentLabel\} (?:mobile|reference) number/);
   assert.doesNotMatch(stepThree, /<input[^>]+paymentAccountDisplay|readOnly[^>]+paymentAccountDisplay/);
   assert.match(stepThree, /data-testid="submit-receipt"[\s\S]*?Submit receipt · \{peso\(checkoutTotal\)\}/);
   assert.match(stepThree, /className="payment-error" role="alert"/);

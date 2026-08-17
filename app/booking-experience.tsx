@@ -3496,10 +3496,10 @@ export function BookingExperience({
                               <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
                             </div>
                             <div className="gcash-account-field">
-                              <span>{paymentLabel} mobile number</span>
+                              <span>{isGcashPayment ? "Mobile number" : "Account number"}</span>
                               <div className="gcash-account-number">
-                                <output aria-label={`${paymentLabel} payment destination`}>{isLive ? `${isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) ? "+63 " : ""}${paymentAccountDisplay}` : "Available on the live booking site"}</output>
-                                <button type="button" className="copy-payment-button" onClick={() => void copyPaymentAccount()} disabled={!isLive} aria-label={`Copy ${paymentLabel} payment number`}>
+                                <output aria-label="Payment destination number">{isLive ? `${isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) ? "+63 " : ""}${paymentAccountDisplay}` : "Available on the live booking site"}</output>
+                                <button type="button" className="copy-payment-button" onClick={() => void copyPaymentAccount()} disabled={!isLive} aria-label="Copy payment number">
                                   {paymentCopyState === "copied" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
                                   <span>{paymentCopyState === "copied" ? "Copied" : "Copy"}</span>
                                 </button>
@@ -3516,7 +3516,7 @@ export function BookingExperience({
                           </div>
                           <div className="form-grid payment-evidence-fields">
                             <div className="form-field">
-                              <label htmlFor={`${formId}-payment-reference`}>{paymentLabel} reference number</label>
+                              <label htmlFor={`${formId}-payment-reference`}>Reference number</label>
                               <input id={`${formId}-payment-reference`} inputMode="numeric" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="e.g. 1234 5678 9012" />
                             </div>
                             <div className="form-field">
