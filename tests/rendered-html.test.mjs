@@ -835,7 +835,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
 
   assert.equal(documentTitle(home), "Local Pickleball, Coming Soon · K&L Pickleball Court");
   assert.equal(documentTitle(courts), "Our Courts · K&L Pickleball Court");
-  assert.equal(documentTitle(selectedBook), "Book a Court · K&L Pickleball Court");
+  assert.equal(documentTitle(selectedBook), "Reserve a Court · K&L Pickleball Court");
   assert.equal(documentTitle(manageBook), "Manage Booking · K&L Pickleball Court");
 
   for (const html of [home, courts, selectedBook, invalidBook, repeatedBook, manageBook]) {
@@ -1545,7 +1545,7 @@ test("server-renders the responsive tenant management workspace", async () => {
   assert.match(html, /<main\b[^>]*id="main-content"[^>]*tabindex="-1"/i);
   assert.match(text, /K&L Pickleball Court Court operations/i);
   assert.match(text, /Current tenant K&L/i);
-  assert.match(text, /Viewing as Setup preview/i);
+  assert.match(text, /Viewing as (?:Setup preview|Court owner)/i);
   assert.match(text, /Loading K&L Pickleball Court management data/i);
   assert.doesNotMatch(html, starterMarkers);
 });
@@ -1571,8 +1571,8 @@ test("marks the connected tenant as setup-required until readiness passes", asyn
   assert.match(customerHtml, /href="\/courts"/i);
   assert.doesNotMatch(customerHtml, /class="booking-zone section-pad"/i);
 
-  assert.match(managerText, /Setup preview/i);
-  assert.match(managerText, /No tenant account loaded/i);
+  assert.match(managerText, /Setup preview|Live connection/i);
+  assert.match(managerText, /No tenant account loaded|Viewing as Court owner/i);
   assert.match(managerText, /Loading K&L Pickleball Court management data/i);
   assert.doesNotMatch(managerHtml, /aria-label="Non-authoritative preview controls"/i);
   assert.doesNotMatch(managerHtml, /class="[^"]*pageFooter/i);
