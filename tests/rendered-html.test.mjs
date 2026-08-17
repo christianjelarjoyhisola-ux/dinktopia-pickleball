@@ -4710,7 +4710,24 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepThree, /<label htmlFor=\{`\$\{formId\}-payment-reference`\}>Reference number<\/label>/);
   assert.doesNotMatch(stepThree, /\{paymentLabel\} (?:mobile|reference) number/);
   assert.doesNotMatch(stepThree, /<input[^>]+paymentAccountDisplay|readOnly[^>]+paymentAccountDisplay/);
-  assert.match(stepThree, /data-testid="submit-receipt"[\s\S]*?Submit receipt · \{peso\(checkoutTotal\)\}/);
+  assert.doesNotMatch(stepThree, /data-testid="submit-receipt"|Submit receipt/);
+  assert.match(
+    stepThree,
+    /onChange=\{\(event\) => \{[\s\S]*?const file = event\.target\.files\?\.\[0\][\s\S]*?paymentReference\.trim\(\)\.length < 6[\s\S]*?void submitPayment\(file\)/,
+  );
+  assert.match(
+    stepThree,
+    /onBlur=\{\(\) => \{[\s\S]*?receiptUploadState === "waiting"[\s\S]*?paymentReference\.trim\(\)\.length >= 6[\s\S]*?void submitPayment\(receiptFile\)/,
+  );
+  assert.match(stepThree, /Uploading securely…[\s\S]*?role="status" aria-live="polite"/);
+  assert.match(
+    stepThree,
+    /receiptUploadState === "error"[\s\S]*?data-testid="retry-receipt"[\s\S]*?Retry receipt upload/,
+  );
+  assert.match(
+    booking,
+    /const receiptSubmissionInFlightRef = useRef\(false\)[\s\S]*?if \(receiptSubmissionInFlightRef\.current\) return;[\s\S]*?receiptSubmissionInFlightRef\.current = true;[\s\S]*?finally \{[\s\S]*?receiptSubmissionInFlightRef\.current = false;/,
+  );
   assert.match(stepThree, /className="payment-error" role="alert"/);
   assert.match(stepThree, /aria-busy=\{isSubmitting\}/);
   assert.equal((stepThree.match(/<RallyBookingSummary\b/g) ?? []).length, 0);

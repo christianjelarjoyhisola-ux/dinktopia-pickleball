@@ -1718,6 +1718,7 @@ export function BookingExperience({
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
+  const receiptSubmissionInFlightRef = useRef(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -1748,6 +1749,9 @@ export function BookingExperience({
   const [paymentReference, setPaymentReference] = useState("");
   const [receiptFileName, setReceiptFileName] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptUploadState, setReceiptUploadState] = useState<
+    "idle" | "waiting" | "uploading" | "error"
+  >("idle");
   const [paymentError, setPaymentError] = useState("");
   const [paymentCopyState, setPaymentCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -2591,8 +2595,8 @@ export function BookingExperience({
     }
   }
 
-  async function submitPayment(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitPayment(selectedFile = receiptFile) {
+    if (receiptSubmissionInFlightRef.current) return;
     setPaymentError("");
     if (!pendingBooking) {
       setPaymentError("Reserve the slot before sending payment.");
@@ -2616,7 +2620,7 @@ export function BookingExperience({
       );
       return;
     }
-    if (!receiptFileName || !receiptFile) {
+    if (!selectedFile) {
       setPaymentError(
         isLive
           ? "Upload a JPG, PNG, or WebP copy of your payment receipt."
@@ -2625,20 +2629,22 @@ export function BookingExperience({
       return;
     }
     if (
-      !["image/jpeg", "image/png", "image/webp"].includes(receiptFile.type) ||
-      receiptFile.size > 2 * 1024 * 1024
+      !["image/jpeg", "image/png", "image/webp"].includes(selectedFile.type) ||
+      selectedFile.size > 2 * 1024 * 1024
     ) {
       setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
       return;
     }
 
+    receiptSubmissionInFlightRef.current = true;
+    setReceiptUploadState("uploading");
     setIsSubmitting(true);
     try {
       const booking = await adapter.submitPayment({
         booking: pendingBooking,
         paymentReference: paymentReference.trim(),
-        receiptFileName,
-        receiptFile,
+        receiptFileName: selectedFile.name,
+        receiptFile: selectedFile,
         paymentMethod: paymentMethodCode,
         clientRequestId: bookingAttemptIdRef.current,
       });
@@ -2653,6 +2659,7 @@ export function BookingExperience({
             : `Payment for booking ${booking.reference} has been received for review.`,
       );
     } catch (error) {
+      setReceiptUploadState("error");
       setPaymentError(
         error instanceof Error
           ? error.message
@@ -2661,6 +2668,7 @@ export function BookingExperience({
             : "The preview could not be completed. No reservation or payment was created.",
       );
     } finally {
+      receiptSubmissionInFlightRef.current = false;
       setIsSubmitting(false);
     }
   }
@@ -2775,6 +2783,7 @@ export function BookingExperience({
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
+    setReceiptUploadState("idle");
     setPaymentError("");
     setAcceptedPolicy(false);
     bookingAttemptIdRef.current = "";
@@ -2833,6 +2842,7 @@ export function BookingExperience({
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
+    setReceiptUploadState("idle");
     setPaymentError("");
     setPendingBooking(null);
     setConfirmedBooking(null);
@@ -3720,7 +3730,7 @@ export function BookingExperience({
 
                 {step === 3 && checkoutSlot && pendingBooking && (
                   <div className="checkout-layout booking-payment-view">
-                    <form className="booking-stage surface-card gcash-payment-card" onSubmit={submitPayment} aria-busy={isSubmitting} noValidate>
+                    <form className="booking-stage surface-card gcash-payment-card" onSubmit={(event) => event.preventDefault()} aria-busy={isSubmitting} noValidate>
                       <div className="gcash-heading">
                         <h3 ref={paymentHeadingRef} tabIndex={-1}><span>G</span>Cash</h3>
                         <span className="gcash-secure-pill"><i aria-hidden="true" /> Secure</span>
@@ -3776,24 +3786,56 @@ export function BookingExperience({
                           <div className="form-grid payment-evidence-fields">
                             <div className="form-field">
                               <label htmlFor={`${formId}-payment-reference`}>Reference number</label>
-                              <input id={`${formId}-payment-reference`} inputMode="numeric" value={paymentReference} onChange={(event) => setPaymentReference(event.target.value)} placeholder="e.g. 1234 5678 9012" />
+                              <input
+                                id={`${formId}-payment-reference`}
+                                inputMode="numeric"
+                                value={paymentReference}
+                                onChange={(event) => {
+                                  setPaymentReference(event.target.value);
+                                  if (receiptFile && receiptUploadState !== "error") {
+                                    setReceiptUploadState("waiting");
+                                  }
+                                }}
+                                onBlur={() => {
+                                  if (receiptFile && receiptUploadState === "waiting" && paymentReference.trim().length >= 6) {
+                                    void submitPayment(receiptFile);
+                                  }
+                                }}
+                                placeholder="e.g. 1234 5678 9012"
+                                disabled={isSubmitting}
+                              />
                             </div>
                             <div className="form-field">
                               <label htmlFor={`${formId}-receipt`}>Payment receipt</label>
-                              <label className={`upload-control ${receiptFileName ? "has-file" : ""}`} htmlFor={`${formId}-receipt`}>
-                                <span aria-hidden="true">＋</span>
-                                <span><strong>{receiptFileName || "Choose a file"}</strong><small>{receiptFileName ? "Ready to submit" : "JPG, PNG, or WebP · max 2 MB"}</small></span>
+                              <label className={`upload-control ${receiptFileName ? "has-file" : ""} ${receiptUploadState === "uploading" ? "is-uploading" : ""}`} htmlFor={`${formId}-receipt`} aria-disabled={isSubmitting}>
+                                <span aria-hidden="true">{receiptUploadState === "uploading" ? <span className="button-spinner" /> : "＋"}</span>
+                                <span>
+                                  <strong>{receiptFileName || "Choose a file"}</strong>
+                                  <small>
+                                    {receiptUploadState === "uploading"
+                                      ? "Uploading securely…"
+                                      : receiptUploadState === "waiting"
+                                        ? "Add a valid reference number, then leave the field to upload"
+                                        : receiptUploadState === "error"
+                                          ? "Upload failed · use Retry below"
+                                          : receiptFileName
+                                            ? "Ready to upload automatically"
+                                            : "JPG, PNG, or WebP · max 2 MB"}
+                                  </small>
+                                </span>
                               </label>
                               <input
                                 className="visually-hidden-file"
                                 id={`${formId}-receipt`}
                                 type="file"
                                 accept="image/jpeg,image/png,image/webp"
+                                disabled={isSubmitting}
                                 onChange={(event) => {
                                   const file = event.target.files?.[0] ?? null;
                                   if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
                                     setReceiptFile(null);
                                     setReceiptFileName("");
+                                    setReceiptUploadState("idle");
                                     setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
                                     event.target.value = "";
                                     return;
@@ -3801,8 +3843,24 @@ export function BookingExperience({
                                   setPaymentError("");
                                   setReceiptFile(file);
                                   setReceiptFileName(file?.name ?? "");
+                                  if (!file) {
+                                    setReceiptUploadState("idle");
+                                    return;
+                                  }
+                                  if (paymentReference.trim().length < 6) {
+                                    setReceiptUploadState("waiting");
+                                    return;
+                                  }
+                                  void submitPayment(file);
                                 }}
                               />
+                              <span className="receipt-upload-status" role="status" aria-live="polite">
+                                {receiptUploadState === "uploading"
+                                  ? "Receipt upload in progress. Please keep this page open."
+                                  : receiptUploadState === "waiting"
+                                    ? "Receipt selected. Enter a valid reference number to start the upload."
+                                    : ""}
+                              </span>
                             </div>
                           </div>
                         </>
@@ -3812,9 +3870,11 @@ export function BookingExperience({
                           <span aria-hidden="true">!</span><div><strong>Payment needs another look</strong><p>{paymentError}</p></div>
                         </div>
                       )}
-                      {!holdExpired && heldPaymentReady && <button data-testid="submit-receipt" className="button gcash-button" type="submit" disabled={isSubmitting}>
-                        {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Sending receipt…</> : <>Submit receipt · {peso(checkoutTotal)} <span aria-hidden="true">→</span></>}
-                      </button>}
+                      {!holdExpired && heldPaymentReady && receiptUploadState === "error" && (
+                        <button data-testid="retry-receipt" className="button gcash-button" type="button" onClick={() => void submitPayment()} disabled={isSubmitting || !receiptFile}>
+                          Retry receipt upload <span aria-hidden="true">→</span>
+                        </button>
+                      )}
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
                       <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s payment details come directly from System Setup.</p>
                     </form>

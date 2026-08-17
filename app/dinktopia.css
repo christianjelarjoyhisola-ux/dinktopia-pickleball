@@ -3433,6 +3433,9 @@
 .upload-control small { color: var(--muted); font-size: var(--text-caption); }
 .upload-control.has-file { border-style: solid; border-color: #3b9f60; background: #eff9f2; }
 .upload-control.has-file > span:first-child { background: #d8f0df; color: #287545; }
+.upload-control.is-uploading { cursor: progress; border-color: #0873e6; background: #edf5ff; }
+.upload-control.is-uploading > span:first-child { background: #0873e6; color: #fff; }
+.receipt-upload-status { display: block; min-height: 1.25em; margin-top: 6px; color: var(--muted); font-size: var(--text-caption); line-height: 1.35; }
 
 .visually-hidden-file {
   position: absolute;
