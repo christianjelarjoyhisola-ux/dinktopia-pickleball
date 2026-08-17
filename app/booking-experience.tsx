@@ -72,6 +72,14 @@ type SlotStatus = "available" | "limited" | "unavailable";
 
 type OwnedSlotState = "held" | "payment_review" | "confirmed";
 
+type SlotOwnershipHint = {
+  date: string;
+  state: OwnedSlotState;
+  expiresAt: number;
+  updatedAt: number;
+  slots: Array<{ courtId: string; startHour: number }>;
+};
+
 export type AvailabilitySlot = {
   hour: number;
   startsAt: string;
@@ -287,6 +295,58 @@ function bookingStorageProbeKey(clientRequestId: string) {
 }
 
 const activeHoldStorageKey = `${tenantStoragePrefix}:active-hold`;
+const slotOwnershipHintStorageKey = `${tenantStoragePrefix}:slot-ownership-hint:v1`;
+const ownershipHintMaximumLifetimeMs = 24 * 60 * 60 * 1000;
+
+function parseSlotOwnershipHint(value: string | null, now = Date.now()): SlotOwnershipHint | null {
+  if (!value) return null;
+  try {
+    const candidate = JSON.parse(value) as Partial<SlotOwnershipHint>;
+    if (
+      typeof candidate.date !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(candidate.date) ||
+      !["held", "payment_review", "confirmed"].includes(candidate.state ?? "") ||
+      typeof candidate.expiresAt !== "number" ||
+      !Number.isFinite(candidate.expiresAt) ||
+      candidate.expiresAt <= now ||
+      candidate.expiresAt > now + ownershipHintMaximumLifetimeMs ||
+      typeof candidate.updatedAt !== "number" ||
+      !Number.isFinite(candidate.updatedAt) ||
+      candidate.updatedAt > now + 60_000 ||
+      candidate.updatedAt < now - ownershipHintMaximumLifetimeMs ||
+      !Array.isArray(candidate.slots) ||
+      candidate.slots.length < 1 ||
+      candidate.slots.length > 18
+    ) return null;
+
+    const seen = new Set<string>();
+    const slots: SlotOwnershipHint["slots"] = [];
+    for (const slot of candidate.slots) {
+      if (
+        !slot ||
+        typeof slot.courtId !== "string" ||
+        !/^[a-zA-Z0-9-]{1,100}$/.test(slot.courtId) ||
+        !Number.isInteger(slot.startHour) ||
+        slot.startHour < 0 ||
+        slot.startHour > 47
+      ) return null;
+      const key = selectionKey(slot.courtId, slot.startHour);
+      if (seen.has(key)) return null;
+      seen.add(key);
+      slots.push({ courtId: slot.courtId, startHour: slot.startHour });
+    }
+
+    return {
+      date: candidate.date,
+      state: candidate.state as OwnedSlotState,
+      expiresAt: candidate.expiresAt,
+      updatedAt: candidate.updatedAt,
+      slots,
+    };
+  } catch {
+    return null;
+  }
+}
 
 function tenantPlaceholderEmail(clientRequestId: string) {
   return `booking-${clientRequestId}@pending.${activeTenant.identity.slug}.invalid`;
@@ -1693,6 +1753,7 @@ export function BookingExperience({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<BookingRecord | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
+  const [crossTabOwnershipHint, setCrossTabOwnershipHint] = useState<SlotOwnershipHint | null>(null);
   const [holdNow, setHoldNow] = useState(() => Date.now());
   const [liveMessage, setLiveMessage] = useState("");
   const [bootstrap, setBootstrap] = useState<TenantBootstrap | null>(null);
@@ -1875,7 +1936,15 @@ export function BookingExperience({
   const ownedSlotStates = useMemo(() => {
     const states = new Map<string, OwnedSlotState>();
     const booking = pendingBooking ?? confirmedBooking;
-    if (!booking || booking.date !== selectedDate || booking.status === "cancelled") return states;
+    if (!booking) {
+      if (crossTabOwnershipHint?.date === selectedDate && crossTabOwnershipHint.expiresAt > holdNow) {
+        crossTabOwnershipHint.slots.forEach((slot) => {
+          states.set(selectionKey(slot.courtId, slot.startHour), crossTabOwnershipHint.state);
+        });
+      }
+      return states;
+    }
+    if (booking.date !== selectedDate || booking.status === "cancelled") return states;
 
     const state: OwnedSlotState | null =
       booking.status === "pending_payment" && !holdExpired
@@ -1897,7 +1966,7 @@ export function BookingExperience({
         }));
     items.forEach((item) => states.set(selectionKey(item.courtId, item.startHour), state));
     return states;
-  }, [confirmedBooking, holdExpired, pendingBooking, selectedDate]);
+  }, [confirmedBooking, crossTabOwnershipHint, holdExpired, holdNow, pendingBooking, selectedDate]);
   const liveBookingReady =
     bootstrapState === "ready" &&
       bootstrap?.readiness.publicBookingEnabled === true &&
@@ -2117,6 +2186,127 @@ export function BookingExperience({
     const intervalId = window.setInterval(() => setHoldNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [pendingBooking?.expiresAt]);
+
+  useEffect(() => {
+    if (!isBookingPage) return;
+
+    const syncOwnershipHint = (rawValue?: string | null) => {
+      try {
+        const storedValue = rawValue === undefined
+          ? localStorage.getItem(slotOwnershipHintStorageKey)
+          : rawValue;
+        const hint = parseSlotOwnershipHint(storedValue);
+        if (!hint && storedValue) localStorage.removeItem(slotOwnershipHintStorageKey);
+        setCrossTabOwnershipHint(hint);
+      } catch {
+        setCrossTabOwnershipHint(null);
+      }
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.storageArea === localStorage && event.key === slotOwnershipHintStorageKey) {
+        syncOwnershipHint(event.newValue);
+      }
+    };
+
+    syncOwnershipHint();
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, [isBookingPage]);
+
+  useEffect(() => {
+    if (!crossTabOwnershipHint) return;
+    const remainingMs = crossTabOwnershipHint.expiresAt - Date.now();
+    if (remainingMs <= 0) {
+      try {
+        const current = localStorage.getItem(slotOwnershipHintStorageKey);
+        if (!parseSlotOwnershipHint(current)) localStorage.removeItem(slotOwnershipHintStorageKey);
+      } catch {
+        // The visual hint can expire in memory when local storage is unavailable.
+      }
+      queueMicrotask(() => setCrossTabOwnershipHint(null));
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const current = localStorage.getItem(slotOwnershipHintStorageKey);
+        const currentHint = parseSlotOwnershipHint(current);
+        if (!currentHint) localStorage.removeItem(slotOwnershipHintStorageKey);
+        setCrossTabOwnershipHint(currentHint);
+      } catch {
+        setCrossTabOwnershipHint(null);
+      }
+    }, Math.min(remainingMs + 50, 2_147_000_000));
+    return () => window.clearTimeout(timeoutId);
+  }, [crossTabOwnershipHint]);
+
+  useEffect(() => {
+    if (!isBookingPage) return;
+    const booking = pendingBooking ?? confirmedBooking;
+    if (!booking) return;
+
+    const now = Date.now();
+    const pendingExpiry = booking.expiresAt ? Date.parse(booking.expiresAt) : Number.NaN;
+    const state: OwnedSlotState | null =
+      booking.status === "pending_payment" && !holdExpired
+        ? "held"
+        : booking.status === "payment_review"
+          ? "payment_review"
+          : booking.status === "confirmed"
+            ? "confirmed"
+            : null;
+    const sourceItems = booking.items?.length
+      ? booking.items
+      : Array.from({ length: booking.durationHours }, (_, index) => ({
+          courtId: booking.courtId,
+          startHour: booking.startHour + index,
+        }));
+    const slots = sourceItems.map((item) => ({
+      courtId: item.courtId,
+      startHour: item.startHour,
+    }));
+    const matchesBooking = (hint: SlotOwnershipHint | null) =>
+      Boolean(
+        hint &&
+        hint.date === booking.date &&
+        hint.slots.length === slots.length &&
+        hint.slots.every((slot) =>
+          slots.some((candidate) =>
+            selectionKey(candidate.courtId, candidate.startHour) ===
+            selectionKey(slot.courtId, slot.startHour),
+          ),
+        ),
+      );
+
+    if (!state || (state === "held" && (!Number.isFinite(pendingExpiry) || pendingExpiry <= now))) {
+      try {
+        const storedHint = parseSlotOwnershipHint(localStorage.getItem(slotOwnershipHintStorageKey));
+        if (matchesBooking(storedHint)) localStorage.removeItem(slotOwnershipHintStorageKey);
+      } catch {
+        // This hint never controls the booking, so storage failure is non-blocking.
+      }
+      queueMicrotask(() => {
+        setCrossTabOwnershipHint((current) => matchesBooking(current) ? null : current);
+      });
+      return;
+    }
+
+    const expiresAt = state === "held"
+      ? Math.min(pendingExpiry, now + ownershipHintMaximumLifetimeMs)
+      : now + ownershipHintMaximumLifetimeMs;
+    const hint: SlotOwnershipHint = {
+      date: booking.date,
+      state,
+      expiresAt,
+      updatedAt: now,
+      slots,
+    };
+    try {
+      localStorage.setItem(slotOwnershipHintStorageKey, JSON.stringify(hint));
+      queueMicrotask(() => setCrossTabOwnershipHint(hint));
+    } catch {
+      // Same-tab verified state still renders when cross-tab hints are unavailable.
+    }
+  }, [confirmedBooking, holdExpired, isBookingPage, pendingBooking]);
 
   useEffect(() => {
     if (step !== 3 || !pendingBooking) return;
@@ -2557,6 +2747,28 @@ export function BookingExperience({
         sessionStorage.removeItem(
           pendingBookingStorageKey(bookingAttemptIdRef.current),
         );
+      }
+      if (pendingBooking) {
+        const currentHint = parseSlotOwnershipHint(localStorage.getItem(slotOwnershipHintStorageKey));
+        const bookingSlots = pendingBooking.items?.length
+          ? pendingBooking.items
+          : Array.from({ length: pendingBooking.durationHours }, (_, index) => ({
+              courtId: pendingBooking.courtId,
+              startHour: pendingBooking.startHour + index,
+            }));
+        const belongsToCurrentHold = Boolean(
+          currentHint &&
+          currentHint.date === pendingBooking.date &&
+          currentHint.slots.length === bookingSlots.length &&
+          currentHint.slots.every((slot) =>
+            bookingSlots.some((item) =>
+              selectionKey(item.courtId, item.startHour) ===
+              selectionKey(slot.courtId, slot.startHour),
+            ),
+          ),
+        );
+        if (belongsToCurrentHold) localStorage.removeItem(slotOwnershipHintStorageKey);
+        setCrossTabOwnershipHint((current) => belongsToCurrentHold ? null : current);
       }
     } catch {
       // The UI can still recover when browser storage is unavailable.
@@ -3300,9 +3512,9 @@ export function BookingExperience({
                                             key={`${court.id}-${hour}`}
                                             className={`availability-cell${ownedState ? ` owned-state owned-${ownedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
-                                            disabled={busy}
+                                            disabled={busy || Boolean(ownedState)}
                                             aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${ownedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
-                                            onClick={() => slot && !busy && chooseSlot(court, slot)}
+                                            onClick={() => slot && !busy && !ownedState && chooseSlot(court, slot)}
                                           ><span aria-hidden="true" /><small>{stateLabel}</small></button>
                                         );
                                       })}
@@ -3350,9 +3562,9 @@ export function BookingExperience({
                                           key={`${court.id}-${hour}`}
                                           className={`availability-cell mobile-availability-cell${ownedState ? ` owned-state owned-${ownedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
-                                          disabled={busy}
+                                          disabled={busy || Boolean(ownedState)}
                                           aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${ownedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
-                                          onClick={() => slot && !busy && chooseSlot(court, slot)}
+                                          onClick={() => slot && !busy && !ownedState && chooseSlot(court, slot)}
                                         ><span aria-hidden="true" /><small>{stateLabel}</small></button>
                                       );
                                     })}

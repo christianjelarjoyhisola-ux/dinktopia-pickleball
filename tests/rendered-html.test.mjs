@@ -1014,10 +1014,10 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
   );
   assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
-  assert.match(matrixSource, /disabled=\{busy\}/);
+  assert.match(matrixSource, /disabled=\{busy \|\| Boolean\(ownedState\)\}/);
   assert.match(
     matrixSource,
-    /onClick=\{\(\) => slot && !busy && chooseSlot\(court, slot\)\}/,
+    /onClick=\{\(\) => slot && !busy && !ownedState && chooseSlot\(court, slot\)\}/,
   );
   assert.match(matrixSource, /availability-cell\$\{ownedState \? ` owned-state owned-\$\{ownedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}/);
   assert.doesNotMatch(matrixSource, /isLimitBlocked|is-limit-blocked|selection limit/i);
@@ -1028,10 +1028,39 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.ok(ownedStateStart >= 0 && ownedStateEnd > ownedStateStart, "expected private owned-slot overlay state");
   const ownedStateSource = booking.slice(ownedStateStart, ownedStateEnd);
   assert.match(ownedStateSource, /const booking = pendingBooking \?\? confirmedBooking/);
+  assert.match(ownedStateSource, /if \(!booking\)[\s\S]*?crossTabOwnershipHint\?\.date === selectedDate/);
+  assert.match(ownedStateSource, /crossTabOwnershipHint\.slots\.forEach/);
   assert.match(ownedStateSource, /booking\.date !== selectedDate \|\| booking\.status === "cancelled"/);
   assert.match(ownedStateSource, /booking\.status === "pending_payment" && !holdExpired/);
   assert.match(ownedStateSource, /booking\.items\?\.length/);
   assert.match(ownedStateSource, /states\.set\(selectionKey\(item\.courtId, item\.startHour\), state\)/);
+
+  assert.match(booking, /const slotOwnershipHintStorageKey = `\$\{tenantStoragePrefix\}:slot-ownership-hint:v1`/);
+  assert.match(booking, /const ownershipHintMaximumLifetimeMs = 24 \* 60 \* 60 \* 1000/);
+  const hintParserStart = booking.indexOf("function parseSlotOwnershipHint(");
+  const hintParserEnd = booking.indexOf("function tenantPlaceholderEmail(", hintParserStart);
+  assert.ok(hintParserStart >= 0 && hintParserEnd > hintParserStart, "expected strict cross-tab hint parsing");
+  const hintParserSource = booking.slice(hintParserStart, hintParserEnd);
+  assert.match(hintParserSource, /candidate\.expiresAt <= now/);
+  assert.match(hintParserSource, /candidate\.expiresAt > now \+ ownershipHintMaximumLifetimeMs/);
+  assert.match(hintParserSource, /candidate\.slots\.length > 18/);
+  assert.match(hintParserSource, /slot\.startHour > 47/);
+
+  const hintSyncStart = booking.indexOf("const syncOwnershipHint = (rawValue?: string | null)");
+  const hintSyncEnd = booking.indexOf("if (!crossTabOwnershipHint) return;", hintSyncStart);
+  assert.ok(hintSyncStart >= 0 && hintSyncEnd > hintSyncStart, "expected storage-event hint synchronization");
+  const hintSyncSource = booking.slice(hintSyncStart, hintSyncEnd);
+  assert.match(hintSyncSource, /event\.storageArea === localStorage && event\.key === slotOwnershipHintStorageKey/);
+  assert.match(hintSyncSource, /window\.addEventListener\("storage", handleStorage\)/);
+  assert.match(hintSyncSource, /window\.removeEventListener\("storage", handleStorage\)/);
+
+  const hintWriterStart = booking.indexOf("const now = Date.now();", hintSyncEnd);
+  const hintWriterEnd = booking.indexOf("if (step !== 3 || !pendingBooking) return;", hintWriterStart);
+  assert.ok(hintWriterStart >= 0 && hintWriterEnd > hintWriterStart, "expected bounded ownership-hint writer");
+  const hintWriterSource = booking.slice(hintWriterStart, hintWriterEnd);
+  assert.match(hintWriterSource, /localStorage\.setItem\(slotOwnershipHintStorageKey, JSON\.stringify\(hint\)\)/);
+  assert.match(hintWriterSource, /date: booking\.date,[\s\S]*?state,[\s\S]*?expiresAt,[\s\S]*?updatedAt: now,[\s\S]*?slots/);
+  assert.doesNotMatch(hintWriterSource, /\.reference|\.token|customer|paymentReference|receipt/i);
 
   const uniqueStart = booking.indexOf("function uniqueSelections(");
   const reducerStart = booking.indexOf("function selectionReducer(", uniqueStart);
