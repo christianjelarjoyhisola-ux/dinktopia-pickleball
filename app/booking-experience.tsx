@@ -5,6 +5,7 @@ import {
   CalendarDays,
   Check,
   Clock3,
+  Copy,
   Grid2X2,
   Share2,
   TriangleAlert,
@@ -1686,6 +1687,7 @@ export function BookingExperience({
   const [receiptFileName, setReceiptFileName] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [paymentError, setPaymentError] = useState("");
+  const [paymentCopyState, setPaymentCopyState] = useState<"idle" | "copied" | "error">("idle");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<BookingRecord | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
@@ -1813,6 +1815,9 @@ export function BookingExperience({
     : paymentAccountDigits;
   const paymentAccountDisplay = isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits)
     ? gcashLocalDigits.replace(/^(\d{3})(\d{3})(\d{4})$/, "$1 $2 $3")
+    : paymentAccountNumber;
+  const paymentAccountCopyValue = isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits)
+    ? `+63${gcashLocalDigits}`
     : paymentAccountNumber;
   const paymentAccountReady = Boolean(paymentAccountName && paymentAccountNumber);
   const rawPolicy = (bootstrap?.settings?.refund_reschedule_policy ??
@@ -2444,6 +2449,18 @@ export function BookingExperience({
       );
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function copyPaymentAccount() {
+    if (!isLive || !paymentAccountReady || !paymentAccountCopyValue) return;
+
+    try {
+      await navigator.clipboard.writeText(paymentAccountCopyValue);
+      setPaymentCopyState("copied");
+      window.setTimeout(() => setPaymentCopyState("idle"), 2200);
+    } catch {
+      setPaymentCopyState("error");
     }
   }
 
@@ -3450,9 +3467,9 @@ export function BookingExperience({
                         <span className="gcash-secure-pill"><i aria-hidden="true" /> Secure</span>
                       </div>
                       <div className="payment-amount">
-                        <span>Amount to pay</span>
-                        <strong>{peso(checkoutTotal)}</strong>
-                        <small>Send the exact booking total</small>
+                        <span>Exact amount to send</span>
+                        <strong><small>Send exactly</small>{peso(checkoutTotal)}</strong>
+                        <p>Do not round or change this amount so we can match your payment.</p>
                       </div>
 
                       {holdExpired ? (
@@ -3467,20 +3484,31 @@ export function BookingExperience({
                         <>
                           <div className="owner-payment-note">
                             <span aria-hidden="true">✦</span>
-                            <div><strong>Pay the court owner directly</strong><small>Use the verified {paymentLabel} details saved by the venue in System Setup.</small></div>
+                            <div><strong>Pay this verified court account</strong><small>Use only the {paymentLabel} destination shown below. It was published by the {activeTenant.identity.shortName} court owner.</small></div>
                           </div>
-                          <div className="gcash-account-field">
-                            <span>{paymentLabel} mobile number</span>
-                            <div className="gcash-account-number">
-                              {isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) && <b>+63</b>}
-                              <output aria-label={`${paymentLabel} account number`}>{isLive ? paymentAccountDisplay : "Available on the live booking site"}</output>
+                          <section className="payment-destination" aria-labelledby={`${formId}-payment-destination-title`}>
+                            <div className="payment-destination-heading">
+                              <span id={`${formId}-payment-destination-title`}>Send payment to</span>
+                              <small><i aria-hidden="true">✓</i> Venue verified</small>
                             </div>
-                          </div>
-                          <div className="payment-recipient">
-                            <span>Paying</span>
-                            <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
-                            <small>{paymentLabel} account from System Setup</small>
-                          </div>
+                            <div className="payment-recipient">
+                              <span>Recipient name</span>
+                              <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
+                            </div>
+                            <div className="gcash-account-field">
+                              <span>{paymentLabel} mobile number</span>
+                              <div className="gcash-account-number">
+                                <output aria-label={`${paymentLabel} payment destination`}>{isLive ? `${isGcashPayment && /^9\d{9}$/.test(gcashLocalDigits) ? "+63 " : ""}${paymentAccountDisplay}` : "Available on the live booking site"}</output>
+                                <button type="button" className="copy-payment-button" onClick={() => void copyPaymentAccount()} disabled={!isLive} aria-label={`Copy ${paymentLabel} payment number`}>
+                                  {paymentCopyState === "copied" ? <Check aria-hidden="true" /> : <Copy aria-hidden="true" />}
+                                  <span>{paymentCopyState === "copied" ? "Copied" : "Copy"}</span>
+                                </button>
+                              </div>
+                              <span className={`payment-copy-feedback ${paymentCopyState === "error" ? "is-error" : ""}`} role="status" aria-live="polite">
+                                {paymentCopyState === "copied" ? "Payment number copied to clipboard." : paymentCopyState === "error" ? "Could not copy automatically. Press and hold the number to copy it." : ""}
+                              </span>
+                            </div>
+                          </section>
                           {isLive && paymentMethod?.instructions && <p className="payment-owner-instructions">{paymentMethod.instructions}</p>}
                           <div className="gcash-hold-status" role="status">
                             <span><i aria-hidden="true" /> Slot held · {pendingBooking.reference}</span>

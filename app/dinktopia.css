@@ -381,24 +381,45 @@
 .booking-route .gcash-payment-card .payment-amount {
   display: grid;
   justify-items: center;
-  gap: 5px;
+  gap: 7px;
   padding: 27px 0 25px;
   text-align: center;
 }
 
-.booking-route .gcash-payment-card .payment-amount span,
-.booking-route .gcash-payment-card .payment-amount small {
+.booking-route .gcash-payment-card .payment-amount > span {
   color: var(--muted);
-  font-size: 0.67rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .booking-route .gcash-payment-card .payment-amount strong {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
   color: var(--ink);
   font-family: var(--font-display), var(--font-body), Arial, sans-serif;
   font-size: clamp(1.85rem, 4.5vw, 2.1rem);
   font-weight: 700;
   letter-spacing: -0.055em;
   line-height: 1.1;
+}
+
+.booking-route .gcash-payment-card .payment-amount strong small {
+  color: #315f4e;
+  font-family: var(--font-body), Arial, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.booking-route .gcash-payment-card .payment-amount p {
+  max-width: 360px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
 }
 
 .booking-route .owner-payment-note {
@@ -439,49 +460,102 @@
 }
 
 .booking-route .gcash-account-number {
-  display: grid;
-  min-height: 48px;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  overflow: hidden;
-  border: 1px solid var(--line);
-  border-radius: 11px;
-  background: white;
-}
-
-.booking-route .gcash-account-number b {
-  align-self: stretch;
   display: flex;
+  min-height: 58px;
   align-items: center;
-  border-right: 1px solid var(--line);
-  padding: 0 11px;
-  color: var(--muted);
-  font-size: 0.71rem;
-  font-weight: 500;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .booking-route .gcash-account-number output {
   min-width: 0;
-  padding: 0 13px;
+  user-select: all;
   color: var(--ink);
-  font-size: 0.82rem;
+  font-size: clamp(1.05rem, 4.5vw, 1.35rem);
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+  letter-spacing: 0.035em;
   overflow-wrap: anywhere;
 }
 
-.booking-route .payment-recipient {
+.booking-route .payment-destination {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 3px 12px;
-  margin: 18px 0 0;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 13px;
+  gap: 14px;
+  border: 1px solid rgba(20, 58, 162, 0.16);
+  border-radius: 16px;
+  background: linear-gradient(145deg, #fff 0%, #f5f8ff 100%);
+  padding: 17px;
+  box-shadow: 0 10px 28px rgba(20, 58, 162, 0.07);
 }
 
-.booking-route .payment-recipient span,
-.booking-route .payment-recipient small { color: var(--muted); font-size: 0.61rem; }
-.booking-route .payment-recipient strong { font-size: 0.72rem; text-align: right; }
-.booking-route .payment-recipient small { grid-column: 2; text-align: right; }
+.booking-route .payment-destination-heading,
+.booking-route .payment-recipient {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.booking-route .payment-destination-heading > span {
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 800;
+}
+
+.booking-route .payment-destination-heading small {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  background: #e4f6ef;
+  padding: 5px 8px;
+  color: #16845b;
+  font-size: 0.6rem;
+  font-weight: 800;
+}
+
+.booking-route .payment-recipient {
+  border-bottom: 1px solid rgba(20, 58, 162, 0.11);
+  padding-bottom: 13px;
+}
+
+.booking-route .payment-recipient span { color: var(--muted); font-size: 0.68rem; }
+.booking-route .payment-recipient strong { font-size: 0.82rem; text-align: right; }
+
+.booking-route .copy-payment-button {
+  display: inline-flex;
+  min-width: 88px;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #b8cbea;
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 12px;
+  color: #143aa2;
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.booking-route .copy-payment-button:hover { border-color: #143aa2; background: #edf4ff; }
+.booking-route .copy-payment-button:focus-visible { outline: 3px solid rgba(8, 115, 230, 0.25); outline-offset: 2px; }
+.booking-route .copy-payment-button:disabled { cursor: not-allowed; opacity: 0.55; }
+.booking-route .copy-payment-button svg { width: 16px; height: 16px; }
+
+.booking-route .payment-copy-feedback {
+  min-height: 1.1em;
+  color: #16845b;
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.booking-route .payment-copy-feedback.is-error { color: #a43b30; }
 
 .booking-route .payment-owner-instructions {
   margin: 9px 1px 0;
@@ -575,6 +649,8 @@
 @media (max-width: 430px) {
   .booking-route .booking-compact-title { display: block; }
   .booking-route .booking-compact-title .back-link { margin-bottom: 11px; }
+  .booking-route .gcash-account-number { align-items: stretch; flex-direction: column; }
+  .booking-route .copy-payment-button { width: 100%; }
 }
 
 .dinktopia-site *,
@@ -6131,8 +6207,7 @@
 }
 
 .kl-court-site.booking-route :is(input, select, textarea),
-.kl-court-site.booking-route .phone-field,
-.kl-court-site.booking-route .gcash-account-number {
+.kl-court-site.booking-route .phone-field {
   border-color: #cfd5d8;
   border-radius: 9px;
   background: #fffefa;

@@ -4646,13 +4646,22 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     stepThree,
-    /className="payment-amount"[\s\S]*?Amount to pay[\s\S]*?\{peso\(checkoutTotal\)\}[\s\S]*?Send the exact booking total/,
+    /className="payment-amount"[\s\S]*?Exact amount to send[\s\S]*?Send exactly[\s\S]*?\{peso\(checkoutTotal\)\}[\s\S]*?Do not round or change this amount/,
   );
-  assert.match(stepThree, /Pay the court owner directly[\s\S]*?System Setup/);
+  assert.match(stepThree, /Pay this verified court account[\s\S]*?published by the \{activeTenant\.identity\.shortName\} court owner/);
   assert.match(
     stepThree,
-    /className="gcash-account-number"[\s\S]*?paymentAccountDisplay[\s\S]*?className="payment-recipient"[\s\S]*?paymentAccountName[\s\S]*?account from System Setup/,
+    /className="payment-destination"[\s\S]*?Send payment to[\s\S]*?Venue verified[\s\S]*?className="payment-recipient"[\s\S]*?Recipient name[\s\S]*?paymentAccountName[\s\S]*?className="gcash-account-number"[\s\S]*?paymentAccountDisplay/,
   );
+  assert.match(
+    booking,
+    /const paymentAccountCopyValue =[\s\S]*?`\+63\$\{gcashLocalDigits\}`[\s\S]*?async function copyPaymentAccount\(\)[\s\S]*?navigator\.clipboard\.writeText\(paymentAccountCopyValue\)[\s\S]*?setPaymentCopyState\("copied"\)/,
+  );
+  assert.match(
+    stepThree,
+    /type="button" className="copy-payment-button"[\s\S]*?Copy \$\{paymentLabel\} payment number[\s\S]*?Copied[\s\S]*?className=\{`payment-copy-feedback[\s\S]*?role="status" aria-live="polite"/,
+  );
+  assert.doesNotMatch(stepThree, /<input[^>]+paymentAccountDisplay|readOnly[^>]+paymentAccountDisplay/);
   assert.match(stepThree, /data-testid="submit-receipt"[\s\S]*?Submit receipt · \{peso\(checkoutTotal\)\}/);
   assert.match(stepThree, /className="payment-error" role="alert"/);
   assert.match(stepThree, /aria-busy=\{isSubmitting\}/);
@@ -4671,6 +4680,18 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   const paymentLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-payment-view");
   assert.match(paymentLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
   assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-payment-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
+  assert.match(
+    cssBlock(publicCss, ".booking-route .payment-destination"),
+    /border-radius:\s*16px[\s\S]*?background:\s*linear-gradient/,
+  );
+  assert.match(
+    cssBlock(publicCss, ".booking-route .copy-payment-button"),
+    /min-height:\s*44px[\s\S]*?cursor:\s*pointer/,
+  );
+  assert.match(
+    publicCss,
+    /@media\s*\(max-width:\s*430px\)[\s\S]*?\.booking-route \.gcash-account-number\s*\{[^}]*flex-direction:\s*column[\s\S]*?\.booking-route \.copy-payment-button\s*\{[^}]*width:\s*100%/s,
+  );
 
   const desktopCss = cssBlock(publicCss, "@media (min-width: 980px)");
   assert.match(
