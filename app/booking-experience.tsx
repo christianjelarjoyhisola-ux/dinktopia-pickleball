@@ -1915,11 +1915,6 @@ export function BookingExperience({
           status: "available",
         }
       : null);
-  const checkoutSubtotal =
-    pendingBooking?.subtotalAmount ?? checkoutSlot?.price ?? courtSubtotal;
-  const checkoutFee =
-    pendingBooking?.serviceFeeAmount ??
-    (pendingBooking ? Math.max(0, pendingBooking.amount - checkoutSubtotal) : bookingFee ?? 0);
   const checkoutTotal = pendingBooking?.amount ?? total;
   const holdExpiryTimestamp = pendingBooking?.expiresAt
     ? Date.parse(pendingBooking.expiresAt)
@@ -3731,9 +3726,9 @@ export function BookingExperience({
                         <span className="gcash-secure-pill"><i aria-hidden="true" /> Secure</span>
                       </div>
                       <div className="payment-amount">
-                        <span>Exact amount to send</span>
-                        <strong><small>Send exactly</small>{peso(checkoutTotal)}</strong>
-                        <p>Do not round or change this amount so we can match your payment.</p>
+                        <span>Amount due</span>
+                        <strong>{peso(checkoutTotal)}</strong>
+                        <p>Send this exact amount so we can match your payment.</p>
                       </div>
 
                       {holdExpired ? (
@@ -3823,7 +3818,6 @@ export function BookingExperience({
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
                       <p className="payment-security"><span aria-hidden="true">✓</span> The court owner&apos;s payment details come directly from System Setup.</p>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={checkoutSubtotal} bookingFee={checkoutFee} total={checkoutTotal} policyTitle={policyVersion ? policyTitle : null} />
                   </div>
                 )}
 

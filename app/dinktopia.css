@@ -325,9 +325,10 @@
 /* RallyOS payment hierarchy with real venue-owned GCash configuration. */
 .booking-route .checkout-layout.booking-payment-view {
   display: grid;
-  grid-template-columns: minmax(0, 1.65fr) minmax(270px, 0.72fr);
+  grid-template-columns: minmax(0, 1fr);
   align-items: start;
-  gap: 20px;
+  width: min(100%, 760px);
+  margin-inline: auto;
 }
 
 .booking-route .gcash-payment-card {
@@ -404,14 +405,6 @@
   font-weight: 700;
   letter-spacing: -0.055em;
   line-height: 1.1;
-}
-
-.booking-route .gcash-payment-card .payment-amount strong small {
-  color: #315f4e;
-  font-family: var(--font-body), Arial, sans-serif;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0;
 }
 
 .booking-route .gcash-payment-card .payment-amount p {
@@ -638,11 +631,6 @@
   .booking-route .booking-details-view .form-footer > span { justify-content: center; }
   .booking-route .booking-details-view .form-footer .button { width: 100%; }
   .booking-route .checkout-layout.booking-payment-view { grid-template-columns: 1fr; }
-  .booking-route .booking-payment-view .rally-booking-summary {
-    position: static;
-    grid-row: 1;
-  }
-  .booking-route .booking-payment-view .gcash-payment-card { grid-row: 2; }
   .booking-route .payment-evidence-fields { grid-template-columns: 1fr; }
 }
 

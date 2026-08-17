@@ -4690,8 +4690,9 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     stepThree,
-    /className="payment-amount"[\s\S]*?Exact amount to send[\s\S]*?Send exactly[\s\S]*?\{peso\(checkoutTotal\)\}[\s\S]*?Do not round or change this amount/,
+    /className="payment-amount"[\s\S]*?Amount due[\s\S]*?<strong>\{peso\(checkoutTotal\)\}<\/strong>[\s\S]*?Send this exact amount so we can match your payment/,
   );
+  assert.doesNotMatch(stepThree, /Exact amount to send|Send exactly/);
   assert.match(stepThree, /Pay this verified court account[\s\S]*?published by the \{activeTenant\.identity\.shortName\} court owner/);
   assert.match(
     stepThree,
@@ -4712,7 +4713,8 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepThree, /data-testid="submit-receipt"[\s\S]*?Submit receipt · \{peso\(checkoutTotal\)\}/);
   assert.match(stepThree, /className="payment-error" role="alert"/);
   assert.match(stepThree, /aria-busy=\{isSubmitting\}/);
-  assert.equal((stepThree.match(/<RallyBookingSummary\b/g) ?? []).length, 1);
+  assert.equal((stepThree.match(/<RallyBookingSummary\b/g) ?? []).length, 0);
+  assert.equal((stepTwo.match(/<RallyBookingSummary\b/g) ?? []).length, 1);
   assert.equal((stepFour.match(/<BookingSummary\b/g) ?? []).length, 0);
   assert.doesNotMatch(stepThree, /Interactive payment demo|GCash payment preview|payment-panel-preview/);
   assert.doesNotMatch(stepTwo, /payment-panel|Submit GCash receipt|payment-reference/);
@@ -4725,8 +4727,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(mobileDetailsLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
   assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-details-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
   const paymentLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-payment-view");
-  assert.match(paymentLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
-  assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-payment-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
+  assert.match(paymentLayout, /grid-template-columns:\s*minmax\(0,\s*1fr\)[\s\S]*?width:\s*min\(100%,\s*760px\)[\s\S]*?margin-inline:\s*auto/s);
   assert.match(
     cssBlock(publicCss, ".booking-route .payment-destination"),
     /border-radius:\s*16px[\s\S]*?background:\s*linear-gradient/,
