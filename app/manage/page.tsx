@@ -3192,6 +3192,12 @@ function LiveSettingsView({
 
   return (
     <section className={styles.settingsLayout}>
+      <label className={styles.settingsMobileSelect}>
+        <span>Settings section</span>
+        <select value={section} onChange={(event) => { const next = event.target.value as typeof section; setSection(next); onSectionChange(next); }}>
+          {(["courts", "gallery", "schedule", "business", "rules"] as const).map((item, index) => <option key={item} value={item}>0{index + 1} · {item[0].toUpperCase() + item.slice(1)}</option>)}
+        </select>
+      </label>
       <nav className={styles.settingsNav} aria-label="Venue settings sections">
         {(["courts", "gallery", "schedule", "business", "rules"] as const).map((item, index) => (
           <button type="button" key={item} className={section === item ? styles.settingsActive : undefined} onClick={() => { setSection(item); onSectionChange(item); }} aria-current={section === item ? "page" : undefined}>
@@ -3954,6 +3960,7 @@ export default function ManagePage() {
   const [syncPending, setSyncPending] = useState(false);
   const [accountPending, setAccountPending] = useState(false);
   const [toast, setToast] = useState<ToastState | null>(null);
+  const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"courts" | "gallery" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
@@ -3963,6 +3970,7 @@ export default function ManagePage() {
   const [insightsError, setInsightsError] = useState<string | null>(null);
   const [insightsRevision, setInsightsRevision] = useState(0);
   const dialogRef = useRef<HTMLDialogElement>(null);
+  const mobileMoreDialogRef = useRef<HTMLDialogElement>(null);
   const syncInFlightRef = useRef(false);
   const syncGenerationRef = useRef(0);
 
@@ -3999,12 +4007,21 @@ export default function ManagePage() {
   const can = (capability: ManagementCapability) => context.capabilities.includes(capability);
   const navigateTo = (nextView: View) => {
     if (nextView === "bookings") setBookingFilter("all");
+    setMobileMoreOpen(false);
     setView(nextView);
   };
   const openNeedsReview = () => {
+    setMobileMoreOpen(false);
     setBookingFilter("pending");
     setView("bookings");
   };
+
+  useEffect(() => {
+    const dialog = mobileMoreDialogRef.current;
+    if (!dialog) return;
+    if (mobileMoreOpen && !dialog.open) dialog.showModal();
+    if (!mobileMoreOpen && dialog.open) dialog.close();
+  }, [mobileMoreOpen]);
   const loadPaymentReceipt = useCallback(
     (verificationId: string) => managementAdapter.loadPaymentReceipt(context, verificationId),
     [context],
@@ -4332,6 +4349,9 @@ export default function ManagePage() {
   const visibleNavItems = NAV_ITEMS.filter((item) =>
     item.id !== "launch" || snapshot?.session.isSystemOwner === true
   );
+  const mobilePrimaryViews: View[] = ["overview", "schedule", "bookings"];
+  const mobileMoreItems = visibleNavItems.filter((item) => !mobilePrimaryViews.includes(item.id));
+  const mobileMoreActive = mobileMoreItems.some((item) => item.id === view);
 
   const renderView = () => {
     if (!snapshot) return <DashboardSkeleton />;
@@ -4474,7 +4494,16 @@ export default function ManagePage() {
             <span className={styles.srOnly}>{activeTenant.identity.name}</span>
             <span className={styles.brandContext}>Manage</span>
           </div>
+          <div className={styles.mobileBrandTitle}>
+            <span>{activeTenant.identity.shortName} operations</span>
+            <strong>{view === "overview" ? "Today" : selectedCopy.title}</strong>
+          </div>
           <span className={styles.previewTag}>{isPreview ? "Preview" : "Live"}</span>
+          {!isPreview && (
+            <button type="button" className={styles.mobileHeaderButton} aria-label="Refresh live tenant data" disabled={syncPending} onClick={() => void refreshWorkspace(true)}>
+              <span aria-hidden="true">&#8635;</span>
+            </button>
+          )}
           <button
             type="button"
             className={styles.mobileAvatar}
@@ -4485,13 +4514,6 @@ export default function ManagePage() {
             {accountPending ? "…" : isPreview ? "PV" : "↪"}
           </button>
         </header>
-        <nav className={styles.mobileNav} aria-label="Mobile management navigation">
-          {visibleNavItems.map((item) => (
-            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.navActive : undefined} aria-current={view === item.id ? "page" : undefined}>
-              <span aria-hidden="true"><NavIcon view={item.id} /></span>{item.label}
-            </button>
-          ))}
-        </nav>
 
         <div className={styles.topbar}>
           <div className={styles.topbarTitle}>
@@ -4541,7 +4563,64 @@ export default function ManagePage() {
 
           {renderView()}
         </main>
+
+        <nav className={styles.mobileDock} aria-label="Primary management navigation">
+          {visibleNavItems.filter((item) => mobilePrimaryViews.includes(item.id)).map((item) => (
+            <button type="button" key={item.id} onClick={() => navigateTo(item.id)} className={view === item.id ? styles.mobileDockActive : undefined} aria-current={view === item.id ? "page" : undefined}>
+              <span aria-hidden="true"><NavIcon view={item.id} /></span>
+              <strong>{item.label}</strong>
+            </button>
+          ))}
+          <button type="button" onClick={() => setMobileMoreOpen(true)} className={mobileMoreActive ? styles.mobileDockActive : undefined} aria-haspopup="dialog" aria-expanded={mobileMoreOpen}>
+            <span aria-hidden="true"><Settings2 /></span>
+            <strong>More</strong>
+          </button>
+        </nav>
       </div>
+
+      <dialog
+        ref={mobileMoreDialogRef}
+        className={styles.mobileMoreDialog}
+        aria-labelledby="mobile-more-title"
+        onCancel={(event) => { event.preventDefault(); setMobileMoreOpen(false); }}
+        onClose={() => setMobileMoreOpen(false)}
+      >
+        <div className={styles.mobileSheetHandle} aria-hidden="true" />
+        <header className={styles.mobileMoreHeader}>
+          <div><span>Workspace</span><h2 id="mobile-more-title">More tools</h2></div>
+          <button type="button" onClick={() => setMobileMoreOpen(false)} aria-label="Close more tools"><X /></button>
+        </header>
+        <div className={styles.mobileMoreGroups}>
+          <section>
+            <p>Operations</p>
+            {mobileMoreItems.filter((item) => ["blocks", "customers"].includes(item.id)).map((item) => (
+              <button type="button" key={item.id} onClick={() => navigateTo(item.id)} aria-current={view === item.id ? "page" : undefined}>
+                <span aria-hidden="true"><NavIcon view={item.id} /></span><strong>{item.label}</strong><ArrowRight aria-hidden="true" />
+              </button>
+            ))}
+          </section>
+          <section>
+            <p>Business</p>
+            {mobileMoreItems.filter((item) => ["finance", "reports", "settings"].includes(item.id)).map((item) => (
+              <button type="button" key={item.id} onClick={() => navigateTo(item.id)} aria-current={view === item.id ? "page" : undefined}>
+                <span aria-hidden="true"><NavIcon view={item.id} /></span><strong>{item.label}</strong><ArrowRight aria-hidden="true" />
+              </button>
+            ))}
+          </section>
+          {mobileMoreItems.some((item) => ["launch", "access"].includes(item.id)) && <section>
+            <p>Platform</p>
+            {mobileMoreItems.filter((item) => ["launch", "access"].includes(item.id)).map((item) => (
+              <button type="button" key={item.id} onClick={() => navigateTo(item.id)} aria-current={view === item.id ? "page" : undefined}>
+                <span aria-hidden="true"><NavIcon view={item.id} /></span><strong>{item.label}</strong><ArrowRight aria-hidden="true" />
+              </button>
+            ))}
+          </section>}
+        </div>
+        <footer className={styles.mobileMoreFooter}>
+          <span className={styles.modeDot} aria-hidden="true" />
+          <div><strong>{isPreview ? "Preview mode" : "Live connection"}</strong><small>{activeTenant.identity.shortName} tenant data</small></div>
+        </footer>
+      </dialog>
 
       <dialog
         ref={dialogRef}

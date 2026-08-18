@@ -565,7 +565,7 @@
 .userCard button { width: 44px; height: 44px; border: 0; background: none; color: var(--muted); }
 
 .workspace { min-width: 0; }
-.mobileBrand, .mobileNav { display: none; }
+.mobileBrand, .mobileNav, .mobileDock, .settingsMobileSelect { display: none; }
 
 .topbar {
   position: relative;
@@ -3125,4 +3125,112 @@
 
 @media (max-width: 900px) {
   .manageShell .topbar { background: rgba(244, 242, 235, .96); }
+}
+
+/* Dinktopia-parity mobile management shell: fixed primary dock plus a complete tools sheet. */
+.mobileMoreDialog {
+  width: min(520px, calc(100% - 24px));
+  max-width: none;
+  max-height: min(760px, calc(100svh - 24px));
+  margin: auto auto 12px;
+  overflow: hidden;
+  border: 1px solid rgba(16, 47, 92, .14);
+  border-radius: 24px;
+  background: var(--surface);
+  color: var(--ink);
+  padding: 0;
+  box-shadow: 0 30px 90px rgba(8, 25, 48, .3);
+}
+.mobileMoreDialog::backdrop { background: rgba(8, 25, 48, .5); backdrop-filter: blur(7px); }
+.mobileSheetHandle { width: 42px; height: 4px; margin: 10px auto 4px; border-radius: 999px; background: #d3d9df; }
+.mobileMoreHeader { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--line); padding: 14px 18px 15px; }
+.mobileMoreHeader span { color: var(--blue); font-size: .66rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.mobileMoreHeader h2 { margin: 2px 0 0; font-family: var(--font-display), sans-serif; font-size: 1.3rem; }
+.mobileMoreHeader > button { width: 44px; height: 44px; display: grid; flex: 0 0 auto; place-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--ink); }
+.mobileMoreHeader > button svg { width: 18px; }
+.mobileMoreGroups { max-height: min(570px, calc(100svh - 220px)); overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px; }
+.mobileMoreGroups section + section { border-top: 1px solid var(--line); margin-top: 7px; padding-top: 7px; }
+.mobileMoreGroups section > p { margin: 8px 6px 5px; color: #68798b; font-size: .68rem; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+.mobileMoreGroups section > button { width: 100%; min-height: 54px; display: grid; grid-template-columns: 38px minmax(0, 1fr) 18px; align-items: center; gap: 11px; border: 0; border-radius: 13px; background: transparent; padding: 7px 8px; color: var(--ink); text-align: left; }
+.mobileMoreGroups section > button:hover, .mobileMoreGroups section > button[aria-current="page"] { background: #eef3f6; }
+.mobileMoreGroups section > button > span { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 11px; background: #e7eff5; color: var(--blue); }
+.mobileMoreGroups section > button > span svg { width: 18px; }
+.mobileMoreGroups section > button > strong { min-width: 0; font-size: .84rem; }
+.mobileMoreGroups section > button > svg { width: 16px; color: #7c8a99; }
+.mobileMoreFooter { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); background: var(--paper); padding: 12px 18px calc(12px + env(safe-area-inset-bottom)); }
+.mobileMoreFooter > div { display: grid; }
+.mobileMoreFooter strong { font-size: .76rem; }
+.mobileMoreFooter small { margin-top: 1px; color: var(--muted); font-size: .67rem; }
+
+@media (max-width: 900px) {
+  .manageShell, .workspace, .main { min-width: 0; max-width: 100%; overflow-x: clip; }
+  .manageShell .mobileBrand {
+    position: sticky;
+    z-index: 35;
+    top: 0;
+    min-height: 64px;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+    border-bottom: 1px solid rgba(16, 47, 92, .11);
+    background: rgba(255, 254, 250, .95);
+    padding: 7px 14px;
+    color: var(--ink);
+    backdrop-filter: blur(18px);
+  }
+  .manageShell .mobileBrand .brand { width: auto; min-width: 0; }
+  .manageShell .mobileBrand .brandLogo { width: 58px; }
+  .manageShell .mobileBrand .logoPlate { padding: 0; }
+  .manageShell .mobileBrand .brandContext { display: none; }
+  .mobileBrandTitle { min-width: 0; display: grid; gap: 1px; padding-left: 2px; }
+  .mobileBrandTitle span { overflow: hidden; color: var(--muted); font-size: .6rem; font-weight: 750; letter-spacing: .06em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+  .mobileBrandTitle strong { overflow: hidden; font-family: var(--font-display), sans-serif; font-size: .82rem; letter-spacing: -.025em; text-overflow: ellipsis; white-space: nowrap; }
+  .manageShell .mobileBrand > .previewTag { display: none; }
+  .mobileHeaderButton, .manageShell .mobileAvatar { width: 44px; height: 44px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); color: var(--ink); font-size: .72rem; font-weight: 800; }
+  .mobileHeaderButton:disabled { opacity: .55; }
+  .manageShell .mobileNav, .manageShell .topbar { display: none; }
+  .manageShell .main { padding: 20px 16px calc(96px + env(safe-area-inset-bottom)); }
+  .mobileDock {
+    position: fixed;
+    z-index: 48;
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    min-height: 68px;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+    border: 1px solid rgba(16, 47, 92, .14);
+    border-radius: 20px;
+    background: rgba(255, 254, 250, .97);
+    padding: 6px 6px calc(6px + env(safe-area-inset-bottom));
+    box-shadow: 0 16px 42px rgba(8, 25, 48, .2);
+    backdrop-filter: blur(20px);
+  }
+  .mobileDock button { min-width: 0; min-height: 54px; display: grid; place-items: center; align-content: center; gap: 3px; border: 0; border-radius: 14px; background: transparent; padding: 5px 2px; color: #64768a; }
+  .mobileDock button > span { width: 24px; height: 22px; display: grid; place-items: center; }
+  .mobileDock button svg { width: 18px; height: 18px; }
+  .mobileDock button strong { overflow: hidden; max-width: 100%; font-size: .66rem; font-weight: 750; text-overflow: ellipsis; white-space: nowrap; }
+  .mobileDock .mobileDockActive { background: linear-gradient(135deg, #173f70, #102f5c); color: white; box-shadow: 0 7px 16px rgba(16, 47, 92, .22); }
+  .mobileDock .mobileDockActive > span { color: var(--citrus); }
+  .settingsMobileSelect { display: grid; gap: 6px; }
+  .settingsMobileSelect > span { color: var(--muted); font-size: .68rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  .settingsMobileSelect select { width: 100%; min-height: 48px; border: 1px solid var(--line); border-radius: 13px; background: var(--surface); padding: 0 13px; color: var(--ink); font: 700 .83rem var(--font-body), sans-serif; box-shadow: 0 8px 24px rgba(16, 47, 92, .06); }
+  .settingsLayout > .settingsNav { display: none; }
+}
+
+@media (max-width: 680px) {
+  .bookingFilterRail { overflow: visible; margin-inline: 0; padding-inline: 0; }
+  .bookingFilters { min-width: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .bookingFilters button { min-width: 0; padding-inline: 6px; }
+}
+
+@media (max-width: 370px) {
+  .manageShell .mobileBrand { gap: 7px; padding-inline: 10px; }
+  .manageShell .mobileBrand .brandLogo { width: 52px; }
+  .mobileBrandTitle span { display: none; }
+  .mobileHeaderButton, .manageShell .mobileAvatar { width: 42px; height: 42px; }
+  .mobileDock { right: 7px; bottom: 7px; left: 7px; border-radius: 18px; }
+  .mobileDock button strong { font-size: .62rem; }
 }

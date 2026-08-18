@@ -1615,7 +1615,7 @@ test("server-renders the responsive tenant management workspace", async () => {
   assert.equal(countTags(html, "main"), 1);
   assert.equal(countTags(html, "aside"), 1);
   assert.equal(countTags(html, "nav"), 2);
-  assert.equal(countTags(html, "footer"), 0);
+  assert.equal(countTags(html, "footer"), 1);
   assert.match(html, /<main\b[^>]*id="main-content"[^>]*tabindex="-1"/i);
   assert.match(text, /K&L Pickleball Court Court operations/i);
   assert.match(text, /Current tenant K&L/i);
@@ -4537,7 +4537,9 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(booking, /role="radio"[^>]*aria-checked=\{selectedDate === date\.iso\}/i);
 
   assert.match(managerHtml, /aria-label="Management navigation"/i);
-  assert.match(managerHtml, /aria-label="Mobile management navigation"/i);
+  assert.match(managerHtml, /aria-label="Primary management navigation"/i);
+  assert.match(managerHtml, /aria-haspopup="dialog"/i);
+  assert.match(managerHtml, /aria-labelledby="mobile-more-title"/i);
   assert.match(managerHtml, /aria-current="page"/i);
   assert.match(documentText(managerHtml), /Current tenant K&L/i);
   assert.doesNotMatch(managerHtml, /aria-label="Preview search control"/i);
@@ -5059,7 +5061,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
 
   assert.match(
     manageCss,
-    /\.mobileBrand,\s*\.mobileNav\s*\{\s*display:\s*none/s,
+    /\.mobileBrand,\s*\.mobileNav,\s*\.mobileDock,\s*\.settingsMobileSelect\s*\{\s*display:\s*none/s,
   );
   assert.match(
     manageCss,
@@ -5071,7 +5073,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.mobileNav\s*\{[^}]*display:\s*flex[^}]*overflow-x:\s*auto/s,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.mobileDock\s*\{[^}]*position:\s*fixed[^}]*display:\s*grid[^}]*grid-template-columns:\s*repeat\(4,/s,
   );
   assert.match(
     manageCss,
@@ -5079,7 +5081,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.mobileNav button\s*\{[^}]*font-size:\s*var\(--text-small\)/s,
+    /@media\s*\(max-width:\s*900px\)[\s\S]*?\.mobileDock button\s*\{[^}]*min-height:\s*54px/s,
   );
   assert.match(
     manageCss,
