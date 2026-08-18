@@ -4744,7 +4744,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     booking,
-    /function HoldIntroSelectionSummary\([\s\S]*?groupSelectionDetails\(selections\)[\s\S]*?Booking fee \(\$\{peso\(bookingFeeAmount\)\} × \$\{slotLabel\}\)[\s\S]*?aria-label="Your selected courts and times"[\s\S]*?\{dateLabel\}[\s\S]*?formatHourRange\(group\.startHour, group\.endHour\)[\s\S]*?Court reservation[\s\S]*?peso\(subtotal\)[\s\S]*?\{bookingFeeLabel\}[\s\S]*?peso\(bookingFee\)[\s\S]*?\{slotLabel\} · \{courtLabel\}[\s\S]*?peso\(total\)/,
+    /function HoldIntroSelectionSummary\([\s\S]*?groupSelectionDetails\(selections\)[\s\S]*?bookedHourLabel[\s\S]*?Booking fee \(\$\{peso\(bookingFeeAmount\)\} × \$\{bookedHourLabel\}\)[\s\S]*?aria-label="Your selected courts and times"[\s\S]*?\{dateLabel\}[\s\S]*?formatHourRange\(group\.startHour, group\.endHour\)[\s\S]*?Court reservation[\s\S]*?peso\(subtotal\)[\s\S]*?\{bookingFeeLabel\}[\s\S]*?peso\(bookingFee\)[\s\S]*?\{bookedHourLabel\} · \{courtLabel\}[\s\S]*?peso\(total\)/,
   );
   assert.match(
     booking,

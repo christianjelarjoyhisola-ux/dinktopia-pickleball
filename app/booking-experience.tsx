@@ -4377,8 +4377,9 @@ function HoldIntroSelectionSummary({
   ).sort((left, right) => left.number.localeCompare(right.number));
   const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"}`;
   const courtLabel = `${courts.length} court${courts.length === 1 ? "" : "s"}`;
+  const bookedHourLabel = `${selections.length} booked hr${selections.length === 1 ? "" : "s"}`;
   const bookingFeeLabel = bookingFeeMode === "fixed_per_hour" && bookingFeeAmount
-    ? `Booking fee (${peso(bookingFeeAmount)} × ${slotLabel})`
+    ? `Booking fee (${peso(bookingFeeAmount)} × ${bookedHourLabel})`
     : bookingFeeMode === "percentage" && bookingFeeAmount
       ? `Booking fee (${bookingFeeAmount}%)`
       : "Booking fee";
@@ -4408,7 +4409,7 @@ function HoldIntroSelectionSummary({
         {bookingFee > 0 && <div><dt>{bookingFeeLabel}</dt><dd>{peso(bookingFee)}</dd></div>}
       </dl>
       <div className="hold-intro-selection-total">
-        <span>{slotLabel} · {courtLabel}</span>
+        <span>{bookedHourLabel} · {courtLabel}</span>
         <strong><small>Total</small>{peso(total)}</strong>
       </div>
     </section>
