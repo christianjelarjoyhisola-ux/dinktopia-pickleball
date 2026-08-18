@@ -2409,6 +2409,14 @@ type CourtDraft = {
   status: "active" | "inactive" | "maintenance";
 };
 
+type CourtGalleryDraft = {
+  photoUrl: string | null;
+  photoAlt: string;
+  photoCaption: string;
+  state: "idle" | "uploading" | "saving" | "ready" | "error";
+  message: string;
+};
+
 type NewCourtDraft = {
   name: string;
   description: string;
@@ -2597,6 +2605,16 @@ function courtDraftsFor(snapshot: ManagementSnapshot): Record<string, CourtDraft
   }]));
 }
 
+function courtGalleryDraftsFor(snapshot: ManagementSnapshot): Record<string, CourtGalleryDraft> {
+  return Object.fromEntries(snapshot.courts.map((court) => [court.id, {
+    photoUrl: court.photoUrl,
+    photoAlt: court.photoAlt ?? `${court.name} at ${activeTenant.identity.name}`,
+    photoCaption: court.photoCaption ?? court.name,
+    state: "idle",
+    message: court.photoUrl ? "Published in the public court gallery." : "No public photo yet.",
+  }]));
+}
+
 function courtDraftError(draft: CourtDraft): string | null {
   if (!draft.name.trim() || draft.name.trim().length > 120) {
     return "Display name must contain 1 to 120 characters.";
@@ -2777,6 +2795,7 @@ function LiveSettingsView({
   can,
   request,
   uploadPaymentQr,
+  manageCourtGalleryPhoto,
   onSectionChange,
   initialSection = "courts",
 }: {
@@ -2784,11 +2803,19 @@ function LiveSettingsView({
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
   uploadPaymentQr: (methodCode: string, file: File) => Promise<{ url: string; contentType: string; tenantRevision: string }>;
+  manageCourtGalleryPhoto: (input: {
+    action: "upload" | "metadata";
+    courtId: string;
+    file?: File;
+    photoAlt: string;
+    photoCaption: string;
+  }) => Promise<{ url: string; contentType: string; photoAlt: string; photoCaption: string; tenantRevision: string }>;
   onSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
   initialSection?: "courts" | "schedule" | "business" | "rules";
 }) {
   const [section, setSection] = useState<"courts" | "schedule" | "business" | "rules">(initialSection);
   const [courtDrafts, setCourtDrafts] = useState(() => courtDraftsFor(snapshot));
+  const [courtGalleryDrafts, setCourtGalleryDrafts] = useState(() => courtGalleryDraftsFor(snapshot));
   const [newCourt, setNewCourt] = useState<NewCourtDraft>(() => newCourtDraftFor(snapshot));
   const [newCourtAttempted, setNewCourtAttempted] = useState(false);
   const [addingCourt, setAddingCourt] = useState(false);
@@ -2823,6 +2850,73 @@ function LiveSettingsView({
     ...current,
     [courtId]: { ...current[courtId], [key]: fieldValue },
   }));
+
+  const setCourtGalleryField = <Key extends "photoAlt" | "photoCaption">(
+    courtId: string,
+    key: Key,
+    fieldValue: CourtGalleryDraft[Key],
+  ) => setCourtGalleryDrafts((current) => ({
+    ...current,
+    [courtId]: { ...current[courtId], [key]: fieldValue, state: "idle", message: "Photo text has unsaved changes." },
+  }));
+
+  const saveCourtGallery = async (
+    courtId: string,
+    action: "upload" | "metadata",
+    file?: File,
+  ) => {
+    const draft = courtGalleryDrafts[courtId];
+    if (!draft) return;
+    if (
+      draft.photoAlt.trim().length < 2 || draft.photoAlt.trim().length > 180 ||
+      draft.photoCaption.trim().length < 1 || draft.photoCaption.trim().length > 80
+    ) {
+      setCourtGalleryDrafts((current) => ({
+        ...current,
+        [courtId]: { ...current[courtId], state: "error", message: "Add a 2–180 character description and a 1–80 character caption." },
+      }));
+      return;
+    }
+    if (action === "upload" && (!file || !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size < 1 || file.size > 5 * 1024 * 1024)) {
+      setCourtGalleryDrafts((current) => ({
+        ...current,
+        [courtId]: { ...current[courtId], state: "error", message: "Choose a JPG, PNG, or WebP photo no larger than 5 MB." },
+      }));
+      return;
+    }
+    setCourtGalleryDrafts((current) => ({
+      ...current,
+      [courtId]: { ...current[courtId], state: action === "upload" ? "uploading" : "saving", message: action === "upload" ? `Uploading ${file!.name}…` : "Saving photo text…" },
+    }));
+    try {
+      const asset = await manageCourtGalleryPhoto({
+        action,
+        courtId,
+        file,
+        photoAlt: draft.photoAlt,
+        photoCaption: draft.photoCaption,
+      });
+      setCourtGalleryDrafts((current) => ({
+        ...current,
+        [courtId]: {
+          photoUrl: asset.url,
+          photoAlt: asset.photoAlt,
+          photoCaption: asset.photoCaption,
+          state: "ready",
+          message: action === "upload" ? "Photo published in the public court gallery." : "Photo text updated.",
+        },
+      }));
+    } catch (error) {
+      setCourtGalleryDrafts((current) => ({
+        ...current,
+        [courtId]: {
+          ...current[courtId],
+          state: "error",
+          message: error instanceof PlatformRequestError ? error.message : "The court photo could not be saved. Refresh and try again.",
+        },
+      }));
+    }
+  };
 
   const setNewCourtField = <Key extends keyof NewCourtDraft>(
     key: Key,
@@ -3122,7 +3216,8 @@ function LiveSettingsView({
                 <div className={styles.courtSettingList}>
                   {snapshot.courts.map((court, index) => {
                     const draft = courtDrafts[court.id];
-                    if (!draft) return null;
+                    const gallery = courtGalleryDrafts[court.id];
+                    if (!draft || !gallery) return null;
                     const draftError = courtDraftError(draft);
                     const headingId = `court-${court.id}-title`;
                     const errorId = `court-${court.id}-error`;
@@ -3158,6 +3253,43 @@ function LiveSettingsView({
                           <label className={cx(styles.field, styles.courtNameField)}><span>Display name</span><input required aria-invalid={!draft.name.trim() || draft.name.trim().length > 120} aria-describedby={draftError ? errorId : undefined} value={draft.name} maxLength={120} onChange={(event) => setCourtField(court.id, "name", event.target.value)} /></label>
                           <label className={cx(styles.field, styles.courtDescriptionField)}><span>Description</span><input value={draft.description} onChange={(event) => setCourtField(court.id, "description", event.target.value)} /></label>
                           <label className={cx(styles.field, styles.courtStatusField)}><span>Status</span><select value={draft.status} onChange={(event) => setCourtField(court.id, "status", event.target.value as CourtDraft["status"])}><option value="active">Active</option><option value="maintenance">Maintenance</option><option value="inactive">Inactive</option></select></label>
+                          <section className={styles.courtGalleryEditor} aria-label={`${court.name} public gallery photo`}>
+                            <div
+                              className={cx(styles.courtGalleryPreview, !gallery.photoUrl && styles.courtGalleryPlaceholder)}
+                              style={gallery.photoUrl ? { backgroundImage: `url("${gallery.photoUrl}")` } : undefined}
+                              role="img"
+                              aria-label={gallery.photoUrl ? gallery.photoAlt : `${court.name} has no public photo`}
+                            >
+                              {!gallery.photoUrl && <span aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>}
+                            </div>
+                            <div className={styles.courtGalleryFields}>
+                              <div className={styles.courtGalleryTitle}>
+                                <div><strong>Public gallery photo</strong><span>JPG, PNG, or WebP · max 5 MB</span></div>
+                                <label className={cx(styles.button, styles.secondary, styles.courtGalleryUpload)}>
+                                  {gallery.photoUrl ? "Replace photo" : "Upload photo"}
+                                  <input
+                                    type="file"
+                                    accept="image/jpeg,image/png,image/webp"
+                                    disabled={!can("settings:update") || gallery.state === "uploading" || gallery.state === "saving"}
+                                    onChange={(event) => {
+                                      const file = event.target.files?.[0];
+                                      event.target.value = "";
+                                      if (file) void saveCourtGallery(court.id, "upload", file);
+                                    }}
+                                  />
+                                </label>
+                              </div>
+                              <label className={styles.field}><span>Photo description <small>For accessibility</small></span><input value={gallery.photoAlt} minLength={2} maxLength={180} onChange={(event) => setCourtGalleryField(court.id, "photoAlt", event.target.value)} /></label>
+                              <label className={styles.field}><span>Gallery caption</span><input value={gallery.photoCaption} minLength={1} maxLength={80} onChange={(event) => setCourtGalleryField(court.id, "photoCaption", event.target.value)} /></label>
+                              <div className={styles.courtGalleryActions}>
+                                <p className={gallery.state === "error" ? styles.fieldError : styles.galleryStatus} role={gallery.state === "error" ? "alert" : "status"}>{gallery.message}</p>
+                                {gallery.photoUrl && <>
+                                  <ActionButton type="button" variant="secondary" disabled={!can("settings:update") || gallery.state === "uploading" || gallery.state === "saving"} onClick={() => void saveCourtGallery(court.id, "metadata")}>Save photo text</ActionButton>
+                                  <ActionButton type="button" variant="danger" disabled={!can("settings:update") || gallery.state === "uploading" || gallery.state === "saving"} onClick={() => request({ title: `Remove ${court.name} photo?`, detail: "The image will disappear from the public court gallery. The court itself and all bookings remain unchanged.", confirmLabel: "Remove photo", actionType: "court:gallery-delete", resourceId: court.id, tone: "danger" })}>Remove photo</ActionButton>
+                                </>}
+                              </div>
+                            </div>
+                          </section>
                           <div className={styles.courtCardActions}>
                             {draftError && <p id={errorId} className={styles.fieldError} role="alert">{draftError}</p>}
                             <ActionButton type="submit" disabled={!can("settings:update")} ariaLabel={`Save ${court.name} court settings`}>Save court</ActionButton>
@@ -3355,6 +3487,7 @@ function SettingsView({
   request,
   initialLiveSection,
   uploadPaymentQr,
+  manageCourtGalleryPhoto,
   onLiveSectionChange,
 }: {
   snapshot: ManagementSnapshot;
@@ -3362,6 +3495,13 @@ function SettingsView({
   request: (action: ConfirmAction) => void;
   initialLiveSection?: "courts" | "schedule" | "business" | "rules";
   uploadPaymentQr: (methodCode: string, file: File) => Promise<{ url: string; contentType: string; tenantRevision: string }>;
+  manageCourtGalleryPhoto: (input: {
+    action: "upload" | "metadata";
+    courtId: string;
+    file?: File;
+    photoAlt: string;
+    photoCaption: string;
+  }) => Promise<{ url: string; contentType: string; photoAlt: string; photoCaption: string; tenantRevision: string }>;
   onLiveSectionChange: (section: "courts" | "schedule" | "business" | "rules") => void;
 }) {
   if (snapshot.tenant.mode === "live") {
@@ -3379,6 +3519,7 @@ function SettingsView({
         request={request}
         initialSection={initialLiveSection}
         uploadPaymentQr={uploadPaymentQr}
+        manageCourtGalleryPhoto={manageCourtGalleryPhoto}
         onSectionChange={onLiveSectionChange}
       />
     );
@@ -3736,6 +3877,27 @@ export default function ManagePage() {
     return asset;
   }, [context]);
 
+  const manageCourtGalleryPhoto = useCallback(async (input: {
+    action: "upload" | "metadata";
+    courtId: string;
+    file?: File;
+    photoAlt: string;
+    photoCaption: string;
+  }) => {
+    const asset = await managementAdapter.manageCourtGalleryPhoto(context, input);
+    setSnapshot((current) => current ? {
+      ...current,
+      courts: current.courts.map((court) => court.id === input.courtId ? {
+        ...court,
+        photoUrl: asset.url,
+        photoAlt: asset.photoAlt,
+        photoCaption: asset.photoCaption,
+      } : court),
+    } : current);
+    setToast({ message: input.action === "upload" ? "The court photo is live in the public gallery." : "The public photo text was updated.", tone: "success" });
+    return asset;
+  }, [context]);
+
   const retryInsights = useCallback(() => {
     setInsightsRevision((revision) => revision + 1);
   }, []);
@@ -4040,7 +4202,7 @@ export default function ManagePage() {
         error={insightsError}
         onRetry={retryInsights}
       />;
-      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} uploadPaymentQr={uploadPaymentQr} onLiveSectionChange={setSettingsSection} />;
+      case "settings": return <SettingsView snapshot={snapshot} can={can} request={request} initialLiveSection={settingsSection} uploadPaymentQr={uploadPaymentQr} manageCourtGalleryPhoto={manageCourtGalleryPhoto} onLiveSectionChange={setSettingsSection} />;
       case "launch": return <LaunchView snapshot={snapshot} request={request} openSettings={(section) => { setSettingsSection(section); setView("settings"); }} />;
       case "access": return <AccessView role={sessionRole} capabilities={context.capabilities} isPreview={isPreview} session={snapshot.session} toolAvailability={snapshot.configuration.toolAvailability} />;
     }

@@ -10,6 +10,7 @@ import {
   createTenantPromotion,
   createManualBooking,
   currentOwnerSession,
+  deleteTenantCourtGalleryPhoto,
   deleteTenantPaymentQr,
   getActivationSettings,
   getBlockedDateAccess,
@@ -34,6 +35,8 @@ import {
   saveTenantPolicy,
   updateActivationSettings,
   updateBusinessSettings,
+  updateTenantCourtGalleryMetadata,
+  uploadTenantCourtGalleryPhoto,
   uploadTenantPaymentQr,
   type BookingReschedulePreview,
 } from "../lib/platform/client";
@@ -414,6 +417,9 @@ export type Court = {
   closesAt: string | null;
   rateDay: number | null;
   ratePeak: number | null;
+  photoUrl: string | null;
+  photoAlt: string | null;
+  photoCaption: string | null;
 };
 
 export type SharedPriceBand = {
@@ -590,6 +596,22 @@ export interface ManagementAdapter {
     methodCode: string,
     file: File,
   ): Promise<{ url: string; contentType: string; tenantRevision: string }>;
+  manageCourtGalleryPhoto(
+    context: ManagementContext,
+    input: {
+      action: "upload" | "metadata";
+      courtId: string;
+      file?: File;
+      photoAlt: string;
+      photoCaption: string;
+    },
+  ): Promise<{
+    url: string;
+    contentType: string;
+    photoAlt: string;
+    photoCaption: string;
+    tenantRevision: string;
+  }>;
   perform(
     context: ManagementContext,
     action: { type: string; resourceId?: string; payload?: unknown },
@@ -648,6 +670,9 @@ const dinktopiaPreviewSnapshot: ManagementSnapshot = {
     closesAt: dinktopiaConfig.venue.closesAt,
     rateDay: dinktopiaConfig.booking.offPeakHourlyRate,
     ratePeak: dinktopiaConfig.booking.peakHourlyRate,
+    photoUrl: null,
+    photoAlt: null,
+    photoCaption: null,
   })),
   bookings: [
     {
@@ -1389,6 +1414,49 @@ export const managementAdapter: ManagementAdapter = {
       tenantRevision: result.tenantRevision,
     };
   },
+  async manageCourtGalleryPhoto(context, input) {
+    if (platformMode() === "preview") {
+      throw new Error("PREVIEW_COURT_GALLERY_UNAVAILABLE");
+    }
+    assertActiveTenantContext(context);
+    const session = await currentOwnerSession();
+    if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
+    const authority = normalizeManagerSession(await getManagerSession(session.access_token));
+    assertVenueManager(authority);
+    const courtId = requiredUuid(input.courtId, "COURT_ID_INVALID");
+    if (input.action === "upload" && !input.file) throw new Error("COURT_GALLERY_FILE_REQUIRED");
+    const result = input.action === "upload"
+      ? await uploadTenantCourtGalleryPhoto(
+          session.access_token,
+          courtId,
+          input.file!,
+          input.photoAlt,
+          input.photoCaption,
+        )
+      : await updateTenantCourtGalleryMetadata(
+          session.access_token,
+          courtId,
+          input.photoAlt,
+          input.photoCaption,
+        );
+    const asset = result.asset;
+    if (
+      !asset || !isAllowedCustomerQrUrl(asset.url) ||
+      !["image/jpeg", "image/png", "image/webp"].includes(asset.contentType) ||
+      typeof asset.photoAlt !== "string" || asset.photoAlt.length < 2 || asset.photoAlt.length > 180 ||
+      typeof asset.photoCaption !== "string" || asset.photoCaption.length < 1 || asset.photoCaption.length > 80 ||
+      !validIsoRevision(result.tenantRevision)
+    ) {
+      throw new Error("COURT_GALLERY_RESPONSE_INVALID");
+    }
+    return {
+      url: asset.url,
+      contentType: asset.contentType,
+      photoAlt: asset.photoAlt,
+      photoCaption: asset.photoCaption,
+      tenantRevision: result.tenantRevision,
+    };
+  },
   async perform(context, action) {
     if (platformMode() === "preview") {
       await delay(320);
@@ -1448,6 +1516,22 @@ export const managementAdapter: ManagementAdapter = {
         message: result.cleanupPending
           ? "The QR image was removed from customer checkout. Old-file cleanup will finish safely in the background."
           : "The QR image was removed from customer checkout.",
+        tenantRevision: result.tenantRevision,
+      };
+    }
+
+    if (action.type === "court:gallery-delete") {
+      assertVenueManager(authority);
+      const courtId = requiredUuid(action.resourceId, "COURT_ID_INVALID");
+      const result = await deleteTenantCourtGalleryPhoto(session.access_token, courtId);
+      if (result.asset !== null || !validIsoRevision(result.tenantRevision)) {
+        throw new Error("COURT_GALLERY_RESPONSE_INVALID");
+      }
+      return {
+        ok: true,
+        message: result.cleanupPending
+          ? "The court photo was removed from the public gallery. File cleanup will finish safely in the background."
+          : "The court photo was removed from the public gallery.",
         tenantRevision: result.tenantRevision,
       };
     }
@@ -2103,6 +2187,19 @@ function mapLiveCourt(row: JsonObject): Court {
   const sortOrder = exactInteger(row, ["sort_order", "sortOrder"]);
   const currency = value(row, ["currency"]);
   const schedule = scheduleForCourt(row);
+  const publicConfig = record(row.public_config ?? row.publicConfig);
+  const photoUrlValue = publicConfig?.photoUrl;
+  const photoAltValue = publicConfig?.photoAlt;
+  const photoCaptionValue = publicConfig?.photoCaption;
+  const photoUrl = typeof photoUrlValue === "string" && isAllowedCustomerQrUrl(photoUrlValue.trim())
+    ? photoUrlValue.trim()
+    : null;
+  const photoAlt = typeof photoAltValue === "string" && photoAltValue.trim().length <= 180
+    ? photoAltValue.trim() || null
+    : null;
+  const photoCaption = typeof photoCaptionValue === "string" && photoCaptionValue.trim().length <= 80
+    ? photoCaptionValue.trim() || null
+    : null;
   if (
     !UUID_PATTERN.test(id) || !slug || !name ||
     (status !== "active" && status !== "inactive" && status !== "maintenance") ||
@@ -2126,6 +2223,9 @@ function mapLiveCourt(row: JsonObject): Court {
     ratePeak: schedule?.bands.length === 2
       ? schedule.bands[1]?.hourlyRate ?? null
       : null,
+    photoUrl,
+    photoAlt,
+    photoCaption,
   };
 }
 

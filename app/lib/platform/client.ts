@@ -721,6 +721,131 @@ export type PaymentQrMutation = {
   cleanupPending: boolean;
 };
 
+export type CourtGalleryAsset = {
+  url: string;
+  storagePath: string;
+  contentType: "image/jpeg" | "image/png" | "image/webp";
+  photoAlt: string;
+  photoCaption: string;
+};
+
+export type CourtGalleryMutation = {
+  asset: CourtGalleryAsset | null;
+  tenantRevision: string;
+  cleanupPending: boolean;
+};
+
+const COURT_ID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function courtGalleryHeaders(
+  accessToken: string,
+  courtId: string,
+  action: "upload" | "metadata" | "delete",
+): Record<string, string> {
+  managementHostname({ mutation: true });
+  if (!COURT_ID_PATTERN.test(courtId)) {
+    throw new PlatformRequestError(400, "COURT_ID_INVALID", "Choose a valid court before managing its photo.");
+  }
+  return {
+    apikey: publicSupabaseKey,
+    Authorization: `Bearer ${accessToken}`,
+    "X-Tenant-Slug": activeTenant.identity.slug,
+    "X-Asset-Action": action,
+    "X-Court-Id": courtId,
+  };
+}
+
+function courtGalleryText(photoAlt: string, photoCaption: string) {
+  const alt = photoAlt.trim();
+  const caption = photoCaption.trim();
+  if (alt.length < 2 || alt.length > 180 || caption.length < 1 || caption.length > 80) {
+    throw new PlatformRequestError(
+      400,
+      "COURT_GALLERY_TEXT_INVALID",
+      "Add a 2–180 character photo description and a 1–80 character caption.",
+    );
+  }
+  return { photoAlt: alt, photoCaption: caption };
+}
+
+export async function uploadTenantCourtGalleryPhoto(
+  accessToken: string,
+  courtId: string,
+  file: File,
+  photoAlt: string,
+  photoCaption: string,
+): Promise<CourtGalleryMutation> {
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    file.size < 1 || file.size > 5 * 1024 * 1024
+  ) {
+    throw new PlatformRequestError(
+      400,
+      "COURT_GALLERY_FILE_INVALID",
+      "Choose a JPG, PNG, or WebP court photo no larger than 5 MB.",
+    );
+  }
+  const text = courtGalleryText(photoAlt, photoCaption);
+  const form = new FormData();
+  form.append("galleryFile", file);
+  form.append("photoAlt", text.photoAlt);
+  form.append("photoCaption", text.photoCaption);
+  const response = await fetch(edgeUrl("tenant-court-gallery-asset"), {
+    method: "POST",
+    headers: courtGalleryHeaders(accessToken, courtId, "upload"),
+    body: form,
+  });
+  const result = await responseJson<{
+    ok: true;
+    asset: CourtGalleryAsset;
+    tenantRevision: string;
+    cleanupPending?: boolean;
+  }>(response);
+  return { ...result, cleanupPending: result.cleanupPending === true };
+}
+
+export async function updateTenantCourtGalleryMetadata(
+  accessToken: string,
+  courtId: string,
+  photoAlt: string,
+  photoCaption: string,
+): Promise<CourtGalleryMutation> {
+  const text = courtGalleryText(photoAlt, photoCaption);
+  const response = await fetch(edgeUrl("tenant-court-gallery-asset"), {
+    method: "POST",
+    headers: {
+      ...courtGalleryHeaders(accessToken, courtId, "metadata"),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(text),
+  });
+  const result = await responseJson<{
+    ok: true;
+    asset: CourtGalleryAsset;
+    tenantRevision: string;
+    cleanupPending?: boolean;
+  }>(response);
+  return { ...result, cleanupPending: result.cleanupPending === true };
+}
+
+export async function deleteTenantCourtGalleryPhoto(
+  accessToken: string,
+  courtId: string,
+): Promise<CourtGalleryMutation> {
+  const response = await fetch(edgeUrl("tenant-court-gallery-asset"), {
+    method: "POST",
+    headers: courtGalleryHeaders(accessToken, courtId, "delete"),
+  });
+  const result = await responseJson<{
+    ok: true;
+    asset: null;
+    tenantRevision: string;
+    cleanupPending?: boolean;
+  }>(response);
+  return { ...result, cleanupPending: result.cleanupPending === true };
+}
+
 const PAYMENT_QR_METHODS = new Set(["gcash", "maya", "bdo", "bpi", "gotyme", "pnb"]);
 
 export async function uploadTenantPaymentQr(
