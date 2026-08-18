@@ -2,25 +2,28 @@
 
 import { useEffect, useState } from "react";
 
-const INTRO_KEY = "kl-pickleball-court:brand-intro:v1";
+export const TENANT_READY_EVENT = "kl-pickleball-court:tenant-ready";
 
 export function InitialBrandLoader() {
   const [phase, setPhase] = useState<"visible" | "leaving" | "hidden">("visible");
 
   useEffect(() => {
-    try {
-      if (window.sessionStorage.getItem(INTRO_KEY)) {
-        queueMicrotask(() => setPhase("hidden"));
-        return;
-      }
-      window.sessionStorage.setItem(INTRO_KEY, "shown");
-    } catch {
-      // Storage can be unavailable in private browsing; the intro still works.
-    }
-
-    const leaveTimer = window.setTimeout(() => setPhase("leaving"), 1350);
-    const removeTimer = window.setTimeout(() => setPhase("hidden"), 1850);
+    const startedAt = performance.now();
+    let leaveTimer = 0;
+    let removeTimer = 0;
+    const finish = () => {
+      const minimumDisplayRemaining = Math.max(0, 800 - (performance.now() - startedAt));
+      window.clearTimeout(leaveTimer);
+      leaveTimer = window.setTimeout(() => {
+        setPhase("leaving");
+        removeTimer = window.setTimeout(() => setPhase("hidden"), 500);
+      }, minimumDisplayRemaining);
+    };
+    window.addEventListener(TENANT_READY_EVENT, finish, { once: true });
+    const fallbackTimer = window.setTimeout(finish, 4500);
     return () => {
+      window.removeEventListener(TENANT_READY_EVENT, finish);
+      window.clearTimeout(fallbackTimer);
       window.clearTimeout(leaveTimer);
       window.clearTimeout(removeTimer);
     };

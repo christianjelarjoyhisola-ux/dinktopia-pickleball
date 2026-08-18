@@ -23,6 +23,7 @@ import {
   useState,
 } from "react";
 import { TransitionLink as Link } from "./transition-link";
+import { TENANT_READY_EVENT } from "./initial-brand-loader";
 import { activeTenant } from "./tenants/registry";
 import type { TenantCourtPreview, TenantLogo } from "./tenants/types";
 import {
@@ -1762,6 +1763,11 @@ export function BookingExperience({
   const [liveMessage, setLiveMessage] = useState("");
   const [bootstrap, setBootstrap] = useState<TenantBootstrap | null>(null);
   const [bootstrapState, setBootstrapState] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    if (bootstrapState === "loading") return;
+    window.dispatchEvent(new Event(TENANT_READY_EVENT));
+  }, [bootstrapState]);
 
   const [lookupReference, setLookupReference] = useState("");
   const [lookupEmail, setLookupEmail] = useState("");

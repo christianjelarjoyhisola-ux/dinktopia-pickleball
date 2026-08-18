@@ -1416,16 +1416,20 @@ test("uses a branded, accessible pickleball loader only for route transitions", 
   );
 });
 
-test("opens each browser session with a premium K&L brand intro", async () => {
-  const [intro, layout, globalsCss] = await Promise.all([
+test("covers live tenant bootstrap with a premium K&L brand intro", async () => {
+  const [intro, layout, booking, globalsCss] = await Promise.all([
     readFile(files.initialBrandLoader, "utf8"),
     readFile(files.layout, "utf8"),
+    readFile(files.booking, "utf8"),
     readFile(files.globalsCss, "utf8"),
   ]);
 
   assert.match(layout, /<InitialBrandLoader \/>/);
-  assert.match(intro, /kl-pickleball-court:brand-intro:v1/);
-  assert.match(intro, /window\.sessionStorage\.getItem\(INTRO_KEY\)/);
+  assert.match(intro, /kl-pickleball-court:tenant-ready/);
+  assert.match(intro, /addEventListener\(TENANT_READY_EVENT, finish/);
+  assert.match(intro, /window\.setTimeout\(finish, 4500\)/);
+  assert.doesNotMatch(intro, /sessionStorage/);
+  assert.match(booking, /window\.dispatchEvent\(new Event\(TENANT_READY_EVENT\)\)/);
   assert.match(intro, /src="\/kl-pickleball-court-logo\.png"/);
   assert.match(intro, /role="status"/);
   assert.match(intro, /aria-live="polite"/);
