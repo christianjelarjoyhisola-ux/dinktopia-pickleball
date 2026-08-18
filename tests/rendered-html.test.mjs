@@ -1193,7 +1193,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(summarySource, /groupSelectionDetails\(selections\)/);
   assert.match(
     summarySource,
-    /className="player-kicker">Your reservation[\s\S]*?courts reserved[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
+    /className="player-kicker">Your court hold[\s\S]*?court\{courts\.length === 1 \? "" : "s"\} held[\s\S]*?Complete the player details below to continue to payment\.[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
   );
   assert.match(summarySource, /className="summary-price-lines"/);
   assert.match(summarySource, /className="rally-summary-total"/);
@@ -4690,7 +4690,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(summarySource, /aria-label="Booking summary"/);
   assert.match(
     summarySource,
-    /className="player-kicker">Your reservation[\s\S]*?courts reserved[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
+    /className="player-kicker">Your court hold[\s\S]*?court\{courts\.length === 1 \? "" : "s"\} held[\s\S]*?Complete the player details below to continue to payment\.[\s\S]*?\{dateLabel\}[\s\S]*?\{slotLabel\}/,
   );
   assert.match(summarySource, /className="summary-detail"[\s\S]*?activeTenant\.identity\.name/);
   assert.match(summarySource, /className="summary-price-lines"/);

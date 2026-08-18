@@ -237,8 +237,15 @@
 .booking-route .rally-booking-summary::after { display: none; }
 
 .booking-route .rally-booking-summary h3 {
-  margin: 0 0 22px;
+  margin: 0;
   font-size: 1.28rem;
+}
+
+.booking-route .rally-booking-summary .summary-instruction {
+  margin: 7px 0 22px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
 }
 
 .booking-route .rally-booking-summary .summary-detail {
