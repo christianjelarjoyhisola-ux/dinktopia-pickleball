@@ -3083,6 +3083,46 @@
   backdrop-filter: blur(18px) saturate(125%);
 }
 
+/* Dedicated owner-managed public gallery. */
+.galleryManagerHeading { align-items: center; }
+.galleryUploadButton { position: relative; overflow: hidden; cursor: pointer; }
+.galleryUploadButton input { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
+.galleryUploadButton:focus-within { outline: 3px solid var(--lime); outline-offset: 3px; }
+.galleryManagerStatus { display: flex; align-items: center; gap: 8px; border: 1px solid rgba(35,79,120,.13); border-radius: 12px; background: #f3f7f8; padding: 10px 12px; color: #40566e; font-size: .78rem; }
+.galleryManagerStatus span { color: #66a333; font-size: .6rem; }
+.galleryManagerGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 14px; }
+.galleryManagerCard { min-width: 0; overflow: hidden; border: 1px solid rgba(16,47,92,.12); border-radius: 16px; background: #fffefa; box-shadow: 0 12px 30px rgba(16,47,92,.07); }
+.galleryManagerImage { position: relative; min-height: 220px; background-color: #102f5c; background-position: center; background-size: cover; }
+.galleryManagerImage > span { position: absolute; top: 12px; border-radius: 999px; padding: 6px 9px; font-size: .7rem; font-weight: 800; }
+.galleryPublished { left: 12px; background: #e5f7dc; color: #24551c; }
+.galleryDraft { left: 12px; background: #fff1cc; color: #76530a; }
+.galleryFeatured { right: 12px; background: #102f5c; color: #fff; }
+.galleryManagerFields { display: grid; grid-template-columns: minmax(0, .65fr) minmax(0, 1.35fr); gap: 10px; padding: 14px; }
+.galleryManagerFields .fieldWide { grid-column: 1 / -1; }
+.galleryManagerFields .field > span small { margin-left: 4px; color: var(--muted); font-weight: 600; }
+.galleryManagerToggles { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 16px; border-block: 1px solid var(--line); padding: 11px 0; }
+.galleryManagerToggles label { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-size: .76rem; font-weight: 700; }
+.galleryManagerToggles input { width: 18px; height: 18px; accent-color: #234f78; }
+.galleryManagerActions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 7px; }
+.galleryManagerActions .button { flex: 1 1 8rem; }
+.galleryManagerEmpty { display: grid; place-items: center; min-height: 260px; margin-top: 14px; border: 1px dashed rgba(35,79,120,.3); border-radius: 16px; background: linear-gradient(145deg,#f4f7f8,#fffefa); padding: 30px; text-align: center; }
+.galleryManagerEmpty > span { width: 54px; height: 54px; display: grid; place-items: center; border-radius: 16px; background: #102f5c; color: #b8df4d; font-size: 1.65rem; }
+.galleryManagerEmpty h3 { margin: 14px 0 0; color: var(--ink); font-size: 1.2rem; }
+.galleryManagerEmpty p { max-width: 480px; margin: 7px 0 0; color: var(--muted); font-size: .8rem; line-height: 1.5; }
+
+@media (max-width: 900px) {
+  .galleryManagerGrid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 620px) {
+  .galleryManagerHeading { align-items: stretch; }
+  .galleryUploadButton { width: 100%; }
+  .galleryManagerImage { min-height: 200px; }
+  .galleryManagerFields { grid-template-columns: 1fr; }
+  .galleryManagerFields .fieldWide, .galleryManagerToggles, .galleryManagerActions { grid-column: 1; }
+  .galleryManagerActions .button { width: 100%; }
+}
+
 @media (max-width: 900px) {
   .manageShell .topbar { background: rgba(244, 242, 235, .96); }
 }

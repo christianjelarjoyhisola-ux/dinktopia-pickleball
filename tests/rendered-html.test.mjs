@@ -1474,12 +1474,16 @@ test("keeps the court gallery tenant-sourced, safe, compact, and responsive", as
   );
   assert.match(
     galleryDataSource,
-    /url\.hostname\.endsWith\("\.supabase\.co"\)/,
+    /url\.origin === "https:\/\/neqvrwtofiolcuxewdze\.supabase\.co"/,
   );
   assert.match(
     galleryDataSource,
-    /url\.pathname\.includes\("\/storage\/v1\/object\/"\)/,
+    /url\.pathname\.startsWith\("\/storage\/v1\/object\/public\/tenant-public-assets\/"\)/,
   );
+  assert.match(galleryDataSource, /item\.published !== true/);
+  assert.match(galleryDataSource, /tenantBootstrap\.tenant\.publicConfig\?\.venueGallery/);
+  assert.match(galleryDataSource, /venue-gallery\/\$\{id\}/);
+  assert.match(galleryDataSource, /\.sort\(\(left, right\) => Number\(right\.featured\)/);
   assert.match(
     galleryDataSource,
     /const config = \(court\.publicConfig \?\? \{\}\) as/,

@@ -846,6 +846,131 @@ export async function deleteTenantCourtGalleryPhoto(
   return { ...result, cleanupPending: result.cleanupPending === true };
 }
 
+export type VenueGalleryCategory = "venue" | "community" | "events" | "activities";
+
+export type VenueGalleryItem = {
+  id: string;
+  photoUrl: string;
+  storagePath: string;
+  photoAlt: string;
+  photoCaption: string;
+  category: VenueGalleryCategory;
+  featured: boolean;
+  published: boolean;
+};
+
+export type VenueGalleryMutation = {
+  items: VenueGalleryItem[];
+  tenantRevision: string;
+};
+
+const VENUE_GALLERY_CATEGORIES = new Set<VenueGalleryCategory>([
+  "venue", "community", "events", "activities",
+]);
+
+function venueGalleryHeaders(
+  accessToken: string,
+  action: "list" | "upload" | "metadata" | "delete" | "reorder",
+) {
+  managementHostname({ mutation: action !== "list" });
+  return {
+    apikey: publicSupabaseKey,
+    Authorization: `Bearer ${accessToken}`,
+    "X-Tenant-Slug": activeTenant.identity.slug,
+    "X-Asset-Action": action,
+  };
+}
+
+async function venueGalleryJsonMutation(
+  accessToken: string,
+  action: "metadata" | "delete" | "reorder",
+  body: Record<string, unknown>,
+): Promise<VenueGalleryMutation> {
+  const response = await fetch(edgeUrl("tenant-venue-gallery-asset"), {
+    method: "POST",
+    headers: { ...venueGalleryHeaders(accessToken, action), "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return responseJson<VenueGalleryMutation>(response);
+}
+
+export async function listTenantVenueGallery(accessToken: string): Promise<VenueGalleryMutation> {
+  const response = await fetch(edgeUrl("tenant-venue-gallery-asset"), {
+    method: "POST",
+    headers: venueGalleryHeaders(accessToken, "list"),
+  });
+  return responseJson<VenueGalleryMutation>(response);
+}
+
+export async function uploadTenantVenueGalleryPhoto(
+  accessToken: string,
+  input: {
+    file: File;
+    photoAlt: string;
+    photoCaption: string;
+    category: VenueGalleryCategory;
+    featured?: boolean;
+    published?: boolean;
+  },
+): Promise<VenueGalleryMutation> {
+  if (!VENUE_GALLERY_CATEGORIES.has(input.category)) {
+    throw new PlatformRequestError(400, "VENUE_GALLERY_CATEGORY_INVALID", "Choose Venue, Community, Events, or Activities.");
+  }
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(input.file.type) ||
+    input.file.size < 1 || input.file.size > 5 * 1024 * 1024
+  ) {
+    throw new PlatformRequestError(400, "VENUE_GALLERY_FILE_INVALID", "Choose JPG, PNG, or WebP photos no larger than 5 MB each.");
+  }
+  const text = courtGalleryText(input.photoAlt, input.photoCaption);
+  const form = new FormData();
+  form.append("venueFile", input.file);
+  form.append("photoAlt", text.photoAlt);
+  form.append("photoCaption", text.photoCaption);
+  form.append("category", input.category);
+  form.append("featured", String(input.featured === true));
+  form.append("published", String(input.published === true));
+  const response = await fetch(edgeUrl("tenant-venue-gallery-asset"), {
+    method: "POST",
+    headers: venueGalleryHeaders(accessToken, "upload"),
+    body: form,
+  });
+  return responseJson<VenueGalleryMutation>(response);
+}
+
+export function updateTenantVenueGalleryPhoto(
+  accessToken: string,
+  input: Omit<VenueGalleryItem, "photoUrl" | "storagePath">,
+): Promise<VenueGalleryMutation> {
+  if (!VENUE_GALLERY_CATEGORIES.has(input.category)) {
+    return Promise.reject(new PlatformRequestError(400, "VENUE_GALLERY_CATEGORY_INVALID", "Choose Venue, Community, Events, or Activities."));
+  }
+  return venueGalleryJsonMutation(accessToken, "metadata", {
+    id: input.id,
+    photoAlt: input.photoAlt.trim(),
+    photoCaption: input.photoCaption.trim(),
+    category: input.category,
+    featured: input.featured,
+    published: input.published,
+  });
+}
+
+export function deleteTenantVenueGalleryPhoto(
+  accessToken: string,
+  id: string,
+  expectedRevision: string,
+): Promise<VenueGalleryMutation> {
+  return venueGalleryJsonMutation(accessToken, "delete", { id, expectedRevision });
+}
+
+export function reorderTenantVenueGallery(
+  accessToken: string,
+  orderIds: string[],
+  expectedRevision: string,
+): Promise<VenueGalleryMutation> {
+  return venueGalleryJsonMutation(accessToken, "reorder", { orderIds, expectedRevision });
+}
+
 const PAYMENT_QR_METHODS = new Set(["gcash", "maya", "bdo", "bpi", "gotyme", "pnb"]);
 
 export async function uploadTenantPaymentQr(

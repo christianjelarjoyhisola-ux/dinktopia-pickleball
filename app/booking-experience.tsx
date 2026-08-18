@@ -414,8 +414,9 @@ function trustedGallerySource(value: unknown) {
       !url.username &&
       !url.password &&
       !url.port &&
-      url.hostname.endsWith(".supabase.co") &&
-      url.pathname.includes("/storage/v1/object/")
+      url.origin === "https://neqvrwtofiolcuxewdze.supabase.co" &&
+      url.pathname.startsWith("/storage/v1/object/public/tenant-public-assets/") &&
+      !url.search && !url.hash
     ) {
       return url.href;
     }
@@ -433,7 +434,31 @@ function galleryText(value: unknown, fallback: string, maxLength: number) {
 
 function galleryPhotosFromPlatform(tenantBootstrap: TenantBootstrap | null) {
   if (!tenantBootstrap) return [];
-  return tenantBootstrap.courts
+  const venueGallery = Array.isArray(tenantBootstrap.tenant.publicConfig?.venueGallery)
+    ? tenantBootstrap.tenant.publicConfig.venueGallery
+    : [];
+  const venuePhotos = venueGallery.flatMap<GalleryPhoto & { featured: boolean; sortOrder: number }>((candidate) => {
+    if (!candidate || typeof candidate !== "object") return [];
+    const item = candidate as Record<string, unknown>;
+    const id = typeof item.id === "string" ? item.id.trim().toLowerCase() : "";
+    const storagePath = typeof item.storagePath === "string" ? item.storagePath.trim() : "";
+    const src = trustedGallerySource(item.photoUrl);
+    const canonicalPath = new RegExp(`^[0-9a-f-]{36}/venue-gallery/${id}\\.(?:jpg|png|webp)$`, "i");
+    if (
+      item.published !== true || !/^[0-9a-f-]{36}$/.test(id) ||
+      !canonicalPath.test(storagePath) || !src ||
+      !new URL(src).pathname.endsWith(`/${storagePath}`)
+    ) return [];
+    return [{
+      id: `venue-${id}`,
+      src,
+      alt: galleryText(item.photoAlt, `${tenantBootstrap.tenant.name} venue`, 180),
+      caption: galleryText(item.photoCaption, tenantBootstrap.tenant.name, 100),
+      featured: item.featured === true,
+      sortOrder: Number.isSafeInteger(item.sortOrder) ? item.sortOrder as number : 10_000,
+    }];
+  }).sort((left, right) => Number(right.featured) - Number(left.featured) || left.sortOrder - right.sortOrder);
+  const courtPhotos = tenantBootstrap.courts
     .flatMap<GalleryPhoto>((court) => {
       const config = (court.publicConfig ?? {}) as {
         photoUrl?: unknown;
@@ -452,8 +477,8 @@ function galleryPhotosFromPlatform(tenantBootstrap: TenantBootstrap | null) {
         ),
         caption: galleryText(config.photoCaption, court.name, 80),
       }];
-    })
-    .slice(0, 5);
+    });
+  return [...venuePhotos, ...courtPhotos].slice(0, 5);
 }
 
 const seededCustomer: CustomerDetails = {
