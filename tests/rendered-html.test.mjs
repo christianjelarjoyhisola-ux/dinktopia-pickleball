@@ -1012,6 +1012,13 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(matrixSource, /displayedState === "payment_review"[\s\S]*?"Reviewing"/);
   assert.match(matrixSource, /displayedState === "confirmed"[\s\S]*?"Booked"/);
   assert.match(matrixSource, /busy[\s\S]*?"Unavailable"/);
+  assert.match(booking, /legend-open[\s\S]*?Open[\s\S]*?legend-booked[\s\S]*?Unavailable[\s\S]*?legend-selected[\s\S]*?Your selection[\s\S]*?legend-held[\s\S]*?Held[\s\S]*?legend-reviewing[\s\S]*?Reviewing[\s\S]*?legend-confirmed[\s\S]*?Booked/);
+  assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-open\s*\{[^}]*box-shadow:\s*inset 0 0 0 2px #2f8f6b/s);
+  assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-booked\s*\{[^}]*background:\s*#a3adb2/s);
+  assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-selected\s*\{[^}]*background:\s*#285a87/s);
+  assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-held\s*\{[^}]*background:\s*#f2bd38/s);
+  assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-reviewing\s*\{[^}]*background:\s*#91a9bd/s);
+  assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-confirmed\s*\{[^}]*background:\s*#16845b/s);
   assert.match(
     matrixSource,
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,

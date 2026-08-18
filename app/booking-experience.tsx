@@ -3692,9 +3692,12 @@ export function BookingExperience({
                         </div>
                         <div className="availability-legend-row">
                           <div className="slot-legend availability-legend" aria-label="Availability legend">
-                            <span><i className="legend-open" />Open</span>
-                            <span><i className="legend-booked" />Unavailable</span>
-                            <span><i className="legend-selected" />Your selection</span>
+                            <span><i className="legend-open" aria-hidden="true" />Open</span>
+                            <span><i className="legend-booked" aria-hidden="true" />Unavailable</span>
+                            <span><i className="legend-selected" aria-hidden="true" />Your selection</span>
+                            <span><i className="legend-held" aria-hidden="true" />Held</span>
+                            <span><i className="legend-reviewing" aria-hidden="true" />Reviewing</span>
+                            <span><i className="legend-confirmed" aria-hidden="true" />Booked</span>
                           </div>
                         </div>
 

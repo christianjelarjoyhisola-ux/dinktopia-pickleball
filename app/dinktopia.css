@@ -7645,6 +7645,48 @@
   box-shadow: 0 8px 22px rgba(11, 41, 71, 0.12);
   backdrop-filter: blur(12px);
 }
+
+/* Keep the compact availability key visible on light mobile and desktop surfaces. */
+.kl-court-site.booking-route .slot-legend i {
+  width: 9px;
+  height: 9px;
+  border: 1px solid transparent;
+  border-radius: 50%;
+  box-shadow: none;
+}
+
+.kl-court-site.booking-route .slot-legend .legend-open {
+  border-color: #26795f;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2px #2f8f6b;
+}
+
+.kl-court-site.booking-route .slot-legend .legend-booked {
+  border-color: #87939a;
+  background: #a3adb2;
+}
+
+.kl-court-site.booking-route .slot-legend .legend-selected {
+  border-color: #173f68;
+  background: #285a87;
+  box-shadow: 0 0 0 2px rgba(184, 223, 77, 0.28);
+}
+
+.kl-court-site.booking-route .slot-legend .legend-held {
+  border-color: #c28c08;
+  background: #f2bd38;
+}
+
+.kl-court-site.booking-route .slot-legend .legend-reviewing {
+  border-color: #285a87;
+  background: #91a9bd;
+  box-shadow: inset 0 0 0 2px #e8eef4;
+}
+
+.kl-court-site.booking-route .slot-legend .legend-confirmed {
+  border-color: #126846;
+  background: #16845b;
+}
 .booking-route .availability-refreshing .spinner { width: 13px; height: 13px; border-width: 2px; }
 
 @media (max-width: 779.98px) {
