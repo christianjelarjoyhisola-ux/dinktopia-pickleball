@@ -23,6 +23,7 @@ export type CalendarViewProps = {
   courts: Court[];
   initialBookings: Booking[];
   initialBlocks: CourtBlock[];
+  initialCourtId?: string;
   loadDay: (date: string) => Promise<CalendarDayData>;
   canBlock: boolean;
   onOpenBlocks: () => void;
@@ -439,6 +440,7 @@ export function CalendarView({
   courts,
   initialBookings,
   initialBlocks,
+  initialCourtId = "all",
   loadDay,
   canBlock,
   onOpenBlocks,
@@ -448,7 +450,7 @@ export function CalendarView({
   const today = calendarDateIn(timezone);
   const initialRows = rowsForDate(today, initialBookings, initialBlocks);
   const [selectedDate, setSelectedDate] = useState(today);
-  const [courtFilter, setCourtFilter] = useState("all");
+  const [courtFilter, setCourtFilter] = useState(initialCourtId);
   const [dayData, setDayData] = useState<CalendarDayData>(initialRows);
   const [phase, setPhase] = useState<LoadPhase>("loading");
   const [errorMessage, setErrorMessage] = useState("");

@@ -85,7 +85,7 @@
 .rallyMetrics article > div,
 .rallySectionHeading button,
 .rallyCourtCopy > span,
-.rallyCourtCopy p,
+.rallyCourtCopy small,
 .rallyCourtState > span,
 .rallyCourtState small,
 .rallyLive,
@@ -286,10 +286,11 @@
 .rallySectionHeading h2 { margin:0;font-size:1.1rem;letter-spacing:-.03em; }.rallySectionHeading p { margin:4px 0 0;color:var(--muted);font-size:.78rem; }
 .rallySectionHeading button { min-height: 32px; display:flex;align-items:center;gap:5px;border:0;background:none;color:var(--blue);font-size:.69rem;font-weight:700; }.rallySectionHeading button svg{width:13px}
 .rallyCourtGrid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px; }
-.rallyCourtCard { min-width:0;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:13px;border:1px solid var(--line);border-radius:13px;padding:13px; }
+.rallyCourtCard { width:100%;min-width:0;display:grid;grid-template-columns:58px minmax(0,1fr) auto;align-items:center;gap:13px;border:1px solid var(--line);border-radius:13px;background:transparent;color:inherit;padding:13px;font:inherit;text-align:left;cursor:pointer;touch-action:manipulation; }
+.rallyCourtCard:focus-visible { outline:3px solid var(--blue);outline-offset:3px; }
 .rallyCourtVisual { position:relative;width:58px;height:58px;display:grid;place-items:center;overflow:hidden;border:1px solid #afdccc;border-radius:10px;background:#e4f7f0; }
 .rallyCourtVisual::after { content:"";position:absolute;inset:8px;border:1px solid currentColor;opacity:.25 }.rallyCourtVisual span{position:relative;z-index:1;width:26px;height:26px;display:grid;place-items:center;border-radius:50%;background:white;font-size:.7rem}
-.rallyCourtCopy { min-width:0 }.rallyCourtCopy > span { display:block;overflow:hidden;color:var(--muted);font-size:.59rem;text-overflow:ellipsis;white-space:nowrap }.rallyCourtCopy h3{margin:3px 0 2px;font-size:.82rem}.rallyCourtCopy p{margin:0;overflow:hidden;color:var(--muted);font-size:.63rem;text-overflow:ellipsis;white-space:nowrap}
+.rallyCourtCopy { display:block;min-width:0 }.rallyCourtCopy > span { display:block;overflow:hidden;color:var(--muted);font-size:.59rem;text-overflow:ellipsis;white-space:nowrap }.rallyCourtCopy strong{display:block;margin:3px 0 2px;font-size:.82rem}.rallyCourtCopy small{display:block;margin:0;overflow:hidden;color:var(--muted);font-size:.63rem;text-overflow:ellipsis;white-space:nowrap}
 .rallyCourtState{align-self:stretch;display:flex;flex-direction:column;align-items:flex-end;justify-content:space-between}.rallyCourtState>span{min-height:25px;display:inline-flex;align-items:center;gap:6px;border-radius:99px;background:#e4f7f0;color:#16845b;padding:0 9px;font-size:.61rem;font-weight:700}.rallyCourtState>span::before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}.rallyCourtState small{color:var(--muted);font-size:.58rem}
 .rallyTone_warning .rallyCourtVisual,.rallyTone_warning .rallyCourtState>span{background:#fff6df;color:#9a6410;border-color:#f1d899}.rallyTone_info .rallyCourtVisual,.rallyTone_info .rallyCourtState>span{background:#eaf2ff;color:#315fc0;border-color:#bdd3fb}.rallyTone_danger .rallyCourtVisual,.rallyTone_danger .rallyCourtState>span{background:#fff0ec;color:#d5443d;border-color:#f1bdb5}
 .rallyArrivalsPanel{display:flex;flex-direction:column}.rallyLive{display:flex;align-items:center;gap:5px;color:#16845b;font-size:.63rem;font-weight:700}.rallyLive i{width:6px;height:6px;border-radius:50%;background:#16845b}.rallyArrivalList{display:grid;flex:1}.rallyArrival{display:grid;grid-template-columns:64px minmax(0,1fr) auto;align-items:center;gap:8px;min-height:60px}.rallyArrival>div:nth-child(2){min-width:0}.rallyArrival>div:nth-child(2) strong{font-size:.7rem}.rallyArrival>div:nth-child(2) p{margin:2px 0 0;color:var(--muted);font-size:.61rem}.rallyTimeRail{position:relative;align-self:stretch;display:flex;align-items:center;gap:8px}.rallyTimeRail strong{font-size:.62rem}.rallyTimeRail>i{width:6px;height:6px;flex:0 0 auto;border-radius:50%}.railBlue{background:#4f8df7}.railMint{background:#16845b}.rallyTimeRail>span{position:absolute;left:49px;top:36px;width:1px;height:40px;background:var(--line)}.rallyArrival .statusPill{font-size:.55rem;padding:4px 7px}.rallyWideButton{width:100%;min-height:42px;border:1px solid var(--line);border-radius:11px;background:transparent;font-size:.72rem;font-weight:700}.rallyEmpty{min-height:180px;display:grid;place-items:center;align-content:center;gap:4px;color:var(--muted);text-align:center}.rallyEmpty svg{width:22px}.rallyEmpty strong{color:var(--ink);font-size:.75rem}.rallyEmpty span{font-size:.65rem}
@@ -2843,7 +2844,7 @@
 .topbarTitle > span,
 .rallyMetrics article > div,
 .rallyCourtCopy > span,
-.rallyCourtCopy p,
+.rallyCourtCopy small,
 .rallyCourtState > span,
 .rallyCourtState small,
 .rallyLive,

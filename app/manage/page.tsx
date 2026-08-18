@@ -638,11 +638,13 @@ function RallyOverview({
   snapshot,
   can,
   goTo,
+  openCourtSchedule,
   openNeedsReview,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   goTo: (view: View) => void;
+  openCourtSchedule: (courtId: string) => void;
   openNeedsReview: () => void;
 }) {
   const today = manilaCalendarDate();
@@ -738,11 +740,17 @@ function RallyOverview({
           <div className={styles.rallySectionHeading}><div><h2>Live court status</h2><p>A fast read on every playing surface</p></div><button type="button" onClick={() => goTo("schedule")}>Open full schedule <ArrowRight /></button></div>
           <div className={styles.rallyCourtGrid}>
             {courtStatus.map(({ court, state, tone, note, hours }, index) => (
-              <article className={cx(styles.rallyCourtCard, styles[`rallyTone_${tone}`])} key={court.id}>
-                <div className={styles.rallyCourtVisual}><span>{index + 1}</span><i /><i /></div>
-                <div className={styles.rallyCourtCopy}><span>{court.description || court.surface || "Court"}</span><h3>{court.name}</h3><p>{note}</p></div>
-                <div className={styles.rallyCourtState}><span>{state}</span><small>{hours}</small></div>
-              </article>
+              <button
+                type="button"
+                className={cx(styles.rallyCourtCard, styles[`rallyTone_${tone}`])}
+                key={court.id}
+                onClick={() => openCourtSchedule(court.id)}
+                aria-label={`Open today's schedule for ${court.name}: ${state}. ${note}`}
+              >
+                <span className={styles.rallyCourtVisual}><span>{index + 1}</span><i /><i /></span>
+                <span className={styles.rallyCourtCopy}><span>{court.description || court.surface || "Court"}</span><strong>{court.name}</strong><small>{note}</small></span>
+                <span className={styles.rallyCourtState}><span>{state}</span><small>{hours}</small></span>
+              </button>
             ))}
           </div>
         </section>
@@ -786,6 +794,7 @@ function OverviewView({
   snapshot,
   can,
   goTo,
+  openCourtSchedule,
   openNeedsReview,
   request,
   loadPaymentReceipt,
@@ -793,11 +802,12 @@ function OverviewView({
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   goTo: (view: View) => void;
+  openCourtSchedule: (courtId: string) => void;
   openNeedsReview: () => void;
   request: (action: ConfirmAction) => void;
   loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
 }) {
-  return <RallyOverview snapshot={snapshot} can={can} goTo={goTo} openNeedsReview={openNeedsReview} />;
+  return <RallyOverview snapshot={snapshot} can={can} goTo={goTo} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} />;
   /* Legacy dashboard markup is retained below temporarily while the remaining
      management views continue to share its payment-review workspace. */
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
@@ -3963,6 +3973,7 @@ export default function ManagePage() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"courts" | "gallery" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
+  const [scheduleCourtId, setScheduleCourtId] = useState("all");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
   const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
   const [insights, setInsights] = useState<ManagementInsights | null>(null);
@@ -4007,8 +4018,14 @@ export default function ManagePage() {
   const can = (capability: ManagementCapability) => context.capabilities.includes(capability);
   const navigateTo = (nextView: View) => {
     if (nextView === "bookings") setBookingFilter("all");
+    if (nextView === "schedule") setScheduleCourtId("all");
     setMobileMoreOpen(false);
     setView(nextView);
+  };
+  const openCourtSchedule = (courtId: string) => {
+    setScheduleCourtId(courtId);
+    setMobileMoreOpen(false);
+    setView("schedule");
   };
   const openNeedsReview = () => {
     setMobileMoreOpen(false);
@@ -4362,13 +4379,14 @@ export default function ManagePage() {
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     if (setupPreview) return <SetupRequiredPanel view={view} />;
     switch (view) {
-      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
+      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
       case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
       case "schedule": return snapshot.tenant.mode === "live" ? (
         <CalendarView
           courts={snapshot.courts}
           initialBookings={snapshot.bookings}
           initialBlocks={snapshot.blocks}
+          initialCourtId={scheduleCourtId}
           loadDay={loadCalendarDay}
           canBlock={can("schedule:block")}
           onOpenBlocks={() => setView("blocks")}

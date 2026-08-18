@@ -3717,6 +3717,34 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   assert.doesNotMatch(calendarCss, /min-width:\s*[4-9]\d{2}px/);
 });
 
+test("opens each live court card in today's schedule with that court selected", async () => {
+  const [manage, calendar, manageCss] = await Promise.all([
+    readFile(files.manage, "utf8"),
+    readFile(files.calendarView, "utf8"),
+    readFile(files.manageCss, "utf8"),
+  ]);
+
+  assert.match(
+    manage,
+    /<button[\s\S]*?className=\{cx\(styles\.rallyCourtCard,[\s\S]*?onClick=\{\(\) => openCourtSchedule\(court\.id\)\}[\s\S]*?aria-label=\{`Open today's schedule for \$\{court\.name\}: \$\{state\}\. \$\{note\}`\}/,
+  );
+  assert.match(
+    manage,
+    /const openCourtSchedule = \(courtId: string\) => \{[\s\S]*?setScheduleCourtId\(courtId\);[\s\S]*?setView\("schedule"\);/,
+  );
+  assert.match(manage, /initialCourtId=\{scheduleCourtId\}/);
+  assert.match(calendar, /initialCourtId\?: string;/);
+  assert.match(calendar, /const \[courtFilter, setCourtFilter\] = useState\(initialCourtId\);/);
+  assert.match(
+    cssBlock(manageCss, ".rallyCourtCard"),
+    /width:\s*100%;[\s\S]*?cursor:\s*pointer;[\s\S]*?touch-action:\s*manipulation/,
+  );
+  assert.match(
+    cssBlock(manageCss, ".rallyCourtCard:focus-visible"),
+    /outline:\s*3px solid var\(--blue\)/,
+  );
+});
+
 test("keeps analytics and finance complete, server-authoritative, capability-gated, and mobile-first", async () => {
   const [analyticsFinance, analyticsCss, client, manage, managementAdapter] =
     await Promise.all([
