@@ -12,6 +12,7 @@ const files = {
   courtsPage: new URL("../app/courts/page.tsx", import.meta.url),
   courtsLoading: new URL("../app/courts/loading.tsx", import.meta.url),
   globalsCss: new URL("../app/globals.css", import.meta.url),
+  initialBrandLoader: new URL("../app/initial-brand-loader.tsx", import.meta.url),
   layout: new URL("../app/layout.tsx", import.meta.url),
   loading: new URL("../app/loading.tsx", import.meta.url),
   manage: new URL("../app/manage/page.tsx", import.meta.url),
@@ -1413,6 +1414,24 @@ test("uses a branded, accessible pickleball loader only for route transitions", 
     globalsCss,
     /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.route-loading-ball-wrap,[\s\S]*?\.route-loading-ball,[\s\S]*?\.route-loading-shadow\s*\{[^}]*animation:\s*none\s*!important[^}]*transform:\s*none\s*!important[^}]*will-change:\s*auto/s,
   );
+});
+
+test("opens each browser session with a premium K&L brand intro", async () => {
+  const [intro, layout, globalsCss] = await Promise.all([
+    readFile(files.initialBrandLoader, "utf8"),
+    readFile(files.layout, "utf8"),
+    readFile(files.globalsCss, "utf8"),
+  ]);
+
+  assert.match(layout, /<InitialBrandLoader \/>/);
+  assert.match(intro, /kl-pickleball-court:brand-intro:v1/);
+  assert.match(intro, /window\.sessionStorage\.getItem\(INTRO_KEY\)/);
+  assert.match(intro, /src="\/kl-pickleball-court-logo\.png"/);
+  assert.match(intro, /role="status"/);
+  assert.match(intro, /aria-live="polite"/);
+  assert.match(intro, /data-phase=\{phase\}/);
+  assert.match(globalsCss, /\.brand-intro\s*\{[^}]*position:\s*fixed[^}]*z-index:\s*20000/s);
+  assert.match(globalsCss, /@media\s*\(prefers-reduced-motion:\s*reduce\)[\s\S]*?\.brand-intro-orbit/s);
 });
 
 test("keeps the court gallery tenant-sourced, safe, compact, and responsive", async () => {

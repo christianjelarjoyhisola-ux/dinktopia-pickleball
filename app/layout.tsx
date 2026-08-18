@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { DM_Sans, Sora } from "next/font/google";
 import { headers } from "next/headers";
 import { activeTenant } from "./tenants/registry";
+import { InitialBrandLoader } from "./initial-brand-loader";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -95,6 +96,7 @@ export default function RootLayout({
       <body
         className={`${dmSans.variable} ${sora.variable}`}
       >
+        <InitialBrandLoader />
         <a className="skip-link" href="#main-content">
           Skip to main content
         </a>
