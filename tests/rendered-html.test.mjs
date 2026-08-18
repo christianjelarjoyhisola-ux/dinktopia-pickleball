@@ -1006,21 +1006,22 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(matrixSource, /const isSelected = selectedKeys\.has\(selectionKey\(court\.id, hour\)\)/);
   assert.match(matrixSource, /const busy = !slot \|\| slot\.status === "unavailable"/);
   assert.match(matrixSource, /const ownedState = ownedSlotStates\.get\(selectionKey\(court\.id, hour\)\)/);
-  assert.match(matrixSource, /ownedState === "held"[\s\S]*?"Held"/);
-  assert.match(matrixSource, /ownedState === "payment_review"[\s\S]*?"Reviewing"/);
-  assert.match(matrixSource, /ownedState === "confirmed"[\s\S]*?"Booked"/);
+  assert.match(matrixSource, /const displayedState = ownedState \?\? slot\?\.publicState/);
+  assert.match(matrixSource, /displayedState === "held"[\s\S]*?"Held"/);
+  assert.match(matrixSource, /displayedState === "payment_review"[\s\S]*?"Reviewing"/);
+  assert.match(matrixSource, /displayedState === "confirmed"[\s\S]*?"Booked"/);
   assert.match(matrixSource, /busy[\s\S]*?"Booked"/);
   assert.match(
     matrixSource,
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
   );
   assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
-  assert.match(matrixSource, /disabled=\{busy \|\| Boolean\(ownedState\)\}/);
+  assert.match(matrixSource, /disabled=\{busy \|\| Boolean\(displayedState\)\}/);
   assert.match(
     matrixSource,
-    /onClick=\{\(\) => slot && !busy && !ownedState && chooseSlot\(court, slot\)\}/,
+    /onClick=\{\(\) => slot && !busy && !displayedState && chooseSlot\(court, slot\)\}/,
   );
-  assert.match(matrixSource, /availability-cell\$\{ownedState \? ` owned-state owned-\$\{ownedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}/);
+  assert.match(matrixSource, /availability-cell\$\{displayedState \? ` owned-state owned-\$\{displayedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}/);
   assert.doesNotMatch(matrixSource, /isLimitBlocked|is-limit-blocked|selection limit/i);
   assert.doesNotMatch(matrixSource, /aria-disabled=/);
 
@@ -4736,16 +4737,22 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.doesNotMatch(stepThree, /data-testid="submit-receipt"|Submit receipt/);
   assert.match(
     stepThree,
-    /onChange=\{\(event\) => \{[\s\S]*?const file = event\.target\.files\?\.\[0\][\s\S]*?paymentReference\.trim\(\)\.length < 6[\s\S]*?void submitPayment\(file\)/,
+    /onChange=\{\(event\) => \{[\s\S]*?const file = event\.target\.files\?\.\[0\][\s\S]*?void prepareReceipt\(file\)/,
   );
+  assert.doesNotMatch(stepThree, /onBlur=\{[\s\S]*?submitPayment/);
+  assert.doesNotMatch(stepThree, /void submitPayment\(file\)|void submitPayment\(receiptFile\)/);
+  assert.match(stepThree, /Preparing receipt…[\s\S]*?Receipt attached · ready to submit[\s\S]*?role="status" aria-live="polite"/);
   assert.match(
     stepThree,
-    /onBlur=\{\(\) => \{[\s\S]*?receiptUploadState === "waiting"[\s\S]*?paymentReference\.trim\(\)\.length >= 6[\s\S]*?void submitPayment\(receiptFile\)/,
+    /onSubmit=\{\(event\) => \{ event\.preventDefault\(\); void submitPayment\(\); \}\}[\s\S]*?data-testid="submit-payment"[\s\S]*?type="submit"[\s\S]*?Submit payment for review/,
   );
-  assert.match(stepThree, /Uploading securely…[\s\S]*?role="status" aria-live="polite"/);
   assert.match(
-    stepThree,
-    /receiptUploadState === "error"[\s\S]*?data-testid="retry-receipt"[\s\S]*?Retry receipt upload/,
+    booking,
+    /async function prepareReceipt\(file: File \| null\)[\s\S]*?await file\.slice\(0, Math\.min\(file\.size, 64 \* 1024\)\)\.arrayBuffer\(\)[\s\S]*?setReceiptUploadState\("ready"\)/,
+  );
+  assert.match(
+    booking,
+    /async function submitPayment\(\)[\s\S]*?setReceiptUploadState\("submitting"\)[\s\S]*?adapter\.submitPayment\(/,
   );
   assert.match(
     booking,
@@ -5101,7 +5108,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
 
   assert.match(
     booking,
-    /className=\{`availability-cell mobile-availability-cell\$\{ownedState \? ` owned-state owned-\$\{ownedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
+    /className=\{`availability-cell mobile-availability-cell\$\{displayedState \? ` owned-state owned-\$\{displayedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
   );
   const publicTextCss = publicCss.replace(
     /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*\}/gs,

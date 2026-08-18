@@ -90,6 +90,7 @@ export type AvailabilitySlot = {
   promotionId?: string;
   promotionName?: string;
   status: SlotStatus;
+  publicState?: OwnedSlotState;
 };
 
 export type CourtSchedule = {
@@ -1175,6 +1176,21 @@ const platformAdapter: BookingAdapter = {
             ),
           );
         });
+        const publicState = availabilityDays
+          .flatMap((day) => (day.response.slotLifecycle ?? []).map((lifecycle) => ({ day, lifecycle })))
+          .find(({ day, lifecycle }) =>
+            lifecycle.courtId === publicCourt.id &&
+            ["held", "payment_review", "confirmed"].includes(lifecycle.state) &&
+            timestampPeriodOverlaps(
+              lifecycle.startsAt,
+              lifecycle.endsAt,
+              hour,
+              1,
+              request.date,
+              day.date,
+              day.response.timezone || activeTenant.identity.timezone,
+            ),
+          )?.lifecycle.state;
         const overlapsBlock = availabilityDays.some((day) =>
           blockedPeriodOverlaps(
             day.response.blockedDates,
@@ -1205,6 +1221,7 @@ const platformAdapter: BookingAdapter = {
           endsAt: formatClockLabel(hour + 1),
           ...promoted,
           status: tooSoon || overlapsBlock || overlapsBooking ? "unavailable" : "available",
+          publicState,
         };
       });
       return { courtId: publicCourt.id, slots };
@@ -1720,6 +1737,7 @@ export function BookingExperience({
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
   const receiptSubmissionInFlightRef = useRef(false);
+  const receiptPreparationIdRef = useRef(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -1751,7 +1769,7 @@ export function BookingExperience({
   const [receiptFileName, setReceiptFileName] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptUploadState, setReceiptUploadState] = useState<
-    "idle" | "waiting" | "uploading" | "error"
+    "idle" | "preparing" | "ready" | "submitting" | "error"
   >("idle");
   const [paymentError, setPaymentError] = useState("");
   const [paymentCopyState, setPaymentCopyState] = useState<"idle" | "copied" | "error">("idle");
@@ -2601,7 +2619,7 @@ export function BookingExperience({
     }
   }
 
-  async function submitPayment(selectedFile = receiptFile) {
+  async function submitPayment() {
     if (receiptSubmissionInFlightRef.current) return;
     setPaymentError("");
     if (!pendingBooking) {
@@ -2626,31 +2644,31 @@ export function BookingExperience({
       );
       return;
     }
-    if (!selectedFile) {
+    if (!receiptFile || (receiptUploadState !== "ready" && receiptUploadState !== "error")) {
       setPaymentError(
         isLive
-          ? "Upload a JPG, PNG, or WebP copy of your payment receipt."
+          ? "Choose a JPG, PNG, or WebP copy of your payment receipt."
           : "Choose a sample JPG, PNG, or WebP image. No real receipt or payment is required.",
       );
       return;
     }
     if (
-      !["image/jpeg", "image/png", "image/webp"].includes(selectedFile.type) ||
-      selectedFile.size > 2 * 1024 * 1024
+      !["image/jpeg", "image/png", "image/webp"].includes(receiptFile.type) ||
+      receiptFile.size > 2 * 1024 * 1024
     ) {
       setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
       return;
     }
 
     receiptSubmissionInFlightRef.current = true;
-    setReceiptUploadState("uploading");
+    setReceiptUploadState("submitting");
     setIsSubmitting(true);
     try {
       const booking = await adapter.submitPayment({
         booking: pendingBooking,
         paymentReference: paymentReference.trim(),
-        receiptFileName: selectedFile.name,
-        receiptFile: selectedFile,
+        receiptFileName: receiptFile.name,
+        receiptFile,
         paymentMethod: paymentMethodCode,
         clientRequestId: bookingAttemptIdRef.current,
       });
@@ -2676,6 +2694,44 @@ export function BookingExperience({
     } finally {
       receiptSubmissionInFlightRef.current = false;
       setIsSubmitting(false);
+    }
+  }
+
+  async function prepareReceipt(file: File | null) {
+    const preparationId = receiptPreparationIdRef.current + 1;
+    receiptPreparationIdRef.current = preparationId;
+    setPaymentError("");
+    setReceiptFile(null);
+    setReceiptFileName(file?.name ?? "");
+    if (!file) {
+      setReceiptUploadState("idle");
+      return;
+    }
+    if (
+      !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+      file.size > 2 * 1024 * 1024
+    ) {
+      setReceiptFileName("");
+      setReceiptUploadState("idle");
+      setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
+      return;
+    }
+
+    setReceiptUploadState("preparing");
+    try {
+      // Confirm that the browser can read the selected file before enabling the
+      // final submission. The live API currently uploads and submits atomically,
+      // so this is intentionally labelled as local preparation, not an upload.
+      await file.slice(0, Math.min(file.size, 64 * 1024)).arrayBuffer();
+      if (receiptPreparationIdRef.current !== preparationId) return;
+      setReceiptFile(file);
+      setReceiptUploadState("ready");
+      setLiveMessage(`${file.name} is attached and ready to submit.`);
+    } catch {
+      if (receiptPreparationIdRef.current !== preparationId) return;
+      setReceiptFileName("");
+      setReceiptUploadState("error");
+      setPaymentError("This receipt could not be read. Choose the image again.");
     }
   }
 
@@ -3506,11 +3562,12 @@ export function BookingExperience({
                                         const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                         const busy = !slot || slot.status === "unavailable";
                                         const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
-                                        const stateLabel = ownedState === "held"
+                                        const displayedState = ownedState ?? slot?.publicState;
+                                        const stateLabel = displayedState === "held"
                                           ? "Held"
-                                          : ownedState === "payment_review"
+                                          : displayedState === "payment_review"
                                             ? "Reviewing"
-                                            : ownedState === "confirmed"
+                                            : displayedState === "confirmed"
                                               ? "Booked"
                                               : busy
                                                 ? "Booked"
@@ -3521,11 +3578,11 @@ export function BookingExperience({
                                           <button
                                             type="button"
                                             key={`${court.id}-${hour}`}
-                                            className={`availability-cell${ownedState ? ` owned-state owned-${ownedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
+                                            className={`availability-cell${displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
-                                            disabled={busy || Boolean(ownedState)}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${ownedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
-                                            onClick={() => slot && !busy && !ownedState && chooseSlot(court, slot)}
+                                            disabled={busy || Boolean(displayedState)}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                            onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
                                           ><span aria-hidden="true" /><small>{stateLabel}</small></button>
                                         );
                                       })}
@@ -3556,11 +3613,12 @@ export function BookingExperience({
                                       const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                       const busy = !slot || slot.status === "unavailable";
                                       const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
-                                      const stateLabel = ownedState === "held"
+                                      const displayedState = ownedState ?? slot?.publicState;
+                                      const stateLabel = displayedState === "held"
                                         ? "Held"
-                                        : ownedState === "payment_review"
+                                        : displayedState === "payment_review"
                                           ? "Reviewing"
-                                          : ownedState === "confirmed"
+                                          : displayedState === "confirmed"
                                             ? "Booked"
                                             : busy
                                               ? "Booked"
@@ -3571,11 +3629,11 @@ export function BookingExperience({
                                         <button
                                           type="button"
                                           key={`${court.id}-${hour}`}
-                                          className={`availability-cell mobile-availability-cell${ownedState ? ` owned-state owned-${ownedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
+                                          className={`availability-cell mobile-availability-cell${displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
-                                          disabled={busy || Boolean(ownedState)}
-                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${ownedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
-                                          onClick={() => slot && !busy && !ownedState && chooseSlot(court, slot)}
+                                          disabled={busy || Boolean(displayedState)}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                          onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
                                         ><span aria-hidden="true" /><small>{stateLabel}</small></button>
                                       );
                                     })}
@@ -3736,7 +3794,7 @@ export function BookingExperience({
 
                 {step === 3 && checkoutSlot && pendingBooking && (
                   <div className="checkout-layout booking-payment-view">
-                    <form className="booking-stage surface-card gcash-payment-card" onSubmit={(event) => event.preventDefault()} aria-busy={isSubmitting} noValidate>
+                    <form className="booking-stage surface-card gcash-payment-card" onSubmit={(event) => { event.preventDefault(); void submitPayment(); }} aria-busy={isSubmitting} noValidate>
                       <div className="gcash-heading">
                         <h3 ref={paymentHeadingRef} tabIndex={-1}><span>G</span>Cash</h3>
                         <span className="gcash-secure-pill"><i aria-hidden="true" /> Secure</span>
@@ -3798,14 +3856,6 @@ export function BookingExperience({
                                 value={paymentReference}
                                 onChange={(event) => {
                                   setPaymentReference(event.target.value);
-                                  if (receiptFile && receiptUploadState !== "error") {
-                                    setReceiptUploadState("waiting");
-                                  }
-                                }}
-                                onBlur={() => {
-                                  if (receiptFile && receiptUploadState === "waiting" && paymentReference.trim().length >= 6) {
-                                    void submitPayment(receiptFile);
-                                  }
                                 }}
                                 placeholder="e.g. 1234 5678 9012"
                                 disabled={isSubmitting}
@@ -3813,19 +3863,19 @@ export function BookingExperience({
                             </div>
                             <div className="form-field">
                               <label htmlFor={`${formId}-receipt`}>Payment receipt</label>
-                              <label className={`upload-control ${receiptFileName ? "has-file" : ""} ${receiptUploadState === "uploading" ? "is-uploading" : ""}`} htmlFor={`${formId}-receipt`} aria-disabled={isSubmitting}>
-                                <span aria-hidden="true">{receiptUploadState === "uploading" ? <span className="button-spinner" /> : "＋"}</span>
+                              <label className={`upload-control ${receiptUploadState === "ready" ? "has-file" : ""} ${receiptUploadState === "preparing" || receiptUploadState === "submitting" ? "is-uploading" : ""}`} htmlFor={`${formId}-receipt`} aria-disabled={isSubmitting}>
+                                <span aria-hidden="true">{receiptUploadState === "preparing" || receiptUploadState === "submitting" ? <span className="button-spinner" /> : receiptUploadState === "ready" ? "✓" : "＋"}</span>
                                 <span>
                                   <strong>{receiptFileName || "Choose a file"}</strong>
                                   <small>
-                                    {receiptUploadState === "uploading"
-                                      ? "Uploading securely…"
-                                      : receiptUploadState === "waiting"
-                                        ? "Add a valid reference number, then leave the field to upload"
+                                    {receiptUploadState === "preparing"
+                                      ? "Preparing receipt…"
+                                      : receiptUploadState === "submitting"
+                                        ? "Submitting securely…"
                                         : receiptUploadState === "error"
-                                          ? "Upload failed · use Retry below"
-                                          : receiptFileName
-                                            ? "Ready to upload automatically"
+                                          ? "Could not prepare or submit · try again"
+                                          : receiptUploadState === "ready"
+                                            ? "Receipt attached · ready to submit"
                                             : "JPG, PNG, or WebP · max 2 MB"}
                                   </small>
                                 </span>
@@ -3839,32 +3889,18 @@ export function BookingExperience({
                                 onChange={(event) => {
                                   const file = event.target.files?.[0] ?? null;
                                   if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
-                                    setReceiptFile(null);
-                                    setReceiptFileName("");
-                                    setReceiptUploadState("idle");
-                                    setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
-                                    event.target.value = "";
-                                    return;
+                                    event.currentTarget.value = "";
                                   }
-                                  setPaymentError("");
-                                  setReceiptFile(file);
-                                  setReceiptFileName(file?.name ?? "");
-                                  if (!file) {
-                                    setReceiptUploadState("idle");
-                                    return;
-                                  }
-                                  if (paymentReference.trim().length < 6) {
-                                    setReceiptUploadState("waiting");
-                                    return;
-                                  }
-                                  void submitPayment(file);
+                                  void prepareReceipt(file);
                                 }}
                               />
                               <span className="receipt-upload-status" role="status" aria-live="polite">
-                                {receiptUploadState === "uploading"
-                                  ? "Receipt upload in progress. Please keep this page open."
-                                  : receiptUploadState === "waiting"
-                                    ? "Receipt selected. Enter a valid reference number to start the upload."
+                                {receiptUploadState === "preparing"
+                                  ? "Checking the selected receipt on this device."
+                                  : receiptUploadState === "ready"
+                                    ? "Receipt attached. It has not been submitted for review yet."
+                                    : receiptUploadState === "submitting"
+                                      ? "Submitting your receipt for payment review. Please keep this page open."
                                     : ""}
                               </span>
                             </div>
@@ -3876,9 +3912,9 @@ export function BookingExperience({
                           <span aria-hidden="true">!</span><div><strong>Payment needs another look</strong><p>{paymentError}</p></div>
                         </div>
                       )}
-                      {!holdExpired && heldPaymentReady && receiptUploadState === "error" && (
-                        <button data-testid="retry-receipt" className="button gcash-button" type="button" onClick={() => void submitPayment()} disabled={isSubmitting || !receiptFile}>
-                          Retry receipt upload <span aria-hidden="true">→</span>
+                      {!holdExpired && heldPaymentReady && (
+                        <button data-testid="submit-payment" className="button gcash-button" type="submit" disabled={isSubmitting || !receiptFile || !["ready", "error"].includes(receiptUploadState) || paymentReference.trim().length < 6}>
+                          {receiptUploadState === "submitting" ? "Submitting payment…" : receiptUploadState === "error" && receiptFile ? "Retry payment submission" : "Submit payment for review"} <span aria-hidden="true">→</span>
                         </button>
                       )}
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>

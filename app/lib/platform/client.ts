@@ -11,6 +11,7 @@ import type {
   PlatformErrorBody,
   PlatformMode,
   PublicPromotion,
+  PublicSlotLifecycle,
   TenantBootstrap,
 } from "./types";
 
@@ -416,6 +417,27 @@ export async function getTenantBootstrap(): Promise<TenantBootstrap> {
   return { ...result, promotions };
 }
 
+function validatedPublicSlotLifecycle(value: unknown): PublicSlotLifecycle[] {
+  if (!Array.isArray(value)) return [];
+  const lifecycle: PublicSlotLifecycle[] = [];
+  for (const candidate of value.slice(0, 1_000)) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const item = candidate as Record<string, unknown>;
+    if (
+      typeof item.courtId !== "string" ||
+      !/^[A-Za-z0-9-]{1,100}$/.test(item.courtId) ||
+      typeof item.startsAt !== "string" ||
+      typeof item.endsAt !== "string" ||
+      !Number.isFinite(Date.parse(item.startsAt)) ||
+      !Number.isFinite(Date.parse(item.endsAt)) ||
+      Date.parse(item.endsAt) <= Date.parse(item.startsAt) ||
+      !["held", "payment_review", "confirmed"].includes(String(item.state))
+    ) continue;
+    lifecycle.push(item as PublicSlotLifecycle);
+  }
+  return lifecycle;
+}
+
 export async function getAvailability(date: string): Promise<AvailabilityResponse> {
   if (platformMode() === "preview") {
     return {
@@ -434,15 +456,25 @@ export async function getAvailability(date: string): Promise<AvailabilityRespons
       })),
     };
   }
-  const result = await rpc<AvailabilityResponse | null>("get_public_availability", {
+  const scope = {
     p_tenant_slug: activeTenant.identity.slug,
     p_hostname: currentHostname(),
     p_date: date,
-  });
+  };
+  const [result, slotLifecycle] = await Promise.all([
+    rpc<AvailabilityResponse | null>("get_public_availability", scope),
+    rpc<unknown>("get_public_slot_lifecycle", scope)
+      .catch((error) => {
+        // Deploying the additive RPC and frontend can happen independently.
+        // Until the RPC exists, availability remains safely generic.
+        if (error instanceof PlatformRequestError && error.code === "PGRST202") return [];
+        throw error;
+      }),
+  ]);
   if (!result) {
     throw new PlatformRequestError(404, "AVAILABILITY_NOT_FOUND", "Availability is unavailable.");
   }
-  return result;
+  return { ...result, slotLifecycle: validatedPublicSlotLifecycle(slotLifecycle) };
 }
 
 export async function createBooking(

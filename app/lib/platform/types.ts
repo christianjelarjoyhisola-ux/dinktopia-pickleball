@@ -88,11 +88,19 @@ export type AvailabilityCourt = {
   unavailable: Array<{ startsAt: string; endsAt: string; label?: string }>;
 };
 
+export type PublicSlotLifecycle = {
+  courtId: string;
+  startsAt: string;
+  endsAt: string;
+  state: "held" | "payment_review" | "confirmed";
+};
+
 export type AvailabilityResponse = {
   date: string;
   timezone: string;
   courts: AvailabilityCourt[];
   blockedDates?: Array<Record<string, unknown>>;
+  slotLifecycle?: PublicSlotLifecycle[];
 };
 
 export type BookingSessionInput = {
