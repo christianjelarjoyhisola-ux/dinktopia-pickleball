@@ -45,6 +45,13 @@ type CourtGroup = {
   global?: boolean;
 };
 
+type CalendarReservation = {
+  id: string;
+  booking: Booking;
+  sessions: Booking[];
+  totalAmount: number;
+};
+
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const CLOCK_PATTERN = /^(\d{1,2}):(\d{2})/;
 const TERMINAL_HIDDEN_STATUSES = new Set<Booking["status"]>([
@@ -179,13 +186,62 @@ function amountLabel(amount: number, currency: string): string {
   }
 }
 
+function bookingGroupId(booking: Booking): string {
+  return booking.parentBookingId ?? booking.bookingId;
+}
+
+function reservationsFromBookings(bookings: Booking[]): CalendarReservation[] {
+  const grouped = new Map<string, Booking[]>();
+  for (const booking of bookings) {
+    const id = bookingGroupId(booking);
+    grouped.set(id, [...(grouped.get(id) ?? []), booking]);
+  }
+  return [...grouped.entries()].map(([id, sessions]) => {
+    const ordered = [...sessions].sort((left, right) =>
+      (left.startTime ?? "").localeCompare(right.startTime ?? "") ||
+      left.court.localeCompare(right.court)
+    );
+    const booking = ordered[0];
+    return {
+      id,
+      booking,
+      sessions: ordered,
+      totalAmount: booking.groupTotalAmount ??
+        ordered.reduce((sum, session) => sum + session.amount, 0),
+    };
+  }).sort((left, right) =>
+    (left.booking.startTime ?? "").localeCompare(right.booking.startTime ?? "") ||
+    left.booking.customer.localeCompare(right.booking.customer)
+  );
+}
+
 function rowsForDate(
   date: string,
   bookings: Booking[],
   blocks: CourtBlock[],
 ): CalendarDayData {
+  const expandedBookings = bookings.flatMap((booking) => {
+    if (!booking.sessions?.length) return [booking];
+    return booking.sessions.map((session) => ({
+      ...booking,
+      bookingId: session.key,
+      parentBookingId: booking.bookingId,
+      courtId: session.courtId,
+      court: session.court,
+      bookingDate: session.bookingDate,
+      date: session.date,
+      startTime: session.startTime,
+      endTime: session.endTime,
+      time: session.time,
+      duration: session.duration,
+      amount: session.amount,
+      groupTotalAmount: booking.amount,
+      endsAt: session.endsAt,
+      sessions: [],
+    }));
+  });
   return {
-    bookings: bookings.filter(
+    bookings: expandedBookings.filter(
       (booking) =>
         booking.bookingDate === date &&
         !TERMINAL_HIDDEN_STATUSES.has(booking.status),
@@ -289,21 +345,6 @@ function courtGroups(
   return groups;
 }
 
-function courtStatusLabel(status: CourtGroup["status"]): string {
-  switch (status) {
-    case "active":
-      return "Active";
-    case "maintenance":
-      return "Maintenance";
-    case "inactive":
-      return "Inactive";
-    case "all":
-      return "Venue-wide";
-    case "unassigned":
-      return "Unassigned";
-  }
-}
-
 function bookingDateTime(booking: Booking, fallbackDate: string): string {
   const date = booking.bookingDate ?? fallbackDate;
   if (!booking.startTime) return date;
@@ -312,14 +353,15 @@ function bookingDateTime(booking: Booking, fallbackDate: string): string {
 }
 
 function BookingAgendaItem({
-  booking,
+  reservation,
   selectedDate,
   currency,
 }: {
-  booking: Booking;
+  reservation: CalendarReservation;
   selectedDate: string;
   currency: string;
 }) {
+  const { booking } = reservation;
   const isHold = HOLD_STATUSES.has(booking.status);
   const statusTone = booking.status === "payment_attention" ? "attention" : isHold ? "pending" : "stable";
   const paymentTone = booking.payment === "paid"
@@ -331,8 +373,10 @@ function BookingAgendaItem({
   return (
     <article className={`${styles.agendaItem} ${isHold ? styles.holdItem : styles.bookingItem}`}>
       <div className={styles.timeColumn}>
-        <time dateTime={bookingDateTime(booking, selectedDate)}>{booking.time}</time>
-        <span>{booking.duration}</span>
+        <time dateTime={bookingDateTime(booking, selectedDate)}>
+          {reservation.sessions.length} {reservation.sessions.length === 1 ? "session" : "sessions"}
+        </time>
+        <span>{reservation.sessions.reduce((sum, session) => sum + durationMinutes(session.duration), 0) / 60} court-hours</span>
       </div>
       <div className={styles.entryBody}>
         <div className={styles.entryHeading}>
@@ -341,9 +385,18 @@ function BookingAgendaItem({
             {booking.bookingType === "event" ? <span className={styles.secondaryKind}>Event</span> : null}
             <h4>{booking.customer}</h4>
           </div>
-          <strong className={styles.amount}>{amountLabel(booking.amount, currency)}</strong>
+          <strong className={styles.amount}>{amountLabel(reservation.totalAmount, currency)}</strong>
         </div>
         <p className={styles.reference}>Booking {booking.reference}</p>
+        <div className={styles.reservationSessions} aria-label="Reserved courts and times">
+          {reservation.sessions.map((session) => (
+            <div className={styles.reservationSession} key={session.bookingId}>
+              <strong>{session.court}</strong>
+              <span>{session.time}</span>
+              <small>{session.duration}</small>
+            </div>
+          ))}
+        </div>
         <div className={styles.semanticRow}>
           <span className={`${styles.semanticPill} ${styles[`tone_${statusTone}`]}`}>
             Status: {STATUS_LABEL[booking.status]}
@@ -468,8 +521,16 @@ export function CalendarView({
     () => courtGroups(courts, visibleBookings, visibleBlocks, effectiveCourtFilter),
     [courts, effectiveCourtFilter, visibleBlocks, visibleBookings],
   );
-  const holdCount = visibleBookings.filter((booking) => HOLD_STATUSES.has(booking.status)).length;
-  const bookingCount = visibleBookings.length - holdCount;
+  const reservations = useMemo(
+    () => reservationsFromBookings(visibleBookings),
+    [visibleBookings],
+  );
+  const allReservations = useMemo(
+    () => reservationsFromBookings(dayData.bookings),
+    [dayData.bookings],
+  );
+  const holdCount = reservations.filter((reservation) => HOLD_STATUSES.has(reservation.booking.status)).length;
+  const bookingCount = reservations.length - holdCount;
   const visibleCourtCount = Math.max(
     effectiveCourtFilter === "all" ? courts.length : selectedCourt ? 1 : 0,
     1,
@@ -479,7 +540,7 @@ export function CalendarView({
     0,
   );
   const blockCount = projectedBlockCount;
-  const resultCount = bookingCount + holdCount + blockCount;
+  const resultCount = reservations.length + blockCount;
   const dateHeading = readableDate(selectedDate, {
     weekday: "long",
     month: "long",
@@ -510,7 +571,9 @@ export function CalendarView({
     const minutes = range ? Math.max(0, range.end - range.start) : Math.max(0, timeline.end - timeline.start);
     return sum + minutes * (isAllCourtBlock(block) ? visibleCourtCount : 1);
   }, 0);
-  const paidRevenue = visibleBookings.filter((booking) => booking.payment === "paid").reduce((sum, booking) => sum + booking.amount, 0);
+  const paidRevenue = reservations
+    .filter((reservation) => reservation.booking.payment === "paid")
+    .reduce((sum, reservation) => sum + reservation.totalAmount, 0);
   const totalInventoryMinutes = Math.max(0, timeline.end - timeline.start) * Math.max(groups.filter((group) => !group.global).length, 1);
   const openCourtHours = Math.max(0, (totalInventoryMinutes - bookedMinutes - blockedMinutes) / 60);
   const blockedCourtHours = blockedMinutes / 60;
@@ -531,8 +594,8 @@ export function CalendarView({
     gridTemplateColumns: `112px repeat(${timeline.slotCount}, minmax(78px, 1fr))`,
     minWidth: `${112 + timeline.slotCount * 78}px`,
   };
-  const selectedTimelineBooking = selectedBookingId
-    ? visibleBookings.find((booking) => booking.bookingId === selectedBookingId) ?? null
+  const selectedTimelineReservation = selectedBookingId
+    ? allReservations.find((reservation) => reservation.id === selectedBookingId) ?? null
     : null;
   const currentHour = selectedDate === today
     ? Number(new Intl.DateTimeFormat("en", { hour: "numeric", hourCycle: "h23", timeZone: timezone }).format(new Date())) * 60
@@ -671,7 +734,7 @@ export function CalendarView({
                   <div className={styles.rowCourt}><span>{group.global ? "ALL" : group.name.match(/\d+/)?.[0] ?? group.name.slice(0, 2).toUpperCase()}</span><div><strong>{group.name}</strong><small>{group.detail}</small></div></div>
                   {timeline.hours.map((hour, index) => <span className={`${styles.hourCell} ${currentHour === hour ? styles.currentHourCell : ""}`} style={{ gridColumn: index + 2 }} aria-hidden="true" key={`${group.key}-${hour}`} />)}
                   {group.entries.map((entry) => entry.kind === "booking" ? (
-                    <button type="button" key={entry.booking.bookingId} className={`${styles.bookingBlock} ${selectedBookingId === entry.booking.bookingId ? styles.selectedBlock : ""} ${entry.booking.status === "checked_in" ? styles.playingBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${entry.booking.time}`} onClick={() => setSelectedBookingId(entry.booking.bookingId)}>
+                    <button type="button" key={entry.booking.bookingId} className={`${styles.bookingBlock} ${selectedBookingId === bookingGroupId(entry.booking) ? styles.selectedBlock : ""} ${entry.booking.status === "checked_in" ? styles.playingBlock : HOLD_STATUSES.has(entry.booking.status) ? styles.reviewBlock : styles.reservedBlock}`} style={timelineEntryStyle(entry)} title={`${entry.booking.customer} · ${group.name} · ${entry.booking.time}`} aria-label={`${entry.booking.customer}, ${group.name}, ${entry.booking.time}, ${entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}`} onClick={() => setSelectedBookingId(bookingGroupId(entry.booking))}>
                       <strong>{entry.booking.customer}</strong><span>{entry.booking.time}</span><small>{entry.booking.payment === "paid" ? "Paid" : STATUS_LABEL[entry.booking.status]}</small>
                     </button>
                   ) : (
@@ -691,8 +754,8 @@ export function CalendarView({
                 </div>
               ))}
             </div>
-            {selectedTimelineBooking ? <aside className={styles.bookingPreview} aria-label="Selected booking details"><div><span>Selected booking</span><strong>{selectedTimelineBooking.customer}</strong><small>{selectedTimelineBooking.reference}</small></div><dl><div><dt>Court</dt><dd>{selectedTimelineBooking.court}</dd></div><div><dt>Time</dt><dd>{selectedTimelineBooking.time}</dd></div><div><dt>Payment</dt><dd>{PAYMENT_LABEL[selectedTimelineBooking.payment]}</dd></div><div><dt>Amount</dt><dd>{amountLabel(selectedTimelineBooking.amount, currency)}</dd></div></dl><button type="button" onClick={() => setSelectedBookingId(null)}>Close</button></aside> : null}
-            <div className={styles.boardFooter}><span><Clock3 aria-hidden="true" size={14} /> {timezone}</span><p role="status" aria-live="polite">{resultCount} {resultCount === 1 ? "schedule entry" : "schedule entries"}</p></div>
+            {selectedTimelineReservation ? <aside className={styles.bookingPreview} aria-label="Selected reservation details"><div><span>Selected reservation</span><strong>{selectedTimelineReservation.booking.customer}</strong><small>{selectedTimelineReservation.booking.reference}</small></div><div className={styles.previewSessions}>{selectedTimelineReservation.sessions.map((session) => <div key={session.bookingId}><strong>{session.court}</strong><span>{session.time}</span></div>)}</div><dl><div><dt>Sessions</dt><dd>{selectedTimelineReservation.sessions.length}</dd></div><div><dt>Court-hours</dt><dd>{selectedTimelineReservation.sessions.reduce((sum, session) => sum + durationMinutes(session.duration), 0) / 60}h</dd></div><div><dt>Payment</dt><dd>{PAYMENT_LABEL[selectedTimelineReservation.booking.payment]}</dd></div><div><dt>Total</dt><dd>{amountLabel(selectedTimelineReservation.totalAmount, currency)}</dd></div></dl><button type="button" onClick={() => setSelectedBookingId(null)}>Close</button></aside> : null}
+            <div className={styles.boardFooter}><span><Clock3 aria-hidden="true" size={14} /> {timezone}</span><p role="status" aria-live="polite">{reservations.length} {reservations.length === 1 ? "reservation" : "reservations"} · {visibleBookings.length} court {visibleBookings.length === 1 ? "session" : "sessions"}</p></div>
           </section>
           <section className={styles.scheduleSummary} aria-label="Schedule totals">
             <article><span>Booked court hours</span><strong>{(bookedMinutes / 60).toLocaleString("en-PH", { maximumFractionDigits: 1 })}h</strong><small>{bookingCount} confirmed booking{bookingCount === 1 ? "" : "s"}</small></article>
@@ -701,9 +764,10 @@ export function CalendarView({
             <button type="button" onClick={onOpenBlocks} disabled={!canBlock}><span><Ban aria-hidden="true" size={17} /></span><strong>Block court time</strong><small>Take a court out of inventory</small></button>
           </section>
         </>
-      ) : groups.length ? (
+      ) : reservations.length || visibleBlocks.length ? (
         <div className={styles.courtBoard} aria-label={`Court agenda for ${dateHeading}`}>
-          {groups.map((group) => <section className={`${styles.courtCard} ${group.global ? styles.globalCourtCard : ""}`} key={group.key}><header className={styles.courtHeader}><div><h3>{group.name}</h3><p>{group.detail}</p></div><div className={styles.courtMeta}><span className={`${styles.courtStatus} ${styles[`court_${group.status}`]}`}>{courtStatusLabel(group.status)}</span><strong>{group.entries.length} {group.entries.length === 1 ? "entry" : "entries"}</strong></div></header>{group.entries.length ? <div className={styles.agendaList}>{group.entries.map((entry) => entry.kind === "booking" ? <BookingAgendaItem key={`booking-${entry.booking.bookingId}`} booking={entry.booking} selectedDate={selectedDate} currency={currency} /> : <BlockAgendaItem key={`block-${entry.block.id}`} block={entry.block} selectedDate={selectedDate} />)}</div> : <p className={styles.courtEmpty}>No bookings or blocks returned for this court.</p>}</section>)}
+          {reservations.map((reservation) => <section className={styles.courtCard} key={reservation.id}><header className={styles.courtHeader}><div><h3>{reservation.booking.customer}</h3><p>{reservation.booking.reference}</p></div><div className={styles.courtMeta}><strong>{reservation.sessions.length} {reservation.sessions.length === 1 ? "session" : "sessions"}</strong></div></header><div className={styles.agendaList}><BookingAgendaItem reservation={reservation} selectedDate={selectedDate} currency={currency} /></div></section>)}
+          {visibleBlocks.length ? <section className={styles.courtCard}><header className={styles.courtHeader}><div><h3>Court blocks</h3><p>Unavailable court time</p></div><div className={styles.courtMeta}><strong>{visibleBlocks.length} {visibleBlocks.length === 1 ? "block" : "blocks"}</strong></div></header><div className={styles.agendaList}>{visibleBlocks.map((block) => <BlockAgendaItem key={`block-${block.id}`} block={block} selectedDate={selectedDate} />)}</div></section> : null}
         </div>
       ) : (
         <div className={styles.emptyState}><CalendarDays aria-hidden="true" size={28} /><strong>No courts returned</strong><p>The live court inventory is unavailable for this day.</p></div>

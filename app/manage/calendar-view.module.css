@@ -9,6 +9,74 @@
   box-shadow: var(--shadow-soft, 0 1px 2px rgba(16, 42, 67, 0.04));
 }
 
+/* Grouped reservations: one parent total, with every court occurrence visible. */
+.reservationSessions {
+  display: grid;
+  gap: 7px;
+  margin: 11px 0 2px;
+}
+
+.reservationSession {
+  display: grid;
+  grid-template-columns: minmax(90px, .7fr) minmax(140px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid color-mix(in srgb, var(--line, #dedfd9) 78%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #ffffff 84%, #edf3fa);
+  padding: 9px 11px;
+}
+
+.reservationSession strong,
+.reservationSession span,
+.reservationSession small {
+  min-width: 0;
+  font-size: 12px;
+}
+
+.reservationSession small {
+  color: var(--muted, #52645d);
+  text-align: right;
+}
+
+.bookingPreview .previewSessions {
+  display: grid;
+  max-height: 132px;
+  gap: 6px;
+  overflow-y: auto;
+}
+
+.bookingPreview .previewSessions > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line, #dedfd9);
+  padding-bottom: 5px;
+}
+
+.bookingPreview .previewSessions > div strong,
+.bookingPreview .previewSessions > div span {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+@media (max-width: 680px) {
+  .reservationSession {
+    grid-template-columns: 1fr;
+    gap: 3px;
+  }
+
+  .reservationSession small {
+    text-align: left;
+  }
+
+  .bookingPreview .previewSessions {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Readable, keyboard-friendly states for the management calendar. */
 .calendar {
   --calendar-muted: #52635d;

@@ -3594,11 +3594,15 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   );
   assert.match(
     dayLoader,
-    /currentOwnerSession\(\)[\s\S]*?Promise\.all\(\[[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?listManagerBookings\(session\.access_token, \{[\s\S]*?date,[\s\S]*?activeOnly: true,[\s\S]*?limit: 500,[\s\S]*?listManagerBlocks\(session\.access_token, \{ date, limit: 500 \}\)/,
+    /currentOwnerSession\(\)[\s\S]*?Promise\.all\(\[[\s\S]*?getManagerSession\(session\.access_token\)[\s\S]*?listManagerBookings\(session\.access_token, \{ activeOnly: true, limit: 500 \}\)[\s\S]*?listManagerBlocks\(session\.access_token, \{ date, limit: 500 \}\)/,
   );
   assert.match(
     dayLoader,
-    /if \(!authorityCapabilities\(serverSession\)\.length\)[\s\S]*?CALENDAR_VIEW_ACCESS_DENIED[\s\S]*?bookingResult\.bookings\.map[\s\S]*?blockResult\.blockedDates\.map/,
+    /booking\.sessions\?\.some\(\(session\) => session\.bookingDate === date\)[\s\S]*?booking\.bookingDate === date/,
+  );
+  assert.match(
+    dayLoader,
+    /if \(!authorityCapabilities\(serverSession\)\.length\)[\s\S]*?CALENDAR_VIEW_ACCESS_DENIED[\s\S]*?bookingResult\.bookings[\s\S]*?\.map[\s\S]*?blockResult\.blockedDates\.map/,
   );
 
   assert.match(
@@ -3667,10 +3671,8 @@ test("loads an exact accessible calendar day and separates bookings, payment hol
   assert.match(calendar, /role="status" aria-live="polite"/);
   assert.match(calendar, /className=\{styles\.srOnly\} aria-live="polite"/);
   assert.match(calendar, /className=\{styles\.errorState\} role="alert"/);
-  assert.match(
-    calendar,
-    /<time dateTime=\{bookingDateTime\(booking, selectedDate\)\}>\{booking\.time\}<\/time>/,
-  );
+  assert.match(calendar, /reservation\.sessions\.length[\s\S]*?court-hours/);
+  assert.match(calendar, /className=\{styles\.reservationSessions\}[\s\S]*?session\.court[\s\S]*?session\.time/);
   assert.match(
     calendar,
     /Status: \{STATUS_LABEL\[booking\.status\]\}[\s\S]*?Payment: \{PAYMENT_LABEL\[booking\.payment\]\}/,

@@ -90,8 +90,25 @@ export type BookingPaymentStatus =
   | "rejected"
   | "unknown";
 
+export type BookingSession = {
+  key: string;
+  courtId: string;
+  court: string;
+  bookingDate: string;
+  date: string;
+  startTime: string;
+  endTime: string;
+  time: string;
+  duration: string;
+  durationHours: number;
+  startsAt: string;
+  endsAt: string;
+  amount: number;
+};
+
 export type Booking = {
   bookingId: string;
+  parentBookingId?: string;
   bookingType: "regular" | "event";
   reference: string;
   id: string;
@@ -103,11 +120,16 @@ export type Booking = {
   time: string;
   duration: string;
   amount: number;
+  /** The parent reservation total, retained on calendar session projections. */
+  groupTotalAmount?: number;
   status: BookingStatus;
   payment: BookingPaymentStatus;
   courtId: string;
   bookingDate: string | null;
   startTime: string | null;
+  endTime?: string | null;
+  endsAt?: string | null;
+  sessions?: BookingSession[];
   paymentEvidence?: PaymentEvidence | null;
 };
 
@@ -1256,11 +1278,9 @@ export const managementAdapter: ManagementAdapter = {
     if (!session) throw new Error("MANAGER_SIGN_IN_REQUIRED");
     const [serverSessionResult, bookingResult, blockResult] = await Promise.all([
       getManagerSession(session.access_token),
-      listManagerBookings(session.access_token, {
-        date,
-        activeOnly: true,
-        limit: 500,
-      }),
+      // The parent date can differ from a grouped session date. Load the
+      // bounded active set, then filter by authoritative occurrence dates.
+      listManagerBookings(session.access_token, { activeOnly: true, limit: 500 }),
       listManagerBlocks(session.access_token, { date, limit: 500 }),
     ]);
     const serverSession = normalizeManagerSession(serverSessionResult);
@@ -1269,7 +1289,12 @@ export const managementAdapter: ManagementAdapter = {
     }
     const courtNames = new Map(current.courts.map((court) => [court.id, court.name]));
     return {
-      bookings: bookingResult.bookings.map((row) => mapLiveBooking(row, courtNames)),
+      bookings: bookingResult.bookings
+        .map((row) => mapLiveBooking(row, courtNames))
+        .filter((booking) =>
+          booking.sessions?.some((session) => session.bookingDate === date) ||
+          booking.bookingDate === date
+        ),
       blocks: blockResult.blockedDates.map((row) => mapLiveBlock(row, courtNames)),
     };
   },
@@ -3574,6 +3599,144 @@ function bookingAmount(row: JsonObject): number {
   return Math.max(0, (subtotal ?? 0) + (serviceFee ?? 0));
 }
 
+function nestedRecord(candidate: unknown): JsonObject | null {
+  if (typeof candidate === "string") {
+    try {
+      return record(JSON.parse(candidate));
+    } catch {
+      return null;
+    }
+  }
+  return record(candidate);
+}
+
+function localDateValue(candidate: Date): string {
+  const parts = new Intl.DateTimeFormat("en", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: activeTenant.identity.timezone,
+  }).formatToParts(candidate);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+type ParsedBookingOccurrence = {
+  id: string | null;
+  courtId: string;
+  startsAt: Date;
+  endsAt: Date;
+  amount: number;
+  courtName: string;
+};
+
+function parsedBookingOccurrence(
+  candidate: unknown,
+  courtNames: ReadonlyMap<string, string>,
+): ParsedBookingOccurrence | null {
+  const row = record(candidate);
+  if (!row) return null;
+  const courtId = value(row, ["courtId", "court_id"]);
+  const startsAt = parsedInstant(row, ["startsAt", "starts_at"]);
+  const endsAt = parsedInstant(row, ["endsAt", "ends_at"]);
+  if (!UUID_PATTERN.test(courtId) || !startsAt || !endsAt || endsAt <= startsAt) {
+    return null;
+  }
+  const id = value(row, ["id"]);
+  return {
+    id: UUID_PATTERN.test(id) ? id : null,
+    courtId,
+    startsAt,
+    endsAt,
+    amount: Math.max(0, numberValue(row, ["subtotalAmount", "subtotal_amount"]) ?? 0),
+    courtName: value(row, ["courtName", "court_name"], courtLabel(courtId, courtNames)),
+  };
+}
+
+function liveBookingSessions(
+  row: JsonObject,
+  bookingId: string,
+  courtNames: ReadonlyMap<string, string>,
+): BookingSession[] {
+  const metadata = nestedRecord(row.metadata ?? row.booking_metadata);
+  const metadataRows = Array.isArray(metadata?.sessions) ? metadata.sessions : [];
+  const metadataOccurrences = metadataRows
+    .map((candidate) => parsedBookingOccurrence(candidate, courtNames))
+    .filter((candidate): candidate is ParsedBookingOccurrence => candidate !== null);
+  const slotRows = Array.isArray(row.booking_slots) ? row.booking_slots : [];
+  const parsedSlots = slotRows
+    .map((candidate) => parsedBookingOccurrence(candidate, courtNames))
+    .filter((candidate): candidate is ParsedBookingOccurrence => candidate !== null);
+
+  // booking_slots are authoritative occupancy records. Consolidate adjacent
+  // hourly rows on the same court into the sessions owners expect to see.
+  const uniqueSlots = new Map<string, ParsedBookingOccurrence>();
+  for (const slot of parsedSlots) {
+    const key = `${slot.courtId}:${slot.startsAt.toISOString()}:${slot.endsAt.toISOString()}`;
+    if (!uniqueSlots.has(key)) uniqueSlots.set(key, slot);
+  }
+  const orderedSlots = [...uniqueSlots.values()].sort((left, right) =>
+    left.courtId.localeCompare(right.courtId) ||
+    left.startsAt.getTime() - right.startsAt.getTime() ||
+    left.endsAt.getTime() - right.endsAt.getTime()
+  );
+  const consolidated: ParsedBookingOccurrence[] = [];
+  for (const slot of orderedSlots) {
+    const previous = consolidated.at(-1);
+    if (
+      previous && previous.courtId === slot.courtId &&
+      previous.endsAt.getTime() === slot.startsAt.getTime()
+    ) {
+      previous.endsAt = slot.endsAt;
+      previous.amount += slot.amount;
+      continue;
+    }
+    consolidated.push({ ...slot });
+  }
+
+  const directCandidates = [row.sessions, metadata?.sessions, row.booking_sessions]
+    .find(Array.isArray) as unknown[] | undefined;
+  const source = consolidated.length
+    ? consolidated
+    : (directCandidates ?? [])
+        .map((candidate) => parsedBookingOccurrence(candidate, courtNames))
+        .filter((candidate): candidate is ParsedBookingOccurrence => candidate !== null);
+
+  if (!source.length) {
+    if (metadata?.atomicMultiSessionBookingV1 === true) {
+      throw new Error("LIVE_BOOKING_SESSIONS_INVALID");
+    }
+    return [];
+  }
+
+  return source.map((candidate) => {
+    const matchingMetadata = metadataOccurrences.find((session) =>
+      session.courtId === candidate.courtId &&
+      session.startsAt.getTime() === candidate.startsAt.getTime() &&
+      session.endsAt.getTime() === candidate.endsAt.getTime()
+    );
+    const durationHours = (candidate.endsAt.getTime() - candidate.startsAt.getTime()) / 3_600_000;
+    return {
+      key: `${bookingId}:${candidate.courtId}:${candidate.startsAt.toISOString()}:${candidate.endsAt.toISOString()}`,
+      courtId: candidate.courtId,
+      court: matchingMetadata?.courtName || candidate.courtName,
+      bookingDate: localDateValue(candidate.startsAt),
+      date: formatManilaDate(candidate.startsAt),
+      startTime: formatManilaClock(candidate.startsAt),
+      endTime: formatManilaClock(candidate.endsAt),
+      time: bookingTimeLabel(candidate.startsAt, candidate.endsAt),
+      duration: durationLabel(candidate.startsAt, candidate.endsAt),
+      durationHours,
+      startsAt: candidate.startsAt.toISOString(),
+      endsAt: candidate.endsAt.toISOString(),
+      amount: matchingMetadata?.amount ?? candidate.amount,
+    } satisfies BookingSession;
+  }).sort((left, right) =>
+    left.startsAt.localeCompare(right.startsAt) || left.court.localeCompare(right.court)
+  );
+}
+
 function liveStatus(
   row: JsonObject,
   payment: BookingPaymentStatus,
@@ -3832,6 +3995,9 @@ function mapLiveBooking(
   const paymentEvidence = latestPaymentEvidence(row, bookingStatus, paymentStatus);
   const phone = value(row, ["customer_phone", "phone", "mobile"]);
   const email = value(row, ["customer_email", "customerEmail"]);
+  const sessions = liveBookingSessions(row, bookingId, courtNames);
+  const sessionCourts = [...new Set(sessions.map((session) => session.court))];
+  const totalCourtHours = sessions.reduce((total, session) => total + session.durationHours, 0);
   return {
     bookingId,
     bookingType,
@@ -3840,14 +4006,16 @@ function mapLiveBooking(
     customer,
     initials: initialsFor(customer),
     phone: phone || email || "Contact unavailable",
-    court: value(
-      row,
-      ["court_name", "courtName"],
-      courtLabel(courtId, courtNames),
-    ),
+    court: sessions.length
+      ? sessionCourts.join(", ")
+      : value(row, ["court_name", "courtName"], courtLabel(courtId, courtNames)),
     date: bookingDateLabel(row, startsAt),
-    time: bookingTimeLabel(startsAt, endsAt),
-    duration: durationLabel(startsAt, endsAt),
+    time: sessions.length > 1
+      ? sessions.map((session) => `${session.court}: ${session.time}`).join(" · ")
+      : bookingTimeLabel(startsAt, endsAt),
+    duration: sessions.length > 1
+      ? `${totalCourtHours.toLocaleString("en-PH", { maximumFractionDigits: 1 })} court-hours`
+      : durationLabel(startsAt, endsAt),
     amount: bookingAmount(row),
     status: liveStatus(row, payment, paymentEvidence),
     payment,
@@ -3856,6 +4024,9 @@ function mapLiveBooking(
       ? value(row, ["local_booking_date"])
       : null,
     startTime: startsAt ? formatManilaClock(startsAt) : null,
+    endTime: endsAt ? formatManilaClock(endsAt) : null,
+    endsAt: endsAt?.toISOString() ?? null,
+    sessions,
     paymentEvidence,
   };
 }
@@ -4032,23 +4203,31 @@ function deriveLiveSchedule(
       const status = value(row, ["status"]).toLowerCase();
       return status !== "cancelled" && status !== "expired";
     })
-    .map((row) => {
+    .flatMap((row) => {
       const booking = mapLiveBooking(row, courtNames);
       const startsAt = parsedInstant(row, ["starts_at"]);
       const endsAt = parsedInstant(row, ["ends_at"]);
       const rawStatus = value(row, ["status"]);
-      return {
-        id: booking.id,
-        courtId: value(row, ["court_id"]),
-        start: startsAt ? formatManilaClock(startsAt) : "00:00",
-        end: endsAt ? formatManilaClock(endsAt) : "00:00",
+      const sessions = booking.sessions?.length
+        ? booking.sessions
+        : [{
+            key: booking.id,
+            courtId: value(row, ["court_id"]),
+            startTime: startsAt ? formatManilaClock(startsAt) : "00:00",
+            endTime: endsAt ? formatManilaClock(endsAt) : "00:00",
+            duration: booking.duration,
+          }];
+      return sessions.map((session) => ({
+        id: session.key,
+        courtId: session.courtId,
+        start: session.startTime,
+        end: session.endTime,
         label: booking.customer,
-        detail: `${humanizeReason(rawStatus)} · ${booking.duration}`,
-        kind:
-          rawStatus === "pending_payment" || rawStatus === "payment_review"
-            ? "hold"
-            : "booking",
-      } satisfies ScheduleSlot;
+        detail: `${humanizeReason(rawStatus)} · ${session.duration}`,
+        kind: rawStatus === "pending_payment" || rawStatus === "payment_review"
+          ? "hold"
+          : "booking",
+      } satisfies ScheduleSlot));
     });
 
   const blockSlots = blockRows.map((row) => {
