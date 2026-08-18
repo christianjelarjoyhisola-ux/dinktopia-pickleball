@@ -4319,6 +4319,12 @@ export function BookingExperience({
         <p className="player-kicker">Slots secured</p>
         <h2 id={`${formId}-hold-intro-title`}>{selectedCourtCount === 1 ? "Your court is held" : "Your courts are held"}</h2>
         <p id={`${formId}-hold-intro-description`}>Complete your details before the timer ends.</p>
+        <HoldIntroSelectionSummary
+          selections={selectedSlotDetails}
+          dateLabel={selectedBookingDateLabel}
+          bookingFee={bookingFee ?? 0}
+          total={total}
+        />
         <div className="hold-intro-countdown" aria-label="Time remaining on your booking hold">
           <span>Time remaining</span>
           <strong>{holdRemainingSeconds == null ? "Server timed" : formatHoldCountdown(holdRemainingSeconds)}</strong>
@@ -4340,6 +4346,54 @@ export function BookingExperience({
       <p className="sr-live" aria-live="polite" aria-atomic="true">{liveMessage}</p>
       <p className="sr-live" aria-live="polite" aria-atomic="true">{selectionState.announcement}</p>
     </div>
+  );
+}
+
+type HoldIntroSelectionSummaryProps = {
+  selections: SelectionDetail[];
+  dateLabel: string;
+  bookingFee: number;
+  total: number;
+};
+
+function HoldIntroSelectionSummary({
+  selections,
+  dateLabel,
+  bookingFee,
+  total,
+}: HoldIntroSelectionSummaryProps) {
+  const groups = groupSelectionDetails(selections);
+  const courts = Array.from(
+    new Map(selections.map((item) => [item.court.id, item.court])).values(),
+  ).sort((left, right) => left.number.localeCompare(right.number));
+  const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"}`;
+  const courtLabel = `${courts.length} court${courts.length === 1 ? "" : "s"}`;
+
+  return (
+    <section className="hold-intro-selection" aria-label="Your selected courts and times">
+      <div className="hold-intro-date">
+        <CalendarDays aria-hidden="true" />
+        <strong>{dateLabel}</strong>
+      </div>
+      <ul>
+        {courts.map((court) => {
+          const timeRanges = groups
+            .filter((group) => group.court.id === court.id)
+            .map((group) => formatHourRange(group.startHour, group.endHour))
+            .join(", ");
+          return (
+            <li key={court.id}>
+              <strong>{court.name}</strong>
+              <span>{timeRanges}</span>
+            </li>
+          );
+        })}
+      </ul>
+      <div className="hold-intro-selection-total">
+        <span>{slotLabel} · {courtLabel}</span>
+        <strong><small>{bookingFee > 0 ? "Total incl. booking fee" : "Total"}</small>{peso(total)}</strong>
+      </div>
+    </section>
   );
 }
 

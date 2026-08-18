@@ -4740,7 +4740,11 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(
     booking,
-    /<dialog[\s\S]*?ref=\{holdIntroDialogRef\}[\s\S]*?aria-modal="true"[\s\S]*?Complete your details before the timer ends\.[\s\S]*?formatHoldCountdown\(holdRemainingSeconds\)[\s\S]*?Continue to details[\s\S]*?<\/dialog>/,
+    /<dialog[\s\S]*?ref=\{holdIntroDialogRef\}[\s\S]*?aria-modal="true"[\s\S]*?Complete your details before the timer ends\.[\s\S]*?<HoldIntroSelectionSummary[\s\S]*?selections=\{selectedSlotDetails\}[\s\S]*?dateLabel=\{selectedBookingDateLabel\}[\s\S]*?bookingFee=\{bookingFee \?\? 0\}[\s\S]*?total=\{total\}[\s\S]*?formatHoldCountdown\(holdRemainingSeconds\)[\s\S]*?Continue to details[\s\S]*?<\/dialog>/,
+  );
+  assert.match(
+    booking,
+    /function HoldIntroSelectionSummary\([\s\S]*?groupSelectionDetails\(selections\)[\s\S]*?aria-label="Your selected courts and times"[\s\S]*?\{dateLabel\}[\s\S]*?formatHourRange\(group\.startHour, group\.endHour\)[\s\S]*?\{slotLabel\} · \{courtLabel\}[\s\S]*?Total incl\. booking fee[\s\S]*?peso\(total\)/,
   );
   assert.match(
     booking,

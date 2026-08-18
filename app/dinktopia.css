@@ -8061,6 +8061,8 @@
 .hold-intro-dialog {
   width: min(430px, calc(100vw - 32px));
   max-width: none;
+  max-height: calc(100dvh - 24px);
+  overflow-y: auto;
   margin: auto;
   border: 1px solid rgba(23, 64, 108, 0.14);
   border-radius: 24px;
@@ -8108,6 +8110,82 @@
   line-height: 1.55;
 }
 
+.hold-intro-selection {
+  margin-top: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 64, 108, 0.12);
+  border-radius: 14px;
+  background: #f7f9f8;
+  color: #173d60;
+  text-align: left;
+}
+
+.hold-intro-date {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 11px 13px;
+  border-bottom: 1px solid rgba(23, 64, 108, 0.1);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.hold-intro-date svg {
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  color: #267454;
+}
+
+.hold-intro-selection ul {
+  display: grid;
+  gap: 8px;
+  max-height: 132px;
+  margin: 0;
+  padding: 11px 13px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.hold-intro-selection li {
+  display: grid;
+  grid-template-columns: minmax(72px, auto) minmax(0, 1fr);
+  gap: 10px;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.hold-intro-selection li span {
+  color: #526a7d;
+  text-align: right;
+}
+
+.hold-intro-selection-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 13px;
+  border-top: 1px solid rgba(23, 64, 108, 0.1);
+  background: #fffdf8;
+  font-size: 0.75rem;
+}
+
+.hold-intro-selection-total > span { color: #526a7d; }
+.hold-intro-selection-total > strong {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 0.95rem;
+}
+.hold-intro-selection-total small {
+  color: #526a7d;
+  font-size: 0.62rem;
+  font-weight: 650;
+}
+
 .hold-intro-countdown {
   display: flex;
   align-items: center;
@@ -8146,6 +8224,16 @@
     border-radius: 20px;
     padding: 24px 20px 20px;
   }
+
+  .hold-intro-dialog .hold-intro-icon {
+    width: 50px;
+    height: 50px;
+    margin-bottom: 12px;
+  }
+
+  .hold-intro-selection { margin-top: 14px; }
+  .hold-intro-countdown { margin: 14px 0; }
+  .hold-intro-selection-total small { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
