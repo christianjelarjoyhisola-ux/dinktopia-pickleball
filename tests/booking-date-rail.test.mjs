@@ -5,7 +5,7 @@ import test from "node:test";
 const bookingPath = new URL("../app/booking-experience.tsx", import.meta.url);
 const cssPath = new URL("../app/dinktopia.css", import.meta.url);
 
-test("booking starts on the tenant's current date and keeps elapsed slots unavailable", async () => {
+test("booking starts today and hides only fully elapsed rows on the tenant's current date", async () => {
   const booking = await readFile(bookingPath, "utf8");
 
   assert.match(booking, /timeZone: activeTenant\.identity\.timezone[\s\S]*?return new Date\(Date\.UTC/);
@@ -24,7 +24,21 @@ test("booking starts on the tenant's current date and keeps elapsed slots unavai
   assert.match(booking, /candidateStartsAt < Date\.now\(\) \+ minimumLeadMinutes \* 60 \* 1000/);
   assert.match(booking, /status: tooSoon \|\| overlapsBlock \|\| overlapsBooking \? "unavailable" : "available"/);
   assert.match(booking, /const hasStarted = candidateStartsAt <= Date\.now\(\)/);
-  assert.match(booking, /slot\?\.hasStarted[\s\S]*?\? "Done"/);
+  assert.match(booking, /const visibleScheduleHours = selectedDateDetails\?\.isToday/);
+  assert.match(booking, /scheduleHours\.filter\(\(hour\) =>[\s\S]*?slot\.hour === hour && !slot\.hasStarted/);
+  assert.match(booking, /: scheduleHours;/);
+  assert.match(booking, /visibleScheduleHourSet\.has\(slot\.hour\) && slot\.status !== "unavailable"/);
+  assert.match(booking, /visibleScheduleHours\.length === 0/);
+  assert.match(booking, /Today's booking hours have ended\./);
+  assert.match(booking, /No booking hours are published for this date\./);
+  assert.match(booking, /visibleScheduleHours\.length > 0 && availableCount === 0/);
+  assert.match(booking, /The schedule below shows the current availability/);
+  assert.match(booking, /"--slot-count": visibleScheduleHours\.length/);
+  assert.ok(
+    (booking.match(/visibleScheduleHours\.map\(\(hour\) =>/g) ?? []).length >= 3,
+    "expected desktop headers and both desktop/mobile cells to use the same visible hours",
+  );
+  assert.match(booking, /Logical hours above 23[\s\S]*?preserved[\s\S]*?overnight/);
 });
 
 test("selected booking date uses readable premium foreground colors", async () => {

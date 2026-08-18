@@ -1991,10 +1991,6 @@ export function BookingExperience({
     });
   }, [selectedDate]);
   const selectedBookingDateLabel = `${selectedBaseDateLabel}${selectedNextDayDateSuffix}`;
-  const availableCount = schedule.reduce(
-    (count, court) => count + court.slots.filter((slot) => slot.status !== "unavailable").length,
-    0,
-  );
   const courtSubtotal = selectedSlots.reduce((sum, item) => sum + item.amount, 0);
   const selectedCourtCount = new Set(selectedSlots.map((item) => item.courtId)).size;
   const canonicalSelection = canonicalizeSelection(selectedSlots);
@@ -2027,6 +2023,24 @@ export function BookingExperience({
   const scheduleHours = Array.from(
     new Set(schedule.flatMap((court) => court.slots.map((slot) => slot.hour))),
   ).sort((left, right) => left - right);
+  // On the tenant's current date, elapsed rows no longer help a guest make a
+  // choice. Keep every future row—including booked, blocked, and lead-time
+  // restricted rows—so the schedule remains truthful. Logical hours above 23
+  // are intentionally preserved for venues whose schedule continues overnight.
+  const visibleScheduleHours = selectedDateDetails?.isToday
+    ? scheduleHours.filter((hour) =>
+        schedule.some((court) =>
+          court.slots.some((slot) => slot.hour === hour && !slot.hasStarted),
+        ),
+      )
+    : scheduleHours;
+  const visibleScheduleHourSet = new Set(visibleScheduleHours);
+  const availableCount = schedule.reduce(
+    (count, court) => count + court.slots.filter(
+      (slot) => visibleScheduleHourSet.has(slot.hour) && slot.status !== "unavailable",
+    ).length,
+    0,
+  );
   const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods.find(
     (method) => (method.methodCode ?? method.code ?? "").toLowerCase() === "gcash",
   ) ?? null;
@@ -3699,10 +3713,30 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {visibleAvailabilityState === "ready" && displayCourts.length > 0 && availableCount === 0 && (
+                        {visibleAvailabilityState === "ready" && displayCourts.length > 0 && visibleScheduleHours.length === 0 && (
                           <div className="state-card state-empty" role="status">
                             <span className="state-symbol" aria-hidden="true">0</span>
-                            <div><h4>This day is rally-packed.</h4><p>No court-hours are open. Try the next date.</p></div>
+                            <div>
+                              <h4>{selectedDateDetails?.isToday ? "Today's booking hours have ended." : "No booking hours are published for this date."}</h4>
+                              <p>Choose the next date to see upcoming court times.</p>
+                            </div>
+                            <button
+                              className="button button-outline"
+                              type="button"
+                              onClick={() => {
+                                const currentIndex = dates.findIndex((date) => date.iso === selectedDate);
+                                chooseDate(dates[Math.min(currentIndex + 1, dates.length - 1)].iso);
+                              }}
+                            >
+                              Check next day
+                            </button>
+                          </div>
+                        )}
+
+                        {visibleAvailabilityState === "ready" && displayCourts.length > 0 && visibleScheduleHours.length > 0 && availableCount === 0 && (
+                          <div className="state-card state-empty" role="status">
+                            <span className="state-symbol" aria-hidden="true">0</span>
+                            <div><h4>No remaining times are open.</h4><p>The schedule below shows the current availability. Try the next date for more options.</p></div>
                             <button
                               className="button button-outline"
                               type="button"
@@ -3723,7 +3757,7 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {(visibleAvailabilityState === "ready" || (visibleAvailabilityState === "loading" && schedule.length > 0)) && availableCount > 0 && displayCourts.length > 0 && (
+                        {(visibleAvailabilityState === "ready" || (visibleAvailabilityState === "loading" && schedule.length > 0)) && visibleScheduleHours.length > 0 && displayCourts.length > 0 && (
                           <div className={`rally-availability-board${visibleAvailabilityState === "loading" ? " is-refreshing" : ""}`} aria-busy={visibleAvailabilityState === "loading"}>
                             {visibleAvailabilityState === "loading" && (
                               <div className="availability-refreshing" role="status" aria-live="polite">
@@ -3736,9 +3770,9 @@ export function BookingExperience({
                               aria-label={`All courts hourly availability for ${selectedBaseDateLabel}. Scroll horizontally to see later times.`}
                               tabIndex={0}
                             >
-                              <div className="availability-grid" style={{ "--slot-count": scheduleHours.length } as CSSProperties}>
+                              <div className="availability-grid" style={{ "--slot-count": visibleScheduleHours.length } as CSSProperties}>
                                 <div className="availability-corner"><strong>All courts</strong><small>Hourly view</small></div>
-                                {scheduleHours.map((hour) => (
+                                {visibleScheduleHours.map((hour) => (
                                   <div
                                     className={`availability-time${hour === 24 ? " schedule-next-day-divider" : ""}`}
                                     key={`time-${hour}`}
@@ -3758,7 +3792,7 @@ export function BookingExperience({
                                         <span><strong>{court.name}</strong><small>{compactCourtSurface(court)}</small></span>
                                         <em>{courtSelectionCount ? `${courtSelectionCount} selected` : court.id === selectedCourtId && initialCourtSlug ? "Preferred" : ""}</em>
                                       </div>
-                                      {scheduleHours.map((hour) => {
+                                      {visibleScheduleHours.map((hour) => {
                                         const slot = courtSchedule?.slots.find((item) => item.hour === hour);
                                         const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                         const busy = !slot || slot.status === "unavailable";
@@ -3808,7 +3842,7 @@ export function BookingExperience({
                                     <span>C{Number(court.number)}</span><small>{compactCourtSurface(court)}</small>
                                   </div>
                                 ))}
-                                {scheduleHours.map((hour) => (
+                                {visibleScheduleHours.map((hour) => (
                                   <Fragment key={`mobile-${hour}`}>
                                     <div className={`mobile-time-label${hour === 24 ? " schedule-next-day-divider" : ""}`}><strong>{formatHour(hour).replace(":00", "")}</strong><small>{hour === 24 ? "NEXT DAY · " : "to "}{formatHour(hour + 1).replace(":00", "")}</small></div>
                                     {displayCourts.map((court) => {

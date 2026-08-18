@@ -997,8 +997,8 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     "expected published courts in the desktop and mobile RallyOS grids",
   );
   assert.ok(
-    (matrixSource.match(/scheduleHours\.map\(\(hour\) =>/g) ?? []).length >= 3,
-    "expected both grids to derive from the hourly schedule",
+    (matrixSource.match(/visibleScheduleHours\.map\(\(hour\) =>/g) ?? []).length >= 3,
+    "expected both grids to derive from the guest-visible hourly schedule",
   );
   assert.match(
     matrixSource,
@@ -1011,7 +1011,6 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(matrixSource, /displayedState === "held"[\s\S]*?"Held"/);
   assert.match(matrixSource, /displayedState === "payment_review"[\s\S]*?"Reviewing"/);
   assert.match(matrixSource, /displayedState === "confirmed"[\s\S]*?"Booked"/);
-  assert.match(matrixSource, /slot\?\.hasStarted[\s\S]*?"Done"/);
   assert.match(matrixSource, /busy[\s\S]*?"Unavailable"/);
   assert.match(
     matrixSource,
