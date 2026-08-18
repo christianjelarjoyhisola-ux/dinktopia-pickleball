@@ -4,6 +4,7 @@ import Image from "next/image";
 import {
   CalendarDays,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
@@ -4125,7 +4126,15 @@ export function BookingExperience({
                         </button>
                       </div>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} policyTitle={policyVersion ? policyTitle : null} locationLabel={venueLocationLabel} />
+                    <RallyBookingSummary
+                      selections={selectedSlotDetails}
+                      dateLabel={selectedBookingDateLabel}
+                      subtotal={courtSubtotal}
+                      bookingFee={bookingFee ?? 0}
+                      total={total}
+                      policyTitle={policyVersion ? policyTitle : null}
+                      locationLabel={venueLocationLabel}
+                    />
                   </div>
                   )
                 )}
@@ -4483,6 +4492,8 @@ function RallyBookingSummary({
   policyTitle,
   locationLabel,
 }: BookingSummaryProps) {
+  const [mobileExpanded, setMobileExpanded] = useState(false);
+  const summaryDetailsId = useId();
   const groups = groupSelectionDetails(selections);
   const courts = Array.from(
     new Map(selections.map((item) => [item.court.id, item.court])).values(),
@@ -4497,30 +4508,52 @@ function RallyBookingSummary({
     })
     .join(" · ");
   const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"} selected`;
+  const courtHourLabel = `${selections.length} court-hour${selections.length === 1 ? "" : "s"}`;
 
   return (
     <aside className="booking-summary rally-booking-summary surface-card" aria-label="Booking summary">
-      <p className="player-kicker">Your court hold</p>
-      <h3>{courts.length} court{courts.length === 1 ? "" : "s"} held</h3>
-      <p className="summary-instruction">Complete your details below to continue to payment.</p>
-      <div className="summary-detail">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
-        <span><strong>{dateLabel}</strong><small>{slotLabel}</small></span>
+      <div className="summary-desktop-intro">
+        <p className="player-kicker">Your court hold</p>
+        <h3>{courts.length} court{courts.length === 1 ? "" : "s"} held</h3>
+        <p className="summary-instruction">Complete your details below to continue to payment.</p>
       </div>
-      <div className="summary-detail">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
-        <span><strong>{courts.map((court) => court.name).join(", ")}</strong><small>{courtSchedule}</small></span>
+      <button
+        className="summary-mobile-toggle"
+        type="button"
+        aria-expanded={mobileExpanded}
+        aria-controls={summaryDetailsId}
+        onClick={() => setMobileExpanded((expanded) => !expanded)}
+      >
+        <span>
+          <small>Your court hold</small>
+          <strong>{courts.length} court{courts.length === 1 ? "" : "s"} held</strong>
+          <em>{courtHourLabel} · {peso(total)} total</em>
+        </span>
+        <span className="summary-toggle-action">
+          {mobileExpanded ? "Hide details" : "Show details"}
+          <ChevronDown aria-hidden="true" />
+        </span>
+      </button>
+      <div id={summaryDetailsId} className={`summary-collapsible-content${mobileExpanded ? " is-expanded" : ""}`}>
+        <div className="summary-detail">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
+          <span><strong>{dateLabel}</strong><small>{slotLabel}</small></span>
+        </div>
+        <div className="summary-detail">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
+          <span><strong>{courts.map((court) => court.name).join(", ")}</strong><small>{courtSchedule}</small></span>
+        </div>
+        <div className="summary-detail">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+          <span><strong>{activeTenant.identity.name}</strong><small>{locationLabel || "Location details coming soon"}</small></span>
+        </div>
+        <div className="summary-price-lines">
+          <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
+          {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
+        </div>
+        <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
+        <p className="summary-note">{policyTitle ? `${policyTitle} applies to this reservation.` : activeTenant.booking.cancellation || "Cancellation details will appear after the venue publishes its policy."}</p>
       </div>
-      <div className="summary-detail">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
-        <span><strong>{activeTenant.identity.name}</strong><small>{locationLabel || "Location details coming soon"}</small></span>
-      </div>
-      <div className="summary-price-lines">
-        <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
-        {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}
-      </div>
-      <div className="rally-summary-total"><span>Total</span><strong>{peso(total)}</strong></div>
-      <p className="summary-note">{policyTitle ? `${policyTitle} applies to this reservation.` : activeTenant.booking.cancellation || "Cancellation details will appear after the venue publishes its policy."}</p>
     </aside>
   );
 }

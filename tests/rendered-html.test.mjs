@@ -1240,6 +1240,12 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   assert.match(summarySource, /className="summary-price-lines"/);
   assert.match(summarySource, /className="rally-summary-total"/);
+  assert.match(summarySource, /aria-expanded=\{mobileExpanded\}/);
+  assert.match(summarySource, /aria-controls=\{summaryDetailsId\}/);
+  assert.match(summarySource, /Show details/);
+  assert.match(summarySource, /Hide details/);
+  assert.match(summarySource, /courtHourLabel/);
+  assert.match(summarySource, /summary-collapsible-content/);
   assert.doesNotMatch(
     summarySource,
     /COURT-HOURS|summary-score|summary-heading|summary-footnote|<dl>|actionLabel/,
@@ -4887,6 +4893,8 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   const mobileDetailsLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-details-view");
   assert.match(mobileDetailsLayout, /grid-template-columns:\s*minmax\(0,\s*1\.65fr\)\s*minmax\(270px,\s*0\.72fr\)/s);
   assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-details-view \.rally-booking-summary\s*\{[^}]*grid-row:\s*1/s);
+  assert.match(publicCss, /@media\s*\(max-width:\s*760px\)[\s\S]*?\.booking-route \.booking-details-view \.summary-mobile-toggle\s*\{[^}]*display:\s*flex/s);
+  assert.match(publicCss, /\.booking-route \.booking-details-view \.summary-collapsible-content\s*\{[^}]*display:\s*none[\s\S]*?\.booking-route \.booking-details-view \.summary-collapsible-content\.is-expanded\s*\{[^}]*display:\s*block/s);
   const paymentLayout = cssBlock(publicCss, ".booking-route .checkout-layout.booking-payment-view");
   assert.match(paymentLayout, /grid-template-columns:\s*minmax\(0,\s*1fr\)[\s\S]*?width:\s*min\(100%,\s*760px\)[\s\S]*?margin-inline:\s*auto/s);
   assert.match(
