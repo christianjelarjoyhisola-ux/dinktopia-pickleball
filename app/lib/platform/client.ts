@@ -646,6 +646,124 @@ export async function submitPaymentReceipt(options: {
   return responseJson<Record<string, unknown>>(response);
 }
 
+export type StagedPaymentReceipt = {
+  id: string;
+  status: "uploaded";
+  fileName: string;
+  contentType: "image/jpeg" | "image/png" | "image/webp";
+  size: number;
+  uploadedAt: string;
+  expiresAt: string;
+};
+
+export type StagePaymentReceiptResponse = {
+  ok: true;
+  upload: StagedPaymentReceipt;
+};
+
+export async function stagePaymentReceipt(options: {
+  reference: string;
+  token: string;
+  method: string;
+  file: File;
+  idempotencyKey: string;
+  stageSequence: number;
+}): Promise<StagePaymentReceiptResponse> {
+  if (platformMode() === "preview") {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    const now = new Date();
+    return {
+      ok: true,
+      upload: {
+        id: crypto.randomUUID(),
+        status: "uploaded",
+        fileName: options.file.name,
+        contentType: options.file.type as StagedPaymentReceipt["contentType"],
+        size: options.file.size,
+        uploadedAt: now.toISOString(),
+        expiresAt: new Date(now.getTime() + 15 * 60 * 1_000).toISOString(),
+      },
+    };
+  }
+  const form = new FormData();
+  form.append("receiptFile", options.file);
+  const response = await fetch(edgeUrl("submit-payment-receipt"), {
+    method: "POST",
+    headers: {
+      apikey: publicSupabaseKey,
+      Authorization: `Bearer ${publicSupabaseKey}`,
+      "X-Tenant-Slug": activeTenant.identity.slug,
+      "X-Booking-Reference": options.reference,
+      "X-Booking-Token": options.token,
+      "X-Payment-Method": options.method,
+      "X-Receipt-Action": "stage",
+      "X-Idempotency-Key": options.idempotencyKey,
+      "X-Receipt-Sequence": String(options.stageSequence),
+    },
+    body: form,
+  });
+  return responseJson<StagePaymentReceiptResponse>(response);
+}
+
+export async function discardPaymentReceipt(options: {
+  reference: string;
+  token: string;
+  method: string;
+  receiptUploadId: string;
+  idempotencyKey: string;
+}): Promise<{ ok: true; discarded: true; receiptUploadId: string }> {
+  if (platformMode() === "preview") {
+    return {
+      ok: true,
+      discarded: true,
+      receiptUploadId: options.receiptUploadId,
+    };
+  }
+  const response = await fetch(edgeUrl("submit-payment-receipt"), {
+    method: "POST",
+    headers: {
+      ...publicHeaders(),
+      "X-Booking-Reference": options.reference,
+      "X-Booking-Token": options.token,
+      "X-Payment-Method": options.method,
+      "X-Receipt-Action": "discard",
+      "X-Idempotency-Key": options.idempotencyKey,
+    },
+    body: JSON.stringify({ receiptUploadId: options.receiptUploadId }),
+  });
+  return responseJson<{ ok: true; discarded: true; receiptUploadId: string }>(
+    response,
+  );
+}
+
+export async function finalizePaymentReceipt(options: {
+  reference: string;
+  token: string;
+  method: string;
+  paymentReference: string;
+  receiptUploadId: string;
+  idempotencyKey: string;
+}): Promise<Record<string, unknown>> {
+  if (platformMode() === "preview") {
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return { ok: true, outcome: "manual_review", preview: true };
+  }
+  const response = await fetch(edgeUrl("submit-payment-receipt"), {
+    method: "POST",
+    headers: {
+      ...publicHeaders(),
+      "X-Booking-Reference": options.reference,
+      "X-Booking-Token": options.token,
+      "X-Payment-Method": options.method,
+      "X-Payment-Reference": options.paymentReference,
+      "X-Receipt-Action": "finalize",
+      "X-Idempotency-Key": options.idempotencyKey,
+    },
+    body: JSON.stringify({ receiptUploadId: options.receiptUploadId }),
+  });
+  return responseJson<Record<string, unknown>>(response);
+}
+
 export function getSupabaseBrowserClient(): SupabaseClient {
   if (platformMode() !== "live") {
     throw new PlatformRequestError(

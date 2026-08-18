@@ -41,10 +41,13 @@ import {
   cancelUnpaidBooking,
   completeBookingDetails as completePlatformBookingDetails,
   createBooking as createPlatformBooking,
+  discardPaymentReceipt,
   getAvailability as getPlatformAvailability,
   getTenantBootstrap,
   platformMode,
-  submitPaymentReceipt,
+  finalizePaymentReceipt,
+  stagePaymentReceipt,
+  type StagedPaymentReceipt,
 } from "./lib/platform/client";
 import type {
   BookingConfirmation,
@@ -168,8 +171,24 @@ export type BookingDetailsRequest = {
 export type BookingPaymentRequest = {
   booking: BookingRecord;
   paymentReference: string;
-  receiptFileName: string;
+  receiptUploadId: string;
+  paymentMethod: string;
+  clientRequestId: string;
+};
+
+export type StagedBookingReceipt = StagedPaymentReceipt;
+
+export type BookingReceiptUploadRequest = {
+  booking: BookingRecord;
   receiptFile: File;
+  paymentMethod: string;
+  clientRequestId: string;
+  stageSequence: number;
+};
+
+export type BookingReceiptDiscardRequest = {
+  booking: BookingRecord;
+  receiptUploadId: string;
   paymentMethod: string;
   clientRequestId: string;
 };
@@ -180,6 +199,8 @@ export type BookingAdapter = {
   ) => Promise<CourtSchedule[]>;
   createHold: (request: BookingHoldRequest) => Promise<BookingRecord>;
   completeDetails: (request: BookingDetailsRequest) => Promise<BookingRecord>;
+  stagePaymentReceipt: (request: BookingReceiptUploadRequest) => Promise<StagedBookingReceipt>;
+  discardPaymentReceipt: (request: BookingReceiptDiscardRequest) => Promise<void>;
   submitPayment: (request: BookingPaymentRequest) => Promise<BookingRecord>;
   findBooking: (reference: string, email: string) => Promise<BookingRecord | null>;
   cancelBooking: (reference: string, reason: string) => Promise<BookingRecord>;
@@ -1056,6 +1077,10 @@ function mappedBookingStatus(
   return fallback;
 }
 
+function nextReceiptStageSequence(previous: number) {
+  return Math.max(Date.now(), previous + 1);
+}
+
 function isStoredBookingRecord(value: unknown): value is BookingRecord {
   if (!value || typeof value !== "object") return false;
   const record = value as Partial<BookingRecord>;
@@ -1510,6 +1535,35 @@ const platformAdapter: BookingAdapter = {
     }
     return record;
   },
+  async stagePaymentReceipt(request) {
+    const parsed = readStoredBooking(request.booking.reference);
+    if (!parsed) {
+      throw new Error("This payment hold is no longer available. Start a new booking.");
+    }
+    if (parsed.record.status !== "pending_payment") {
+      throw new Error("This booking is no longer awaiting payment.");
+    }
+    const result = await stagePaymentReceipt({
+      reference: parsed.record.reference,
+      token: parsed.token,
+      method: request.paymentMethod,
+      file: request.receiptFile,
+      idempotencyKey: request.clientRequestId,
+      stageSequence: request.stageSequence,
+    });
+    return result.upload;
+  },
+  async discardPaymentReceipt(request) {
+    const parsed = readStoredBooking(request.booking.reference);
+    if (!parsed) return;
+    await discardPaymentReceipt({
+      reference: parsed.record.reference,
+      token: parsed.token,
+      method: request.paymentMethod,
+      receiptUploadId: request.receiptUploadId,
+      idempotencyKey: request.clientRequestId,
+    });
+  },
   async submitPayment(request) {
     if (
       platformMode() === "preview" &&
@@ -1529,11 +1583,40 @@ const platformAdapter: BookingAdapter = {
     }
     const current = await bookingStatus(parsed.record.reference, parsed.token);
     const currentBooking = current.booking as
-      | { status?: string; expiresAt?: string | null; expires_at?: string | null }
+      | {
+          status?: string;
+          expiresAt?: string | null;
+          expires_at?: string | null;
+          paymentReviewState?: string;
+          payment_review_state?: string;
+        }
       | undefined;
     if (platformMode() === "live") {
       const currentStatus = mappedBookingStatus(currentBooking?.status, parsed.record.status);
       const expiresAt = currentBooking?.expiresAt ?? currentBooking?.expires_at ?? parsed.record.expiresAt;
+      if (currentStatus === "payment_review" || currentStatus === "confirmed") {
+        const authoritativeReviewState = (
+          ["auto_approved", "manual_review", "pending", "short_payment", "rejected"] as const
+        ).find((state) => state === (
+          currentBooking?.paymentReviewState ?? currentBooking?.payment_review_state
+        ));
+        const recoveredRecord: BookingRecord = {
+          ...parsed.record,
+          status: currentStatus,
+          expiresAt,
+          paymentReviewState: authoritativeReviewState ?? (
+            currentStatus === "confirmed" ? "auto_approved" : parsed.record.paymentReviewState
+          ),
+        };
+        try {
+          sessionStorage.setItem(storageKey, JSON.stringify({ ...parsed, record: recoveredRecord }));
+          sessionStorage.removeItem(pendingBookingStorageKey(request.clientRequestId));
+          sessionStorage.removeItem(activeHoldStorageKey);
+        } catch {
+          // The authoritative status is enough to recover after a lost finalize response.
+        }
+        return recoveredRecord;
+      }
       const expiresAtTime = expiresAt ? Date.parse(expiresAt) : null;
       if (
         currentStatus !== "pending_payment" ||
@@ -1544,28 +1627,44 @@ const platformAdapter: BookingAdapter = {
         throw new Error("This payment hold has expired or is no longer awaiting payment. Choose a new time.");
       }
     }
-    const receipt = await submitPaymentReceipt({
+    const receipt = await finalizePaymentReceipt({
       reference: parsed.record.reference,
       token: parsed.token,
       method: request.paymentMethod,
       paymentReference: request.paymentReference,
-      file: request.receiptFile,
+      receiptUploadId: request.receiptUploadId,
+      idempotencyKey: `${request.clientRequestId}:finalize:${request.receiptUploadId}`,
     });
+    if (receipt.ok !== true) {
+      throw new Error("The server did not confirm this payment submission. Check the booking status before retrying.");
+    }
     const receiptBooking = receipt.booking as { status?: string } | undefined;
-    const verificationStatus = typeof receipt.status === "string"
+    const rawVerificationStatus = typeof receipt.status === "string"
       ? receipt.status
       : typeof receipt.outcome === "string"
         ? receipt.outcome
-        : "manual_review";
-    const paymentReviewState = (
+        : "";
+    const verificationStatus = (
       ["auto_approved", "manual_review", "pending", "short_payment", "rejected"] as const
-    ).find((status) => status === verificationStatus) ?? "manual_review";
+    ).find((status) => status === rawVerificationStatus);
+    if (!verificationStatus) {
+      throw new Error("The server returned an unrecognized payment status. Check the booking status before retrying.");
+    }
+    const finalizedBookingStatus = platformMode() === "live"
+      ? mappedBookingStatus(receiptBooking?.status, "cancelled")
+      : verificationStatus === "auto_approved" ? "confirmed" : "payment_review";
+    if (
+      platformMode() === "live" && (
+        !receiptBooking?.status || finalizedBookingStatus === "cancelled" ||
+        (verificationStatus === "auto_approved" && finalizedBookingStatus !== "confirmed")
+      )
+    ) {
+      throw new Error("The server returned inconsistent booking and payment statuses. Check the booking status before retrying.");
+    }
     const record = {
       ...parsed.record,
-      status: verificationStatus === "auto_approved"
-        ? "confirmed" as const
-        : mappedBookingStatus(receiptBooking?.status, "payment_review"),
-      paymentReviewState,
+      status: finalizedBookingStatus,
+      paymentReviewState: verificationStatus,
     };
     try {
       sessionStorage.setItem(storageKey, JSON.stringify({ ...parsed, record }));
@@ -1792,6 +1891,7 @@ export function BookingExperience({
   const bookingOwnsSelectionRef = useRef(false);
   const receiptSubmissionInFlightRef = useRef(false);
   const receiptPreparationIdRef = useRef(0);
+  const receiptStageSequenceRef = useRef(0);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
@@ -1895,8 +1995,9 @@ export function BookingExperience({
   const [paymentReference, setPaymentReference] = useState("");
   const [receiptFileName, setReceiptFileName] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [stagedReceipt, setStagedReceipt] = useState<StagedBookingReceipt | null>(null);
   const [receiptUploadState, setReceiptUploadState] = useState<
-    "idle" | "preparing" | "ready" | "submitting" | "error"
+    "idle" | "preparing" | "uploading" | "uploaded" | "removing" | "submitting" | "upload_error" | "submit_error"
   >("idle");
   const [paymentError, setPaymentError] = useState("");
   const [paymentCopyState, setPaymentCopyState] = useState<"idle" | "copied" | "error">("idle");
@@ -2865,19 +2966,19 @@ export function BookingExperience({
       );
       return;
     }
-    if (!receiptFile || (receiptUploadState !== "ready" && receiptUploadState !== "error")) {
+    if (!stagedReceipt || (receiptUploadState !== "uploaded" && receiptUploadState !== "submit_error")) {
       setPaymentError(
         isLive
-          ? "Choose a JPG, PNG, or WebP copy of your payment receipt."
+          ? "Wait for your payment receipt to finish uploading before submitting it for review."
           : "Choose a sample JPG, PNG, or WebP image. No real receipt or payment is required.",
       );
       return;
     }
-    if (
-      !["image/jpeg", "image/png", "image/webp"].includes(receiptFile.type) ||
-      receiptFile.size > 2 * 1024 * 1024
-    ) {
-      setPaymentError("Choose a JPG, PNG, or WebP receipt no larger than 2 MB.");
+    const stagedReceiptExpiresAt = Date.parse(stagedReceipt.expiresAt);
+    if (!Number.isFinite(stagedReceiptExpiresAt) || stagedReceiptExpiresAt <= holdNow) {
+      setStagedReceipt(null);
+      setReceiptUploadState("upload_error");
+      setPaymentError("This temporary receipt upload expired. Upload the image again before submitting.");
       return;
     }
 
@@ -2888,8 +2989,7 @@ export function BookingExperience({
       const booking = await adapter.submitPayment({
         booking: pendingBooking,
         paymentReference: paymentReference.trim(),
-        receiptFileName: receiptFile.name,
-        receiptFile,
+        receiptUploadId: stagedReceipt.id,
         paymentMethod: paymentMethodCode,
         clientRequestId: bookingAttemptIdRef.current,
       });
@@ -2904,7 +3004,7 @@ export function BookingExperience({
             : `Payment for booking ${booking.reference} has been received for review.`,
       );
     } catch (error) {
-      setReceiptUploadState("error");
+      setReceiptUploadState("submit_error");
       setPaymentError(
         error instanceof Error
           ? error.message
@@ -2919,9 +3019,11 @@ export function BookingExperience({
   }
 
   async function prepareReceipt(file: File | null) {
+    const previousStagedReceipt = stagedReceipt;
     const preparationId = receiptPreparationIdRef.current + 1;
     receiptPreparationIdRef.current = preparationId;
     setPaymentError("");
+    setStagedReceipt(null);
     setReceiptFile(null);
     setReceiptFileName(file?.name ?? "");
     if (!file) {
@@ -2930,7 +3032,7 @@ export function BookingExperience({
     }
     if (
       !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
-      file.size > 2 * 1024 * 1024
+      file.size < 1 || file.size > 2 * 1024 * 1024
     ) {
       setReceiptFileName("");
       setReceiptUploadState("idle");
@@ -2940,20 +3042,86 @@ export function BookingExperience({
 
     setReceiptUploadState("preparing");
     try {
-      // Confirm that the browser can read the selected file before enabling the
-      // final submission. The live API currently uploads and submits atomically,
-      // so this is intentionally labelled as local preparation, not an upload.
+      // Confirm that the browser can read the selected file before sending it.
       await file.slice(0, Math.min(file.size, 64 * 1024)).arrayBuffer();
       if (receiptPreparationIdRef.current !== preparationId) return;
       setReceiptFile(file);
-      setReceiptUploadState("ready");
-      setLiveMessage(`${file.name} is attached and ready to submit.`);
-    } catch {
+      if (!pendingBooking || holdExpired) {
+        throw new Error("This hold has expired or been released. Choose a new time.");
+      }
+      if (previousStagedReceipt) {
+        try {
+          await adapter.discardPaymentReceipt({
+            booking: pendingBooking,
+            receiptUploadId: previousStagedReceipt.id,
+            paymentMethod: paymentMethodCode,
+            clientRequestId: `${bookingAttemptIdRef.current}:discard:${previousStagedReceipt.id}`,
+          });
+        } catch {
+          // A newer monotonic stage sequence supersedes an older temporary upload.
+        }
+        if (receiptPreparationIdRef.current !== preparationId) return;
+      }
+      setReceiptUploadState("uploading");
+      setLiveMessage(`Uploading ${file.name} securely.`);
+      const stageSequence = nextReceiptStageSequence(receiptStageSequenceRef.current);
+      receiptStageSequenceRef.current = stageSequence;
+      const upload = await adapter.stagePaymentReceipt({
+        booking: pendingBooking,
+        receiptFile: file,
+        paymentMethod: paymentMethodCode,
+        clientRequestId: `${bookingAttemptIdRef.current}:stage:${preparationId}`,
+        stageSequence,
+      });
       if (receiptPreparationIdRef.current !== preparationId) return;
-      setReceiptFileName("");
-      setReceiptUploadState("error");
-      setPaymentError("This receipt could not be read. Choose the image again.");
+      const uploadedAt = Date.parse(upload?.uploadedAt ?? "");
+      const uploadExpiresAt = Date.parse(upload?.expiresAt ?? "");
+      if (
+        !upload?.id || upload.status !== "uploaded" ||
+        upload.fileName !== file.name || upload.size !== file.size ||
+        upload.contentType !== file.type || !Number.isFinite(uploadedAt) ||
+        !Number.isFinite(uploadExpiresAt) || uploadExpiresAt <= holdNow ||
+        uploadExpiresAt <= uploadedAt
+      ) {
+        throw new Error("The server did not confirm this receipt upload. Try again.");
+      }
+      setStagedReceipt(upload);
+      setReceiptUploadState("uploaded");
+      setLiveMessage(`${file.name} was uploaded successfully and is ready to submit for review.`);
+    } catch (error) {
+      if (receiptPreparationIdRef.current !== preparationId) return;
+      setStagedReceipt(null);
+      setReceiptUploadState("upload_error");
+      setPaymentError(
+        error instanceof Error
+          ? error.message
+          : "This receipt could not be uploaded. Try again or choose another image.",
+      );
     }
+  }
+
+  async function removeReceipt() {
+    receiptPreparationIdRef.current += 1;
+    const receiptToDiscard = stagedReceipt;
+    setStagedReceipt(null);
+    setPaymentError("");
+    if (receiptToDiscard && pendingBooking) {
+      setReceiptUploadState("removing");
+      try {
+        await adapter.discardPaymentReceipt({
+          booking: pendingBooking,
+          receiptUploadId: receiptToDiscard.id,
+          paymentMethod: paymentMethodCode,
+          clientRequestId: `${bookingAttemptIdRef.current}:discard:${receiptToDiscard.id}`,
+        });
+      } catch {
+        // The detached temporary asset remains private and expires server-side.
+      }
+    }
+    setReceiptFile(null);
+    setReceiptFileName("");
+    setReceiptUploadState("idle");
+    setLiveMessage("The receipt was removed from this payment form. Choose another image to continue.");
   }
 
   async function copyPaymentAccount() {
@@ -3034,6 +3202,7 @@ export function BookingExperience({
   }
 
   function clearHoldForReselection(message: string) {
+    receiptPreparationIdRef.current += 1;
     try {
       sessionStorage.removeItem(activeHoldStorageKey);
       if (pendingBooking) {
@@ -3076,6 +3245,7 @@ export function BookingExperience({
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
+    setStagedReceipt(null);
     setReceiptUploadState("idle");
     setPaymentError("");
     setDetailErrors({});
@@ -3090,8 +3260,23 @@ export function BookingExperience({
 
   async function cancelCurrentHold() {
     if (!pendingBooking) return;
+    setIsSubmitting(true);
+    receiptPreparationIdRef.current += 1;
+    const receiptToDiscard = stagedReceipt;
+    if (receiptToDiscard) {
+      setStagedReceipt(null);
+      try {
+        await adapter.discardPaymentReceipt({
+          booking: pendingBooking,
+          receiptUploadId: receiptToDiscard.id,
+          paymentMethod: paymentMethodCode,
+          clientRequestId: `${bookingAttemptIdRef.current}:discard:${receiptToDiscard.id}`,
+        });
+      } catch {
+        // Cancelling the hold remains authoritative; private staged assets expire.
+      }
+    }
     if (holdExpired) {
-      setIsSubmitting(true);
       if (pendingBooking.status === "pending_payment") {
         try {
           await adapter.cancelBooking(
@@ -3109,7 +3294,6 @@ export function BookingExperience({
       return;
     }
 
-    setIsSubmitting(true);
     setPaymentError("");
     try {
       const cancelled = await adapter.cancelBooking(
@@ -3133,12 +3317,14 @@ export function BookingExperience({
   }
 
   function resetBooking() {
+    receiptPreparationIdRef.current += 1;
     bookingOwnsSelectionRef.current = false;
     setStep(1);
     dispatchSelection({ type: "clear", announcement: "Ready for another booking." });
     setPaymentReference("");
     setReceiptFileName("");
     setReceiptFile(null);
+    setStagedReceipt(null);
     setReceiptUploadState("idle");
     setPaymentError("");
     setPendingBooking(null);
@@ -4210,19 +4396,25 @@ export function BookingExperience({
                             </div>
                             <div className="form-field">
                               <label htmlFor={`${formId}-receipt`}>Payment receipt</label>
-                              <label className={`upload-control ${receiptUploadState === "ready" ? "has-file" : ""} ${receiptUploadState === "preparing" || receiptUploadState === "submitting" ? "is-uploading" : ""}`} htmlFor={`${formId}-receipt`} aria-disabled={isSubmitting}>
-                                <span aria-hidden="true">{receiptUploadState === "preparing" || receiptUploadState === "submitting" ? <span className="button-spinner" /> : receiptUploadState === "ready" ? "✓" : "＋"}</span>
+                              <label className={`upload-control ${stagedReceipt ? "has-file" : ""} ${["preparing", "uploading", "removing", "submitting"].includes(receiptUploadState) ? "is-uploading" : ""} ${receiptUploadState === "upload_error" ? "has-error" : ""}`} htmlFor={`${formId}-receipt`} aria-disabled={isSubmitting || ["preparing", "uploading", "removing"].includes(receiptUploadState)}>
+                                <span aria-hidden="true">{["preparing", "uploading", "removing", "submitting"].includes(receiptUploadState) ? <span className="button-spinner" /> : stagedReceipt ? "✓" : "＋"}</span>
                                 <span>
                                   <strong>{receiptFileName || "Choose a file"}</strong>
                                   <small>
                                     {receiptUploadState === "preparing"
                                       ? "Preparing receipt…"
+                                      : receiptUploadState === "uploading"
+                                        ? "Uploading receipt…"
+                                      : receiptUploadState === "removing"
+                                        ? "Removing receipt…"
                                       : receiptUploadState === "submitting"
-                                        ? "Submitting securely…"
-                                        : receiptUploadState === "error"
-                                          ? "Could not prepare or submit · try again"
-                                          : receiptUploadState === "ready"
-                                            ? "Receipt attached · ready to submit"
+                                        ? "Submitting payment for review…"
+                                        : receiptUploadState === "upload_error"
+                                          ? "Upload failed · retry or replace"
+                                          : receiptUploadState === "submit_error"
+                                            ? "Receipt uploaded · retry submission"
+                                          : receiptUploadState === "uploaded"
+                                            ? "Receipt uploaded · ready for review"
                                             : "JPG, PNG, or WebP · max 2 MB"}
                                   </small>
                                 </span>
@@ -4232,24 +4424,36 @@ export function BookingExperience({
                                 id={`${formId}-receipt`}
                                 type="file"
                                 accept="image/jpeg,image/png,image/webp"
-                                disabled={isSubmitting}
+                                disabled={isSubmitting || ["preparing", "uploading", "removing"].includes(receiptUploadState)}
                                 onChange={(event) => {
                                   const file = event.target.files?.[0] ?? null;
-                                  if (file && (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024)) {
-                                    event.currentTarget.value = "";
-                                  }
+                                  event.currentTarget.value = "";
                                   void prepareReceipt(file);
                                 }}
                               />
                               <span className="receipt-upload-status" role="status" aria-live="polite">
                                 {receiptUploadState === "preparing"
                                   ? "Checking the selected receipt on this device."
-                                  : receiptUploadState === "ready"
-                                    ? "Receipt attached. It has not been submitted for review yet."
-                                    : receiptUploadState === "submitting"
-                                      ? "Submitting your receipt for payment review. Please keep this page open."
+                                  : receiptUploadState === "uploading"
+                                    ? "Uploading your receipt securely. Keep this page open."
+                                  : receiptUploadState === "removing"
+                                    ? "Removing this temporary receipt from the payment form."
+                                  : receiptUploadState === "uploaded"
+                                    ? "Upload complete. The server confirmed your receipt; submit it when your reference number is ready."
+                                  : receiptUploadState === "submit_error"
+                                    ? "Your receipt is still uploaded. Retry submission without uploading it again."
+                                  : receiptUploadState === "submitting"
+                                      ? "Submitting the uploaded receipt for payment review."
                                     : ""}
                               </span>
+                              {(stagedReceipt || (receiptUploadState === "upload_error" && receiptFile)) && (
+                                <div className="receipt-upload-actions" aria-label="Receipt upload actions">
+                                  {receiptUploadState === "upload_error" && receiptFile && (
+                                    <button type="button" onClick={() => void prepareReceipt(receiptFile)} disabled={isSubmitting}>Retry upload</button>
+                                  )}
+                                  <button type="button" onClick={() => void removeReceipt()} disabled={isSubmitting}>Remove receipt</button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </>
@@ -4260,8 +4464,8 @@ export function BookingExperience({
                         </div>
                       )}
                       {!holdExpired && heldPaymentReady && (
-                        <button data-testid="submit-payment" className="button gcash-button" type="submit" disabled={isSubmitting || !receiptFile || !["ready", "error"].includes(receiptUploadState) || paymentReference.trim().length < 6}>
-                          {receiptUploadState === "submitting" ? "Submitting payment…" : receiptUploadState === "error" && receiptFile ? "Retry payment submission" : "Submit payment for review"} <span aria-hidden="true">→</span>
+                        <button data-testid="submit-payment" className="button gcash-button" type="submit" disabled={isSubmitting || !stagedReceipt || !["uploaded", "submit_error"].includes(receiptUploadState) || paymentReference.trim().length < 6}>
+                          {receiptUploadState === "submitting" ? "Submitting payment…" : receiptUploadState === "submit_error" ? "Retry payment submission" : "Submit payment for review"} <span aria-hidden="true">→</span>
                         </button>
                       )}
                       <button className="cancel-hold-link" type="button" onClick={() => void cancelCurrentHold()} disabled={isSubmitting}>{holdExpired ? "Choose a new time" : "Cancel unpaid hold"}</button>
@@ -4432,7 +4636,6 @@ function HoldIntroSelectionSummary({
   const courts = Array.from(
     new Map(selections.map((item) => [item.court.id, item.court])).values(),
   ).sort((left, right) => left.number.localeCompare(right.number));
-  const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"}`;
   const courtLabel = `${courts.length} court${courts.length === 1 ? "" : "s"}`;
   const bookedHourLabel = `${selections.length} booked hr${selections.length === 1 ? "" : "s"}`;
   const bookingFeeLabel = bookingFeeMode === "fixed_per_hour" && bookingFeeAmount

@@ -3566,7 +3566,31 @@
 .upload-control.has-file > span:first-child { background: #d8f0df; color: #287545; }
 .upload-control.is-uploading { cursor: progress; border-color: #0873e6; background: #edf5ff; }
 .upload-control.is-uploading > span:first-child { background: #0873e6; color: #fff; }
+.upload-control.has-error { border-style: solid; border-color: rgba(185, 45, 39, 0.48); background: #fff4f1; }
 .receipt-upload-status { display: block; min-height: 1.25em; margin-top: 6px; color: var(--muted); font-size: var(--text-caption); line-height: 1.35; }
+
+.receipt-upload-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.receipt-upload-actions button {
+  min-height: 42px;
+  border: 1px solid rgba(18, 69, 117, 0.24);
+  border-radius: 10px;
+  background: #fff;
+  padding: 8px 13px;
+  color: var(--blue);
+  font: inherit;
+  font-size: var(--text-caption);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.receipt-upload-actions button:hover:not(:disabled) { background: #edf5ff; }
+.receipt-upload-actions button:disabled { cursor: not-allowed; opacity: 0.55; }
 
 .visually-hidden-file {
   position: absolute;

@@ -3247,7 +3247,15 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   const checkoutSubmit = booking.slice(checkoutSubmitStart, checkoutSubmitEnd);
   assert.match(
     checkoutSubmit,
-    /const verificationStatus = typeof receipt\.status === "string"[\s\S]*?typeof receipt\.outcome === "string"[\s\S]*?verificationStatus === "auto_approved"[\s\S]*?"confirmed"/,
+    /if \(receipt\.ok !== true\)[\s\S]*?const rawVerificationStatus = typeof receipt\.status === "string"[\s\S]*?typeof receipt\.outcome === "string"[\s\S]*?if \(!verificationStatus\)[\s\S]*?verificationStatus === "auto_approved"[\s\S]*?"confirmed"/,
+  );
+  assert.match(
+    checkoutSubmit,
+    /currentStatus === "payment_review" \|\| currentStatus === "confirmed"[\s\S]*?const recoveredRecord:[\s\S]*?return recoveredRecord;[\s\S]*?finalizePaymentReceipt\(/,
+  );
+  assert.ok(
+    checkoutSubmit.indexOf("return recoveredRecord;") < checkoutSubmit.indexOf("finalizePaymentReceipt("),
+    "expected an authoritative review/confirmed status to recover a lost finalize response",
   );
   assert.doesNotMatch(checkoutSubmit, /const outcome = typeof receipt\.outcome/);
 
@@ -4422,21 +4430,24 @@ test("fails closed when live platform setup or authorization is incomplete", asy
 test("keeps checkout reserve-first and recovers authoritative unpaid holds", async () => {
   const booking = await readFile(files.booking, "utf8");
   const holdStart = booking.indexOf("async createHold(");
+  const stageStart = booking.indexOf("async stagePaymentReceipt(", holdStart);
   const paymentStart = booking.indexOf("async submitPayment(");
   const lookupStart = booking.indexOf("async findBooking(");
 
-  assert.ok(holdStart >= 0 && paymentStart > holdStart && lookupStart > paymentStart);
-  const holdSource = booking.slice(holdStart, paymentStart);
+  assert.ok(holdStart >= 0 && stageStart > holdStart && paymentStart > stageStart && lookupStart > paymentStart);
+  const holdSource = booking.slice(holdStart, stageStart);
+  const stageSource = booking.slice(stageStart, paymentStart);
   const paymentSource = booking.slice(paymentStart, lookupStart);
 
   assert.match(holdSource, /createPlatformBooking\(/);
-  assert.doesNotMatch(holdSource, /submitPaymentReceipt\(/);
+  assert.doesNotMatch(holdSource, /stagePaymentReceipt\(|finalizePaymentReceipt\(/);
+  assert.match(stageSource, /stagePaymentReceipt\([\s\S]*?idempotencyKey: request\.clientRequestId,[\s\S]*?stageSequence: request\.stageSequence/);
   assert.match(paymentSource, /bookingStatus\(/);
-  assert.match(paymentSource, /submitPaymentReceipt\(/);
+  assert.match(paymentSource, /finalizePaymentReceipt\([\s\S]*?receiptUploadId: request\.receiptUploadId/);
   assert.ok(
     paymentSource.indexOf("bookingStatus(") <
-      paymentSource.indexOf("submitPaymentReceipt("),
-    "expected the server hold to be revalidated before accepting a receipt",
+      paymentSource.indexOf("finalizePaymentReceipt("),
+    "expected the server hold to be revalidated before finalizing a staged receipt",
   );
 
   assert.match(booking, /const activeHoldStorageKey = `\$\{tenantStoragePrefix\}:active-hold`/);
@@ -4657,9 +4668,10 @@ test("renders accessible labels, control states, and announcements", async () =>
 });
 
 test("keeps the three-step checkout and confirmation compact, ordered, and complete on phones", async () => {
-  const [booking, publicCss] = await Promise.all([
+  const [booking, publicCss, platformClient] = await Promise.all([
     readFile(files.booking, "utf8"),
     readFile(files.publicCss, "utf8"),
+    readFile(files.client, "utf8"),
   ]);
 
   const stepOneLayout = booking.indexOf('<div className="booking-layout booking-slot-step">');
@@ -4861,22 +4873,52 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.doesNotMatch(stepThree, /onBlur=\{[\s\S]*?submitPayment/);
   assert.doesNotMatch(stepThree, /void submitPayment\(file\)|void submitPayment\(receiptFile\)/);
-  assert.match(stepThree, /Preparing receipt…[\s\S]*?Receipt attached · ready to submit[\s\S]*?role="status" aria-live="polite"/);
+  assert.match(stepThree, /Preparing receipt…[\s\S]*?Uploading receipt…[\s\S]*?Receipt uploaded · ready for review[\s\S]*?role="status" aria-live="polite"/);
+  assert.match(stepThree, /Upload complete\. The server confirmed your receipt/);
+  assert.match(stepThree, /Retry upload[\s\S]*?Remove receipt/);
   assert.match(
     stepThree,
     /onSubmit=\{\(event\) => \{ event\.preventDefault\(\); void submitPayment\(\); \}\}[\s\S]*?data-testid="submit-payment"[\s\S]*?type="submit"[\s\S]*?Submit payment for review/,
   );
   assert.match(
     booking,
-    /async function prepareReceipt\(file: File \| null\)[\s\S]*?await file\.slice\(0, Math\.min\(file\.size, 64 \* 1024\)\)\.arrayBuffer\(\)[\s\S]*?setReceiptUploadState\("ready"\)/,
+    /async function prepareReceipt\(file: File \| null\)[\s\S]*?await file\.slice\(0, Math\.min\(file\.size, 64 \* 1024\)\)\.arrayBuffer\(\)[\s\S]*?setReceiptUploadState\("uploading"\)[\s\S]*?adapter\.stagePaymentReceipt\([\s\S]*?setStagedReceipt\(upload\)[\s\S]*?setReceiptUploadState\("uploaded"\)/,
   );
   assert.match(
     booking,
-    /async function submitPayment\(\)[\s\S]*?setReceiptUploadState\("submitting"\)[\s\S]*?adapter\.submitPayment\(/,
+    /previousStagedReceipt[\s\S]*?await adapter\.discardPaymentReceipt\([\s\S]*?nextReceiptStageSequence\(receiptStageSequenceRef\.current\)[\s\S]*?stageSequence,/,
+  );
+  assert.match(
+    booking,
+    /async function removeReceipt\(\)[\s\S]*?await adapter\.discardPaymentReceipt\([\s\S]*?setReceiptUploadState\("idle"\)/,
+  );
+  assert.match(
+    booking,
+    /async function submitPayment\(\)[\s\S]*?!stagedReceipt[\s\S]*?setReceiptUploadState\("submitting"\)[\s\S]*?adapter\.submitPayment\(\{[\s\S]*?receiptUploadId: stagedReceipt\.id/,
+  );
+  assert.doesNotMatch(
+    booking.slice(booking.indexOf("async function submitPayment()"), booking.indexOf("async function prepareReceipt(")),
+    /receiptFile(?:Name)?:/,
+  );
+  assert.match(
+    stepThree,
+    /disabled=\{isSubmitting \|\| !stagedReceipt \|\| !\["uploaded", "submit_error"\]\.includes\(receiptUploadState\) \|\| paymentReference\.trim\(\)\.length < 6\}/,
   );
   assert.match(
     booking,
     /const receiptSubmissionInFlightRef = useRef\(false\)[\s\S]*?if \(receiptSubmissionInFlightRef\.current\) return;[\s\S]*?receiptSubmissionInFlightRef\.current = true;[\s\S]*?finally \{[\s\S]*?receiptSubmissionInFlightRef\.current = false;/,
+  );
+  assert.match(
+    platformClient,
+    /export async function stagePaymentReceipt\([\s\S]*?stageSequence: number[\s\S]*?form\.append\("receiptFile", options\.file\)[\s\S]*?"X-Receipt-Action": "stage"[\s\S]*?"X-Idempotency-Key": options\.idempotencyKey[\s\S]*?"X-Receipt-Sequence": String\(options\.stageSequence\)/,
+  );
+  assert.match(
+    platformClient,
+    /export async function discardPaymentReceipt\([\s\S]*?"X-Receipt-Action": "discard"[\s\S]*?body: JSON\.stringify\(\{ receiptUploadId: options\.receiptUploadId \}\)/,
+  );
+  assert.match(
+    platformClient,
+    /export async function finalizePaymentReceipt\([\s\S]*?"X-Receipt-Action": "finalize"[\s\S]*?body: JSON\.stringify\(\{ receiptUploadId: options\.receiptUploadId \}\)/,
   );
   assert.match(stepThree, /className="payment-error" role="alert"/);
   assert.match(stepThree, /aria-busy=\{isSubmitting\}/);
