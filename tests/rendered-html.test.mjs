@@ -4646,7 +4646,7 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(stepOne, /<span className="step-chip">01<\/span>[\s\S]*?Court booking[\s\S]*?<h3>Choose your slots<\/h3>/);
   assert.doesNotMatch(stepOne, /When are you playing\?|schedule-kicker|schedule-scroll-hint/);
-  assert.match(booking, /className="booking-compact-title"[\s\S]*?className="back-link"[\s\S]*?Almost yours[\s\S]*?<h2>Who&apos;s playing\?<\/h2>/);
+  assert.match(booking, /className="booking-compact-title"[\s\S]*?className="back-link"[\s\S]*?holdExpired \? "Hold ended" : "Almost yours"[\s\S]*?holdExpired \? "Choose another time" : "Who's playing\?"/);
   assert.match(stepTwo, /<span className="step-chip">02<\/span>[\s\S]*?Player details[\s\S]*?<h3>Tell us who to expect<\/h3>/);
   assert.doesNotMatch(stepTwo, /Who&apos;s rallying\?|className="guest-note"/);
   assert.match(
@@ -4707,6 +4707,10 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   assert.match(stepTwo, /aria-busy=\{isSubmitting\}/);
   assert.match(stepTwo, /className="details-hold-gate"/);
   assert.match(stepTwo, /Slots held/);
+  assert.match(
+    stepTwo,
+    /holdExpired \? \([\s\S]*?className="expired-hold-recovery surface-card"[\s\S]*?role="alert"[\s\S]*?Your booking hold has expired[\s\S]*?selected were released[\s\S]*?No payment was taken\.[\s\S]*?data-testid="choose-new-slots"[\s\S]*?cancelCurrentHold\(\)[\s\S]*?Choose new slots[\s\S]*?: \([\s\S]*?className="checkout-layout booking-details-view"/,
+  );
   assert.match(stepTwo, /className="policy-grid policy-grid-single"/);
   assert.match(stepTwo, /className=\{`check-row policy-check/);
   assert.match(stepTwo, /id=\{`\$\{formId\}-policy`\}/);
@@ -4722,6 +4726,10 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
   );
   assert.match(stepOne, /data-testid="booking-continue"[\s\S]*?createSelectionHold\(\)[\s\S]*?Hold &amp; continue/);
   assert.match(stepTwo, /className="stage-footer form-footer">[\s\S]*?By continuing, you agree to the venue booking policy/);
+  assert.match(
+    booking,
+    /function clearHoldForReselection\(message: string\)[\s\S]*?sessionStorage\.removeItem\(activeHoldStorageKey\)[\s\S]*?sessionStorage\.removeItem\(bookingStorageKey\(pendingBooking\.reference\)\)[\s\S]*?pendingBookingStorageKey\(bookingAttemptIdRef\.current\)[\s\S]*?belongsToCurrentHold[\s\S]*?setAvailabilityRetry\(\(value\) => value \+ 1\)[\s\S]*?setStep\(1\)/,
+  );
 
   const policyDisclosures =
     stepTwo.match(/<details className="policy-disclosure">[\s\S]*?<\/details>/g) ?? [];

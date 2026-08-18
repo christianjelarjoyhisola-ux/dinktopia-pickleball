@@ -2955,6 +2955,9 @@ export function BookingExperience({
   function clearHoldForReselection(message: string) {
     try {
       sessionStorage.removeItem(activeHoldStorageKey);
+      if (pendingBooking) {
+        sessionStorage.removeItem(bookingStorageKey(pendingBooking.reference));
+      }
       if (bookingAttemptIdRef.current) {
         sessionStorage.removeItem(
           pendingBookingStorageKey(bookingAttemptIdRef.current),
@@ -2994,8 +2997,12 @@ export function BookingExperience({
     setReceiptFile(null);
     setReceiptUploadState("idle");
     setPaymentError("");
+    setDetailErrors({});
     setAcceptedPolicy(false);
     bookingAttemptIdRef.current = "";
+    setScheduleDate("");
+    setAvailabilityState("loading");
+    setAvailabilityRetry((value) => value + 1);
     setStep(1);
     scrollToBooking();
   }
@@ -3542,8 +3549,8 @@ export function BookingExperience({
                       Back
                     </button>
                     <div>
-                      <p className="player-kicker">Almost yours</p>
-                      <h2>Who&apos;s playing?</h2>
+                      <p className="player-kicker">{holdExpired ? "Hold ended" : "Almost yours"}</p>
+                      <h2>{holdExpired ? "Choose another time" : "Who's playing?"}</h2>
                     </div>
                   </div>
                 )}
@@ -3876,6 +3883,27 @@ export function BookingExperience({
                 )}
 
                 {step === 2 && (
+                  holdExpired ? (
+                    <section
+                      className="expired-hold-recovery surface-card"
+                      role="alert"
+                      aria-labelledby={`${formId}-expired-hold-title`}
+                    >
+                      <span className="expired-hold-icon" aria-hidden="true"><Clock3 /></span>
+                      <p className="player-kicker">Hold ended</p>
+                      <h3 id={`${formId}-expired-hold-title`}>Your booking hold has expired</h3>
+                      <p>The courts and times you selected were released and are available for others to book. No payment was taken.</p>
+                      <button
+                        data-testid="choose-new-slots"
+                        className="button button-blue"
+                        type="button"
+                        onClick={() => void cancelCurrentHold()}
+                        disabled={isSubmitting}
+                      >
+                        {isSubmitting ? <><span className="button-spinner" aria-hidden="true" /> Refreshing availability…</> : <>Choose new slots <span aria-hidden="true">→</span></>}
+                      </button>
+                    </section>
+                  ) : (
                   <div className="checkout-layout booking-details-view">
                     <form className="booking-main-card booking-details-form booking-stage surface-card guest-form" onSubmit={submitDetails} aria-busy={isSubmitting} noValidate>
                       <div className="booking-card-heading stage-heading">
@@ -3981,6 +4009,7 @@ export function BookingExperience({
                     </form>
                     <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} policyTitle={policyVersion ? policyTitle : null} locationLabel={venueLocationLabel} />
                   </div>
+                  )
                 )}
 
                 {step === 3 && checkoutSlot && pendingBooking && (
