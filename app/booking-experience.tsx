@@ -1767,7 +1767,7 @@ export function BookingExperience({
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
   const [selectedDate, setSelectedDate] = useState(dates[0]?.iso ?? "");
-  const [, setSelectedCourtId] = useState(() => {
+  const [selectedCourtId, setSelectedCourtId] = useState(() => {
     if (isLive) return "";
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0]?.id ?? "";
   });
@@ -1843,6 +1843,23 @@ export function BookingExperience({
     activeTenant.venue.locationLabel ||
     activeTenant.venue.address ||
     null;
+  const venueHoursLabel = useMemo(() => {
+    if (!isLive) {
+      return previewHours
+        ? `Daily ${formatClockLabel(previewHours.openingHour)}–${formatClockLabel(previewHours.closingHour)}`
+        : null;
+    }
+    const windows = (bootstrap?.courts ?? []).map((court) => {
+      const openingHour = parseClockHour(court.opensAt);
+      const closingHour = logicalCloseHour(court.opensAt, court.closesAt);
+      return openingHour === null || closingHour === null
+        ? null
+        : `${formatClockLabel(openingHour)}–${formatClockLabel(closingHour)}`;
+    });
+    if (!windows.length || windows.some((window) => window === null)) return null;
+    const uniqueWindows = Array.from(new Set(windows));
+    return uniqueWindows.length === 1 ? `Daily ${uniqueWindows[0]}` : "Hours vary by court";
+  }, [bootstrap?.courts, isLive, previewHours]);
   const startingHourlyRate = useMemo(
     () =>
       isLive
@@ -2774,34 +2791,41 @@ export function BookingExperience({
 
   function addConfirmationToCalendar() {
     if (!confirmedBooking || confirmedBooking.status !== "confirmed") return;
-    const sessions = confirmedBooking.items?.length ? confirmedBooking.items : selectedSlots;
-    const earliestHour = sessions.length
-      ? Math.min(...sessions.map((item) => item.startHour))
-      : confirmedBooking.startHour;
-    const latestHour = sessions.length
-      ? Math.max(...sessions.map((item) => item.startHour + item.durationHours))
-      : confirmedBooking.startHour + confirmedBooking.durationHours;
-    const calendarDate = confirmedBooking.date.replaceAll("-", "");
-    const courtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || `${activeTenant.identity.shortName} court`;
+    const groups = groupSelectionDetails(selectedSlotDetails);
+    const calendarGroups = groups.length ? groups : [{
+      court: { name: `${activeTenant.identity.shortName} court` } as Court,
+      startHour: confirmedBooking.startHour,
+      endHour: confirmedBooking.startHour + confirmedBooking.durationHours,
+      courtHours: confirmedBooking.durationHours,
+      subtotal: confirmedBooking.amount,
+    }];
     const escapeCalendar = (value: string) => value.replaceAll("\\", "\\\\").replaceAll(",", "\\,").replaceAll(";", "\\;").replaceAll("\n", "\\n");
     const uidDomain = tenantCalendarUidDomain();
+    const calendarInstant = (logicalHour: number) => {
+      let date = confirmedBooking.date;
+      const dayOffset = Math.floor(logicalHour / 24);
+      for (let index = 0; index < dayOffset; index += 1) date = nextIsoDate(date) ?? date;
+      const clockHour = ((logicalHour % 24) + 24) % 24;
+      return `${date.replaceAll("-", "")}T${String(clockHour).padStart(2, "0")}0000`;
+    };
+    const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    const location = venueLocationLabel ? [`LOCATION:${escapeCalendar(venueLocationLabel)}`] : [];
+    const events = calendarGroups.flatMap((group, index) => [
+      "BEGIN:VEVENT",
+      `UID:${escapeCalendar(`${confirmedBooking.reference}-${index + 1}`)}@${uidDomain}`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=${activeTenant.identity.timezone}:${calendarInstant(group.startHour)}`,
+      `DTEND;TZID=${activeTenant.identity.timezone}:${calendarInstant(group.endHour)}`,
+      `SUMMARY:${escapeCalendar(`Pickleball at ${activeTenant.identity.shortName} · ${group.court.name}`)}`,
+      `DESCRIPTION:${escapeCalendar(`Booking reference: ${confirmedBooking.reference}`)}`,
+      ...location,
+      "END:VEVENT",
+    ]);
     const calendar = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
       `PRODID:-//${activeTenant.identity.name}//Court Booking//EN`,
-      "BEGIN:VEVENT",
-      `UID:${escapeCalendar(confirmedBooking.reference)}@${uidDomain}`,
-      `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z")}`,
-      `DTSTART;TZID=${activeTenant.identity.timezone}:${calendarDate}T${String(earliestHour).padStart(2, "0")}0000`,
-      `DTEND;TZID=${activeTenant.identity.timezone}:${calendarDate}T${String(latestHour).padStart(2, "0")}0000`,
-      `SUMMARY:${escapeCalendar(`Pickleball at ${activeTenant.identity.shortName} · ${courtNames}`)}`,
-      `DESCRIPTION:${escapeCalendar(`Booking reference: ${confirmedBooking.reference}`)}`,
-      `LOCATION:${escapeCalendar(
-        (typeof bootstrap?.business?.locationLabel === "string"
-          ? bootstrap.business.locationLabel
-          : null) || activeTenant.venue.locationLabel || "Location details coming soon",
-      )}`,
-      "END:VEVENT",
+      ...events,
       "END:VCALENDAR",
     ].join("\r\n");
     const url = URL.createObjectURL(new Blob([calendar], { type: "text/calendar;charset=utf-8" }));
@@ -2984,9 +3008,10 @@ export function BookingExperience({
         ? "is-attention"
         : "is-pending";
   const confirmationCourtNames = Array.from(new Set(selectedSlotDetails.map((item) => item.court.name))).join(", ") || "Court details pending";
-  const confirmationEarliestHour = selectedSlots.length ? Math.min(...selectedSlots.map((item) => item.startHour)) : confirmedBooking?.startHour ?? 0;
-  const confirmationLatestHour = selectedSlots.length ? Math.max(...selectedSlots.map((item) => item.startHour + item.durationHours)) : (confirmedBooking?.startHour ?? 0) + (confirmedBooking?.durationHours ?? 1);
-  const confirmationTimeLabel = selectedSlots.length ? formatHourRange(confirmationEarliestHour, confirmationLatestHour) : "Time in booking record";
+  const confirmationGroups = groupSelectionDetails(selectedSlotDetails);
+  const confirmationTimeLabel = confirmationGroups.length
+    ? confirmationGroups.map((group) => `${group.court.name}: ${formatHourRange(group.startHour, group.endHour)}`).join(" · ")
+    : "Time in booking record";
   const tenantBrandStyle = {
     "--tenant-primary": activeTenant.brand.primary,
     "--tenant-paper": activeTenant.brand.paper,
@@ -3048,12 +3073,16 @@ export function BookingExperience({
     >
       {isBookingPage ? (
         <div className="preview-ribbon" role="status">
-          <strong>{bookingSetupReady ? "Live booking" : "Setup in progress"}</strong>
-          <span>{bookingSetupReady ? "Court availability and payments are connected." : "Public reservations and payments remain disabled."}</span>
+          <strong>{checkingLiveSetup ? "Checking availability" : bookingSetupReady ? "Live booking" : "Booking unavailable"}</strong>
+          <span>{checkingLiveSetup ? "Loading verified court and payment details." : bookingSetupReady ? "Court availability and payments are connected." : "Online reservations are temporarily unavailable."}</span>
+        </div>
+      ) : checkingLiveSetup ? (
+        <div className="preview-ribbon" role="status">
+          <strong>Connecting to K&amp;L</strong><span>Loading verified venue and booking details.</span>
         </div>
       ) : !bookingSetupReady && (
         <div className="preview-ribbon" role="status">
-          <strong>Setup in progress</strong><span>Public reservations and payments remain disabled.</span>
+          <strong>Booking unavailable</strong><span>Online reservations are temporarily unavailable.</span>
         </div>
       )}
       {isBookingPage && (
@@ -3078,7 +3107,7 @@ export function BookingExperience({
             </div>
             <div className="booking-app-actions">
               <span className={`booking-app-status ${bookingSetupReady ? "is-live" : "is-setup"}`}>
-                <i aria-hidden="true" /> {bookingSetupReady ? "Booking live" : "Setup in progress"}
+                <i aria-hidden="true" /> {checkingLiveSetup ? "Checking booking" : bookingSetupReady ? "Booking live" : "Booking unavailable"}
               </span>
               <Link className="booking-app-manage-link" href="/book?mode=manage">Manage booking</Link>
             </div>
@@ -3147,7 +3176,7 @@ export function BookingExperience({
         {isHome && <section className="hero" id="top">
           <div className="hero-grid site-container">
             <div className="hero-copy">
-              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>{activeTenant.identity.name} · {bookingSetupReady ? "Live booking" : "Setup preview"}</span></p>
+              <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>{activeTenant.identity.name} · {checkingLiveSetup ? "Connecting" : bookingSetupReady ? "Live booking" : "Booking unavailable"}</span></p>
               <h1>
                 Your court. Your crew.
                 <span>Your next rally.</span>
@@ -3179,9 +3208,9 @@ export function BookingExperience({
                 </a>
               </div>
               <ul className="hero-proof" aria-label="Booking highlights">
-                <li><strong>{displayCourts.length || "Courts soon"}</strong><span>{displayCourts.length ? (isLive ? "bookable courts" : "preview courts") : "setup in progress"}</span></li>
+                <li><strong>{displayCourts.length || (checkingLiveSetup ? "Checking" : "Courts soon")}</strong><span>{displayCourts.length ? (isLive ? "bookable courts" : "preview courts") : checkingLiveSetup ? "verified courts" : "currently unavailable"}</span></li>
                 <li><strong>{startingHourlyRate === null ? "Rates soon" : `From ${peso(startingHourlyRate)}`}</strong><span>per court-hour</span></li>
-                <li><strong>{bookingSetupReady ? "24/7" : "Coming soon"}</strong><span>{bookingSetupReady ? "live availability" : "booking access"}</span></li>
+                <li><strong>{bookingSetupReady ? "24/7" : checkingLiveSetup ? "Checking" : "Unavailable"}</strong><span>{bookingSetupReady ? "live availability" : "booking access"}</span></li>
               </ul>
             </div>
 
@@ -3199,9 +3228,9 @@ export function BookingExperience({
                 <span className="court-label court-label-two">{tenantHeroCourtLabels[1]}</span>
               </div>
               <div className="hero-visual-note">
-                <small>{bookingSetupReady ? "Ready when you are" : "Venue setup"}</small>
-                <strong>{bookingSetupReady ? "Book your next rally" : "Details coming soon"}</strong>
-                <span>{bookingSetupReady ? "Live court availability" : "No live reservations yet"}</span>
+                <small>{bookingSetupReady ? "Ready when you are" : checkingLiveSetup ? "Connecting securely" : "Booking unavailable"}</small>
+                <strong>{bookingSetupReady ? "Book your next rally" : checkingLiveSetup ? "Loading verified details" : "Try again later"}</strong>
+                <span>{bookingSetupReady ? "Live court availability" : checkingLiveSetup ? "Checking live court availability" : "No reservations available"}</span>
               </div>
             </div>
           </div>
@@ -3281,7 +3310,7 @@ export function BookingExperience({
                 </span>
                 <div>
                   <p className="eyebrow eyebrow-dark">
-                    {bootstrapState === "loading" ? "Checking court setup" : "Courts unavailable"}
+                    {bootstrapState === "loading" ? "Checking live courts" : "Courts unavailable"}
                   </p>
                   <h3>
                     {bootstrapState === "loading"
@@ -3349,8 +3378,8 @@ export function BookingExperience({
             </div>
             <ol className="how-list">
               <li><span>01</span><div><h3>Build your court plan</h3><p>See every active court and select exact court-hours.</p></div></li>
-              <li><span>02</span><div><h3>Bring your crew</h3><p>{previewSetupReady ? `Book ${activeTenant.booking.minimumHours} to ${activeTenant.booking.maximumHours} whole hours, up to ${activeTenant.booking.maximumAdvanceDays} days ahead.` : "Booking limits and advance windows will appear after setup."}</p></div></li>
-              <li><span>03</span><div><h3>Pay, then play</h3><p>{previewSetupReady ? "Send your payment receipt and get a booking reference." : "Payment instructions will appear only after the venue publishes them."}</p></div></li>
+              <li><span>02</span><div><h3>Bring your crew</h3><p>{bookingSetupReady ? "Choose one or more open whole-hour court slots within the published booking window." : "Live booking limits will appear when online reservations are available."}</p></div></li>
+              <li><span>03</span><div><h3>Pay, then play</h3><p>{bookingSetupReady ? "Send the exact total to the verified court account, then submit your reference and receipt for review." : "Verified payment instructions appear only when booking is available."}</p></div></li>
             </ol>
           </div>
         </section>}
@@ -3387,7 +3416,7 @@ export function BookingExperience({
                   <div>
                     <p>Direct reservations</p>
                     <h2>Select your court and time.</h2>
-                    <span>{bookingSetupReady ? "Choose an open slot, review the details, and we’ll keep the rest simple." : "Live courts and times will appear only after the K&L setup is verified."}</span>
+                    <span>{checkingLiveSetup ? "Loading verified courts and times." : bookingSetupReady ? "Choose an open slot, review the details, and we’ll keep the rest simple." : "Live courts and times are temporarily unavailable."}</span>
                   </div>
                 </div>
                 <span className="booking-venue-location">
@@ -3401,7 +3430,7 @@ export function BookingExperience({
               <div className="setup-unavailable-card" role={checkingLiveSetup || !isLive ? "status" : "alert"}>
                 <span className={checkingLiveSetup ? "spinner" : "setup-unavailable-symbol"} aria-hidden="true">{checkingLiveSetup ? "" : "!"}</span>
                 <div>
-                  <p className="eyebrow eyebrow-dark">{checkingLiveSetup ? "Checking venue setup" : !isLive ? "Setup in progress" : "Online booking unavailable"}</p>
+                  <p className="eyebrow eyebrow-dark">{checkingLiveSetup ? "Checking live booking" : !isLive ? "Setup in progress" : "Online booking unavailable"}</p>
                   <h3>{checkingLiveSetup ? "Loading the court board…" : !isLive ? "Booking details are coming soon." : "K&L online booking is still being prepared."}</h3>
                   <p>{checkingLiveSetup ? "We’re confirming courts, policies, payment, and security." : !isLive ? "Courts, hours, rates, payment instructions, and policies will appear after they are configured in the management system." : "No payment instructions are shown until the venue, published policy, payment method, and security check are all active."}</p>
                 </div>
@@ -3508,7 +3537,7 @@ export function BookingExperience({
                         <div className="availability-legend-row">
                           <div className="slot-legend availability-legend" aria-label="Availability legend">
                             <span><i className="legend-open" />Open</span>
-                            <span><i className="legend-booked" />Booked</span>
+                            <span><i className="legend-booked" />Unavailable</span>
                             <span><i className="legend-selected" />Your selection</span>
                           </div>
                         </div>
@@ -3577,10 +3606,10 @@ export function BookingExperience({
                                   const courtSelectionCount = selectedSlots.filter((item) => item.courtId === court.id).length;
                                   return (
                                     <Fragment key={court.id}>
-                                      <div className="availability-court">
+                                      <div className={`availability-court${court.id === selectedCourtId && initialCourtSlug ? " preferred-court" : ""}`}>
                                         <span className="court-number">{Number(court.number)}</span>
                                         <span><strong>{court.name}</strong><small>{compactCourtSurface(court)}</small></span>
-                                        <em>{courtSelectionCount ? `${courtSelectionCount} selected` : ""}</em>
+                                        <em>{courtSelectionCount ? `${courtSelectionCount} selected` : court.id === selectedCourtId && initialCourtSlug ? "Preferred" : ""}</em>
                                       </div>
                                       {scheduleHours.map((hour) => {
                                         const slot = courtSchedule?.slots.find((item) => item.hour === hour);
@@ -3595,7 +3624,7 @@ export function BookingExperience({
                                             : displayedState === "confirmed"
                                               ? "Booked"
                                               : busy
-                                                ? "Booked"
+                                                ? "Unavailable"
                                                 : isSelected
                                                   ? "Selected"
                                                   : "Open";
@@ -3626,7 +3655,7 @@ export function BookingExperience({
                               >
                                 <div className="mobile-availability-corner"><strong>Time</strong><small>Hourly</small></div>
                                 {displayCourts.map((court) => (
-                                  <div className="mobile-court-head" key={`head-${court.id}`} title={court.name}>
+                                  <div className={`mobile-court-head${court.id === selectedCourtId && initialCourtSlug ? " preferred-court" : ""}`} key={`head-${court.id}`} title={court.name}>
                                     <span>C{Number(court.number)}</span><small>{compactCourtSurface(court)}</small>
                                   </div>
                                 ))}
@@ -3646,7 +3675,7 @@ export function BookingExperience({
                                           : displayedState === "confirmed"
                                             ? "Booked"
                                             : busy
-                                              ? "Booked"
+                                              ? "Unavailable"
                                               : isSelected
                                                 ? "Selected"
                                                 : "Open";
@@ -3769,15 +3798,8 @@ export function BookingExperience({
                           />
                           {detailErrors.email && <span className="field-error" id={fieldErrorId(formId, "email")}>{detailErrors.email}</span>}
                         </label>
-                        <label className="player-field full">
-                          <span>Booking note <small>Optional</small></span>
-                          <input name="note" placeholder="Celebration, coaching session, accessibility request…" />
-                        </label>
                       </div>
-                      <label className="check-row booking-updates-choice">
-                        <input type="checkbox" checked={customer.updates} onChange={(event) => setCustomer({ ...customer, updates: event.target.checked })} />
-                        <span><strong>Booking updates</strong><small>Receipts, court changes, and reminders.</small></span>
-                      </label>
+                      <p className="booking-contact-use">We use these contact details for this reservation, its receipt, and essential court updates.</p>
                       <div className="details-hold-gate">
                         <div className="policy-grid policy-grid-single">
                           <details className="policy-disclosure">
@@ -3813,7 +3835,7 @@ export function BookingExperience({
                         </button>
                       </div>
                     </form>
-                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} policyTitle={policyVersion ? policyTitle : null} />
+                    <RallyBookingSummary selections={selectedSlotDetails} dateLabel={selectedBookingDateLabel} subtotal={courtSubtotal} bookingFee={bookingFee ?? 0} total={total} policyTitle={policyVersion ? policyTitle : null} locationLabel={venueLocationLabel} />
                   </div>
                 )}
 
@@ -3988,7 +4010,7 @@ export function BookingExperience({
                       <div className="rally-confirmation-details" aria-label="Booking summary">
                         <div><CalendarDays aria-hidden="true" /><span>Date &amp; time</span><strong>{selectedBookingDateLabel || confirmedBooking.date} · {confirmationTimeLabel}</strong></div>
                         <div><Grid2X2 aria-hidden="true" /><span>{selectedCourtCount === 1 ? "Court" : "Courts"}</span><strong>{confirmationCourtNames}</strong></div>
-                        <div><WalletCards aria-hidden="true" /><span>Paid with {paymentLabel}</span><strong>{peso(confirmedBooking.amount)} · {confirmationApproved ? "Payment verified" : confirmationNeedsAttention ? "Needs attention" : "Review pending"}</strong></div>
+                        <div><WalletCards aria-hidden="true" /><span>{confirmationApproved ? "Paid with" : "Submitted via"} {paymentLabel}</span><strong>{peso(confirmedBooking.amount)} · {confirmationApproved ? "Payment verified" : confirmationNeedsAttention ? "Needs attention" : "Review pending"}</strong></div>
                       </div>
 
                       <div className="rally-confirmation-actions">
@@ -4042,8 +4064,8 @@ export function BookingExperience({
         <div className="site-container footer-grid">
           <div><TenantWordmark footer /><p>Local court time, made easy.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Reserve a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
-          <div><h2>Club hours</h2><p>{previewHours ? <>Daily<br /><strong>{formatClockLabel(previewHours.openingHour)}–{formatClockLabel(previewHours.closingHour)}</strong></> : <strong>Hours coming soon</strong>}</p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
-          <div><h2>Booking status</h2><p>{bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Booking setup in progress.<br />Venue details coming next.</>}</p></div>
+          <div><h2>Club hours</h2><p><strong>{venueHoursLabel ?? "Check live court availability"}</strong></p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
+          <div><h2>Booking status</h2><p>{checkingLiveSetup ? <>Checking live courts.<br />Loading verified availability.</> : bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Online booking unavailable.<br />Please try again later.</>}</p></div>
         </div>
         <div className="site-container footer-bottom"><span>© 2026 {activeTenant.identity.name}</span><span>K&amp;L court booking</span></div>
       </footer>
@@ -4060,6 +4082,7 @@ type BookingSummaryProps = {
   bookingFee: number;
   total: number;
   policyTitle: string | null;
+  locationLabel: string | null;
 };
 
 function RallyBookingSummary({
@@ -4069,6 +4092,7 @@ function RallyBookingSummary({
   bookingFee,
   total,
   policyTitle,
+  locationLabel,
 }: BookingSummaryProps) {
   const groups = groupSelectionDetails(selections);
   const courts = Array.from(
@@ -4099,7 +4123,7 @@ function RallyBookingSummary({
       </div>
       <div className="summary-detail">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
-        <span><strong>{activeTenant.identity.name}</strong><small>{activeTenant.venue.locationLabel || "Location details coming soon"}</small></span>
+        <span><strong>{activeTenant.identity.name}</strong><small>{locationLabel || "Location details coming soon"}</small></span>
       </div>
       <div className="summary-price-lines">
         <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
@@ -4181,7 +4205,7 @@ function ManageBooking({
         <form className="lookup-form" onSubmit={onLookup} noValidate>
           <div className="form-field">
             <label htmlFor={`${formId}-lookup-reference`}>Booking reference</label>
-            <input id={`${formId}-lookup-reference`} value={reference} onChange={(event) => onReferenceChange(event.target.value.toUpperCase())} placeholder={`${activeTenant.identity.shortName.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || "BK"}-YYMMDD-000`} autoComplete="off" />
+            <input id={`${formId}-lookup-reference`} value={reference} onChange={(event) => onReferenceChange(event.target.value.toUpperCase())} placeholder="PB-XXXXXXXXXXXX" autoComplete="off" />
           </div>
           <div className="form-field">
             <label htmlFor={`${formId}-lookup-email`}>Email address</label>

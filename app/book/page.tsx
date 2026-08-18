@@ -15,10 +15,13 @@ export async function generateMetadata({ searchParams }: BookPageProps): Promise
     ? {
         title: "Manage Booking",
         description: `Securely find and manage an existing ${activeTenant.identity.shortName} court booking.`,
+        alternates: { canonical: "/book?mode=manage" },
+        robots: { index: false, follow: false },
       }
     : {
         title: "Reserve a Court",
         description: `Reserve a court at ${activeTenant.identity.name}. View live schedules, rates, and court availability.`,
+        alternates: { canonical: "/book" },
       };
 }
 

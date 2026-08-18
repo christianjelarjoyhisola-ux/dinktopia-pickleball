@@ -6,6 +6,7 @@ import "./dinktopia.css";
 export const metadata: Metadata = {
   title: "Pickleball Court Booking",
   description: `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "your local pickleball court"} View live courts, rates, and availability.`,
+  alternates: { canonical: "/" },
 };
 
 export default function HomePage() {

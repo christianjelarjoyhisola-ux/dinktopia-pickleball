@@ -6,6 +6,7 @@ import "../dinktopia.css";
 export const metadata: Metadata = {
   title: "Our Courts",
   description: `Explore ${activeTenant.identity.shortName} courts, current rates, and live booking availability.`,
+  alternates: { canonical: "/courts" },
 };
 
 export default function CourtsPage() {

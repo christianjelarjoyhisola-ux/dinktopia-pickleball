@@ -7548,3 +7548,15 @@
   color: #234f78;
   font-weight: 700;
 }
+.booking-contact-use {
+  margin: 0.85rem 0 1rem;
+  color: var(--rally-muted, #526477);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.availability-court.preferred-court,
+.mobile-court-head.preferred-court {
+  box-shadow: inset 3px 0 0 var(--tenant-citrus, #b8df4d);
+  background: color-mix(in srgb, var(--tenant-citrus, #b8df4d) 12%, #fff);
+}

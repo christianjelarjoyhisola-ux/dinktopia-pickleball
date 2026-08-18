@@ -60,6 +60,10 @@ export async function generateMetadata(): Promise<Metadata> {
       activeTenant.identity.name,
     ],
     robots: { index: true, follow: true },
+    icons: {
+      icon: "/kllogo.jpg",
+      apple: "/kllogo.jpg",
+    },
     openGraph: {
       type: "website",
       locale: activeTenant.identity.locale.replace("-", "_"),
@@ -70,8 +74,8 @@ export async function generateMetadata(): Promise<Metadata> {
         ? {
             images: [{
               url: socialImage,
-              width: 1734,
-              height: 907,
+              width: 1200,
+              height: 628,
               alt: `${activeTenant.identity.name} — ${activeTenant.brand.tagline ?? "pickleball court"}`,
             }],
           }

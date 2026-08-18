@@ -3966,6 +3966,20 @@ export default function ManagePage() {
   const syncInFlightRef = useRef(false);
   const syncGenerationRef = useRef(0);
 
+  useEffect(() => {
+    const canonicalHost = activeTenant.identity.productionDomain?.toLowerCase();
+    const currentHost = window.location.hostname.toLowerCase();
+    if (
+      runtimeMode === "live" &&
+      canonicalHost &&
+      currentHost !== canonicalHost &&
+      currentHost !== "localhost" &&
+      currentHost !== "127.0.0.1"
+    ) {
+      window.location.replace(`https://${canonicalHost}${window.location.pathname}${window.location.search}${window.location.hash}`);
+    }
+  }, [runtimeMode]);
+
   const liveSessionRole = snapshot?.session.role ?? "host";
   const liveCapabilityKey = snapshot?.session.capabilities
     .slice()

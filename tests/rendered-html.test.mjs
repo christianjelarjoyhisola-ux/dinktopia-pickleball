@@ -839,7 +839,7 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.equal(documentTitle(selectedBook), "Reserve a Court · K&L Pickleball Court");
   assert.equal(documentTitle(manageBook), "Manage Booking · K&L Pickleball Court");
 
-  for (const html of [home, courts, selectedBook, invalidBook, repeatedBook, manageBook]) {
+  for (const html of [home, courts, selectedBook, invalidBook, repeatedBook]) {
     assert.match(html, /<html\b[^>]*\blang="en-PH"/i);
     assert.match(html, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="index, follow"/i);
     assert.match(html, /<a\b[^>]*class="skip-link"[^>]*href="#main-content"/i);
@@ -851,13 +851,14 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
     assert.doesNotMatch(html, starterMarkers);
     assert.doesNotMatch(documentText(html), /Dinktopia/i);
   }
+  assert.match(manageBook, /<meta\b[^>]*\bname="robots"[^>]*\bcontent="noindex, nofollow"/i);
 
   const homeText = documentText(home);
   assert.match(home, /class="hero-visual"[^>]*aria-hidden="true"/i);
-  assert.match(homeText, /K&L Pickleball Court · Setup preview/i);
+  assert.match(homeText, /K&L Pickleball Court · Connecting/i);
   assert.match(homeText, /Your court\. Your crew\. Your next rally\./i);
   assert.match(homeText, /Rates soon per court-hour/i);
-  assert.match(homeText, /Coming soon booking access/i);
+  assert.match(homeText, /Checking booking access/i);
   assert.match(
     await readFile(files.booking, "utf8"),
     /function getMinimumConfiguredHourlyRate\(courts: PublicCourt\[\]\)[\s\S]*?Math\.min\(\.\.\.rates\)/,
@@ -915,7 +916,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assertHtmlResponse(bookResponse);
   const bookHtml = await bookResponse.text();
 
-  assert.match(documentText(bookHtml), /Setup in progress/i);
+  assert.match(documentText(bookHtml), /Checking availability/i);
   assert.match(documentText(bookHtml), /Booking details are coming soon|Loading the court board/i);
   assert.doesNotMatch(bookHtml, /<legend\b[^>]*>Choose court-hours<\/legend>/i);
   assert.doesNotMatch(bookHtml, /<legend>How long\?<\/legend>|class="duration-control"/i);
@@ -1428,10 +1429,10 @@ test("covers live tenant bootstrap with a premium K&L brand intro", async () => 
   assert.match(layout, /<InitialBrandLoader \/>/);
   assert.match(intro, /kl-pickleball-court:tenant-ready/);
   assert.match(intro, /addEventListener\(TENANT_READY_EVENT, finish/);
-  assert.match(intro, /window\.setTimeout\(finish, 4500\)/);
+  assert.match(intro, /window\.setTimeout\(finish, 2500\)/);
   assert.doesNotMatch(intro, /sessionStorage/);
   assert.match(booking, /window\.dispatchEvent\(new Event\(TENANT_READY_EVENT\)\)/);
-  assert.match(intro, /src="\/kl-pickleball-court-logo\.png"/);
+  assert.match(intro, /src="\/kl-pickleball-court-logo\.webp"/);
   assert.match(intro, /role="status"/);
   assert.match(intro, /aria-live="polite"/);
   assert.match(intro, /data-phase=\{phase\}/);
@@ -1622,7 +1623,7 @@ test("server-renders the responsive tenant management workspace", async () => {
   assert.doesNotMatch(html, starterMarkers);
 });
 
-test("marks the connected tenant as setup-required until readiness passes", async () => {
+test("uses a neutral connected-tenant state until readiness resolves", async () => {
   const [customerResponse, managerResponse] = await Promise.all([
     render("/"),
     render("/manage"),
@@ -1635,11 +1636,9 @@ test("marks the connected tenant as setup-required until readiness passes", asyn
   const managerText = documentText(managerHtml);
 
   assert.match(customerHtml, /class="preview-ribbon"[^>]*role="status"/i);
-  assert.match(customerText, /Setup in progress/i);
-  assert.match(
-    customerText,
-    /Public reservations and payments remain disabled\./i,
-  );
+  assert.match(customerText, /Connecting to K&L/i);
+  assert.match(customerText, /Loading verified venue and booking details\./i);
+  assert.doesNotMatch(customerText, /Public reservations and payments remain disabled\./i);
   assert.match(customerHtml, /href="\/courts"/i);
   assert.doesNotMatch(customerHtml, /class="booking-zone section-pad"/i);
 
@@ -1843,7 +1842,7 @@ test("pins K&L active scope while preserving Dinktopia's registered config", asy
   ]) assert.match(config, new RegExp(`${field}:\\s*null`));
   assert.match(config, /direction:\s*"Energetic neighborhood court culture/);
   assert.match(config, /tagline:\s*"Your local court\. Your next rally\."/);
-  assert.match(config, /socialImagePath:\s*"\/og\.png"/);
+  assert.match(config, /socialImagePath:\s*"\/og\.webp"/);
   assert.match(config, /previewCourts:\s*\[\]/);
   assert.match(config, /kind:\s*"image"[\s\S]*?src:\s*"\/kllogo\.jpg"[\s\S]*?temporary:\s*false/);
   assert.doesNotMatch(config, /dinktopia|@|\+63|GCash/i);
@@ -4525,7 +4524,7 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(customerHtml, /aria-label="Primary navigation"/i);
   assert.match(customerHtml, /aria-controls="primary-navigation"/i);
   assert.match(customerHtml, /aria-expanded="false"/i);
-  assert.match(documentText(customerHtml), /Setup in progress/i);
+  assert.match(documentText(customerHtml), /Checking availability/i);
   assert.match(customerHtml, /class="setup-unavailable-card"[^>]*role="status"/i);
   assert.match(booking, /aria-label="Booking actions"/i);
   assert.match(booking, /aria-label="Booking progress"/i);

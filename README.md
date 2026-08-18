@@ -9,20 +9,18 @@ The original Dinktopia tenant configuration remains registered for its own
 deployment. This build fixes the active tenant at `kl-pickleball-court`;
 browser input cannot select or override that scope.
 
-## Safety and setup state
+## Safety and launch state
 
-K&L is intentionally provisioned as `setup_required`, with provisional preview
-mode enabled and public booking disabled. The deployment hostname
-`klpickleball.pages.dev` is configured as the tenant's production origin. No
-venue address, court inventory, operating hours, prices, payment destination,
-contact details, or booking policies are invented in this repository. Missing
-operational data is shown as setup-in-progress or coming-soon content and must
-later be entered through the management system.
+K&L is active and public booking is enabled on the canonical production origin
+`klpickleball.pages.dev`. Courts, schedules, rates, payment details, policies,
+and readiness are loaded from the tenant-scoped shared platform rather than
+duplicated in this repository. The physical venue address and public support
+channel still require verified owner data before public marketing; they must
+never be guessed or copied from another tenant.
 
 The initial K&L brand direction is a warm, welcoming neighborhood club, using
 the tagline “Your local court. Your next rally.” and a forest, cream, citrus, and coral
-palette. The current text wordmark remains temporary, and no social sharing
-image is configured until an approved K&L-owned asset is available.
+palette. The official K&L badge and social image are configured.
 
 When the public Supabase values are absent, the UI runs in a clearly marked
 private preview mode. Preview activity is non-authoritative and must not write
@@ -38,22 +36,16 @@ Booking recovery, browser storage, policy versions, calendar exports, download
 filenames, email context, and share content are likewise namespaced from the
 active tenant configuration.
 
-## Configuration still required
+## Launch details still required
 
 Configure these through the management system before launch:
 
-- official logo and brand assets;
-- address, map/location information, and contact details;
-- court count and court information;
-- operating hours, rates, and pricing periods;
-- confirmation that `klpickleball.pages.dev` is registered as the verified
-  production origin in the shared platform;
-- payment methods, recipient details, and instructions;
-- cancellation, rescheduling, refund, and booking policies; and
-- the initial authorized owner and platform readiness approvals.
-
-The temporary text wordmark uses the existing logo container dimensions, so an
-official K&L logo can replace it without redesigning the pages.
+- verified address, map/location information, and public support details;
+- production tenant-isolation tests for every privileged backend endpoint;
+- server-side unpaid-hold abuse controls and monitoring;
+- a reviewed privacy notice and data-retention process;
+- a backup owner/admin plus MFA for sensitive operations; and
+- production smoke tests, alerting, and a documented rollback procedure.
 
 ## Local development
 

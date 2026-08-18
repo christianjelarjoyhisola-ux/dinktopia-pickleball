@@ -58,7 +58,7 @@ export const klPickleballCourtConfig = {
       alt: "K&L Pickleball Courts",
       temporary: false,
     },
-    socialImagePath: "/og.png",
+    socialImagePath: "/og.webp",
   },
   previewCourts: [],
 } as const satisfies KlPickleballCourtTenantConfig;
