@@ -4257,7 +4257,7 @@ function RallyBookingSummary({
     <aside className="booking-summary rally-booking-summary surface-card" aria-label="Booking summary">
       <p className="player-kicker">Your court hold</p>
       <h3>{courts.length} court{courts.length === 1 ? "" : "s"} held</h3>
-      <p className="summary-instruction">Complete the player details below to continue to payment.</p>
+      <p className="summary-instruction">Complete your details below to continue to payment.</p>
       <div className="summary-detail">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M16 3v4M8 3v4M3 10h18" /></svg>
         <span><strong>{dateLabel}</strong><small>{slotLabel}</small></span>
