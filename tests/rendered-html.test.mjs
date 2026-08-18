@@ -1020,6 +1020,38 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-reviewing\s*\{[^}]*background:\s*#91a9bd/s);
   assert.match(publicCss, /\.kl-court-site\.booking-route \.slot-legend \.legend-confirmed\s*\{[^}]*background:\s*#16845b/s);
   assert.match(
+    booking,
+    /const visibleHourlyRates = Array\.from\(new Set\([\s\S]*?visibleScheduleHourSet\.has\(slot\.hour\)[\s\S]*?slot\.price[\s\S]*?\.sort\(\(left, right\) => left - right\)/,
+    "expected the public rate disclosure to derive from the selected date's authoritative slot prices",
+  );
+  assert.match(
+    booking,
+    /const variableHourlyRates = visibleHourlyRates\.length > 1[\s\S]*?variableHourlyRates && maximumVisibleHourlyRate !== null[\s\S]*?peso\(minimumVisibleHourlyRate\)[\s\S]*?peso\(maximumVisibleHourlyRate\)[\s\S]*?per court-hour[\s\S]*?: `\$\{peso\(minimumVisibleHourlyRate\)\} per court-hour`/,
+    "expected uniform schedules to show one rate and variable schedules to show a truthful range",
+  );
+  assert.match(
+    booking,
+    /function bookingFeeDisclosure\([\s\S]*?case "fixed_per_hour":[\s\S]*?booking fee per booked court-hour[\s\S]*?case "fixed_per_booking":[\s\S]*?booking fee per booking[\s\S]*?case "percentage":[\s\S]*?% booking fee/,
+    "expected the Step 1 disclosure to distinguish every configured booking-fee model",
+  );
+  assert.match(
+    booking,
+    /className="schedule-pricing-disclosure"[\s\S]*?Hourly court rate[\s\S]*?hourlyRateDisclosure[\s\S]*?Booking fee[\s\S]*?scheduleBookingFeeDisclosure[\s\S]*?Exact rate shown in each open slot\./,
+  );
+  assert.ok(
+    (matrixSource.match(/className="availability-cell-price">\{peso\(slot\.price\)\}/g) ?? []).length >= 2,
+    "expected variable-rate prices in both desktop and mobile open-slot cells",
+  );
+  assert.match(
+    matrixSource,
+    /\$\{peso\(slot\.price\)\} per court-hour/,
+    "expected selectable slot prices in accessible names",
+  );
+  assert.match(
+    publicCss,
+    /@media \(max-width: 760px\)[\s\S]*?\.booking-route \.schedule-pricing-disclosure\s*\{[^}]*grid-template-columns:\s*1fr/s,
+  );
+  assert.match(
     matrixSource,
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
   );

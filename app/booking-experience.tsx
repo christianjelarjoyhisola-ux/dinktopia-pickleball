@@ -1738,6 +1738,21 @@ function calculateBookingFee(
   }
 }
 
+function bookingFeeDisclosure(bookingFee: TenantBootstrap["bookingFee"]) {
+  const amount = bookingFee?.feeAmount ?? 0;
+  if (!amount) return "No booking fee";
+  switch (bookingFee?.feeMode) {
+    case "fixed_per_hour":
+      return `${peso(amount)} booking fee per booked court-hour`;
+    case "fixed_per_booking":
+      return `${peso(amount)} booking fee per booking`;
+    case "percentage":
+      return `${amount.toLocaleString(activeTenant.identity.locale, { maximumFractionDigits: 2 })}% booking fee`;
+    default:
+      return "Booking fee shown after selection";
+  }
+}
+
 const fieldErrorId = (id: string, field: string) => `${id}-${field}-error`;
 
 export function BookingExperience({
@@ -2045,6 +2060,25 @@ export function BookingExperience({
     ).length,
     0,
   );
+  const visibleHourlyRates = Array.from(new Set(
+    schedule.flatMap((court) => court.slots)
+      .filter((slot) =>
+        visibleScheduleHourSet.has(slot.hour) &&
+        typeof slot.price === "number" &&
+        Number.isFinite(slot.price) &&
+        slot.price >= 0,
+      )
+      .map((slot) => slot.price),
+  )).sort((left, right) => left - right);
+  const minimumVisibleHourlyRate = visibleHourlyRates[0] ?? null;
+  const maximumVisibleHourlyRate = visibleHourlyRates.at(-1) ?? null;
+  const variableHourlyRates = visibleHourlyRates.length > 1;
+  const hourlyRateDisclosure = minimumVisibleHourlyRate === null
+    ? "Rates unavailable"
+    : variableHourlyRates && maximumVisibleHourlyRate !== null
+      ? `${peso(minimumVisibleHourlyRate)}–${peso(maximumVisibleHourlyRate)} per court-hour`
+      : `${peso(minimumVisibleHourlyRate)} per court-hour`;
+  const scheduleBookingFeeDisclosure = bookingFeeDisclosure(bootstrap?.bookingFee);
   const paymentMethod: PaymentMethod | null = bootstrap?.paymentMethods.find(
     (method) => (method.methodCode ?? method.code ?? "").toLowerCase() === "gcash",
   ) ?? null;
@@ -3733,6 +3767,20 @@ export function BookingExperience({
                           </div>
                         </div>
 
+                        {visibleAvailabilityState !== "error" && visibleHourlyRates.length > 0 && (
+                          <div className="schedule-pricing-disclosure" aria-label={`${hourlyRateDisclosure}. ${scheduleBookingFeeDisclosure}.`}>
+                            <div>
+                              <span>Hourly court rate</span>
+                              <strong>{hourlyRateDisclosure}</strong>
+                            </div>
+                            <div>
+                              <span>Booking fee</span>
+                              <strong>{scheduleBookingFeeDisclosure}</strong>
+                            </div>
+                            {variableHourlyRates && <small>Exact rate shown in each open slot.</small>}
+                          </div>
+                        )}
+
                         {visibleAvailabilityState === "loading" && schedule.length === 0 && (
                           <div className="availability-loading" role="status" aria-live="polite">
                             <span className="spinner" aria-hidden="true" />
@@ -3853,9 +3901,9 @@ export function BookingExperience({
                                             className={`availability-cell${slot?.hasStarted ? " busy done" : displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
-                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                            aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && !displayedState && slot ? `, ${peso(slot.price)} per court-hour` : ""}`}
                                             onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
-                                          ><span aria-hidden="true" /><small>{stateLabel}</small></button>
+                                          ><span aria-hidden="true" /><small>{stateLabel}</small>{variableHourlyRates && !busy && !displayedState && slot && <em className="availability-cell-price">{peso(slot.price)}</em>}</button>
                                         );
                                       })}
                                     </Fragment>
@@ -3906,9 +3954,9 @@ export function BookingExperience({
                                           className={`availability-cell mobile-availability-cell${slot?.hasStarted ? " busy done" : displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
                                           disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
-                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
+                                          aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && !displayedState && slot ? `, ${peso(slot.price)} per court-hour` : ""}`}
                                           onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
-                                        ><span aria-hidden="true" /><small>{stateLabel}</small></button>
+                                        ><span aria-hidden="true" /><small>{stateLabel}</small>{variableHourlyRates && !busy && !displayedState && slot && <em className="availability-cell-price">{peso(slot.price)}</em>}</button>
                                       );
                                     })}
                                   </Fragment>
