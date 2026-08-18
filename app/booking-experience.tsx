@@ -4,6 +4,8 @@ import Image from "next/image";
 import {
   CalendarDays,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Copy,
   Grid2X2,
@@ -1758,6 +1760,8 @@ export function BookingExperience({
   const dates = useMemo(() => getDateOptions(Math.min(Math.max(dateHorizon + 1, 2), 31)), [dateHorizon]);
   const formId = useId();
   const bookingSectionRef = useRef<HTMLElement>(null);
+  const dateSelectorRef = useRef<HTMLFieldSetElement>(null);
+  const dateRailRef = useRef<HTMLDivElement>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
@@ -1885,12 +1889,28 @@ export function BookingExperience({
   const selectedSlot = selectedSlotDetails[0]?.slot ?? null;
   const selectedDateDetails = dates.find((date) => date.iso === selectedDate);
   const selectedBaseDateLabel = selectedDateDetails?.long ?? selectedDate;
+  const dateRailDates = useMemo(() => dates, [dates]);
+  const selectedDateIndex = dates.findIndex((date) => date.iso === selectedDate);
+  const previousBookingDate = selectedDateIndex > 0 ? dates[selectedDateIndex - 1] : null;
+  const nextBookingDate = selectedDateIndex >= 0 && selectedDateIndex < dates.length - 1
+    ? dates[selectedDateIndex + 1]
+    : null;
   const selectedFollowingDate = nextIsoDate(selectedDate);
   const selectedNextDayDateSuffix = selectionIncludesNextDay(selectedSlots)
     ? selectedFollowingDate
       ? ` into ${longDateLabel(selectedFollowingDate)} (next day)`
       : " into the next day"
     : "";
+
+  useEffect(() => {
+    const rail = dateRailRef.current;
+    const selectedOption = rail?.querySelector<HTMLElement>(`[data-booking-date="${selectedDate}"]`);
+    if (!rail || !selectedOption) return;
+    rail.scrollTo({
+      left: selectedOption.offsetLeft - (rail.clientWidth - selectedOption.clientWidth) / 2,
+      behavior: "smooth",
+    });
+  }, [selectedDate]);
   const selectedBookingDateLabel = `${selectedBaseDateLabel}${selectedNextDayDateSuffix}`;
   const availableCount = schedule.reduce(
     (count, court) => count + court.slots.filter((slot) => slot.status !== "unavailable").length,
@@ -2513,7 +2533,6 @@ export function BookingExperience({
     } else {
       setLiveMessage(resetMessage);
     }
-    setSchedule([]);
     setScheduleDate("");
     setAvailabilityState("loading");
     setSelectedDate(date);
@@ -3491,16 +3510,17 @@ export function BookingExperience({
                         <div><p className="booking-card-kicker">Court booking</p><h3>Choose your slots</h3></div>
                       </div>
 
-                      <fieldset className="booking-fieldset field-group">
+                      <fieldset ref={dateSelectorRef} className="booking-fieldset field-group booking-date-fieldset">
                         <legend className="sr-only">Select a date</legend>
-                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Today + next 5 days</span></div>
-                        <div className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
-                          {dates.slice(0, 6).map((date) => (
+                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Today + next {Math.max(0, dateRailDates.length - 1)} days</span></div>
+                        <div ref={dateRailRef} className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
+                          {dateRailDates.map((date) => (
                             <button
                               type="button"
                               key={date.iso}
                               className={`date-option ${selectedDate === date.iso ? "is-selected selected" : ""}`}
                               role="radio"
+                              data-booking-date={date.iso}
                               aria-checked={selectedDate === date.iso}
                               aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
@@ -3513,6 +3533,43 @@ export function BookingExperience({
                         </div>
                         {selectedSlots.length > 0 && <p className="date-selection-note">Changing the date clears your selected court-hours.</p>}
                       </fieldset>
+
+                      <div className="mobile-sticky-date" role="region" aria-label="Current booking date">
+                        <button
+                          type="button"
+                          className="mobile-sticky-date-nav"
+                          disabled={!previousBookingDate}
+                          aria-label="Previous booking date"
+                          onClick={() => previousBookingDate && chooseDate(previousBookingDate.iso)}
+                        ><ChevronLeft aria-hidden="true" /></button>
+                        <button
+                          type="button"
+                          className="mobile-sticky-date-current"
+                          onClick={() => {
+                            const rail = dateRailRef.current;
+                            const selectedOption = rail?.querySelector<HTMLElement>(`[data-booking-date="${selectedDate}"]`);
+                            if (rail && selectedOption) {
+                              rail.scrollTo({
+                                left: selectedOption.offsetLeft - (rail.clientWidth - selectedOption.clientWidth) / 2,
+                                behavior: "smooth",
+                              });
+                            }
+                            dateSelectorRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                          }}
+                          aria-label={`${selectedBaseDateLabel}. Return to all booking dates.`}
+                        >
+                          <span className="mobile-sticky-date-icon" aria-hidden="true"><CalendarDays /></span>
+                          <span><small>Booking date</small><strong>{selectedDateDetails ? `${selectedDateDetails.day}, ${selectedDateDetails.month} ${selectedDateDetails.date}` : selectedBaseDateLabel}</strong></span>
+                          <em>All dates</em>
+                        </button>
+                        <button
+                          type="button"
+                          className="mobile-sticky-date-nav"
+                          disabled={!nextBookingDate}
+                          aria-label="Next booking date"
+                          onClick={() => nextBookingDate && chooseDate(nextBookingDate.iso)}
+                        ><ChevronRight aria-hidden="true" /></button>
+                      </div>
 
                       <fieldset className={`booking-fieldset availability-fieldset field-group availability-section${selectedSlots.length ? "" : " waiting"}`}>
                         <legend className="sr-only">Choose court-hours</legend>
@@ -3542,7 +3599,7 @@ export function BookingExperience({
                           </div>
                         </div>
 
-                        {visibleAvailabilityState === "loading" && (
+                        {visibleAvailabilityState === "loading" && schedule.length === 0 && (
                           <div className="availability-loading" role="status" aria-live="polite">
                             <span className="spinner" aria-hidden="true" />
                             <div><strong>Checking the court board…</strong><small>Looking for open whole-hour slots.</small></div>
@@ -3581,8 +3638,13 @@ export function BookingExperience({
                           </div>
                         )}
 
-                        {visibleAvailabilityState === "ready" && availableCount > 0 && displayCourts.length > 0 && (
-                          <div className="rally-availability-board">
+                        {(visibleAvailabilityState === "ready" || (visibleAvailabilityState === "loading" && schedule.length > 0)) && availableCount > 0 && displayCourts.length > 0 && (
+                          <div className={`rally-availability-board${visibleAvailabilityState === "loading" ? " is-refreshing" : ""}`} aria-busy={visibleAvailabilityState === "loading"}>
+                            {visibleAvailabilityState === "loading" && (
+                              <div className="availability-refreshing" role="status" aria-live="polite">
+                                <span className="spinner" aria-hidden="true" /> Updating court times
+                              </div>
+                            )}
                             <div
                               className="availability-scroll"
                               role="region"
@@ -3634,7 +3696,7 @@ export function BookingExperience({
                                             key={`${court.id}-${hour}`}
                                             className={`availability-cell${displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
-                                            disabled={busy || Boolean(displayedState)}
+                                            disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
                                             aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
                                             onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
                                           ><span aria-hidden="true" /><small>{stateLabel}</small></button>
@@ -3685,7 +3747,7 @@ export function BookingExperience({
                                           key={`${court.id}-${hour}`}
                                           className={`availability-cell mobile-availability-cell${displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
-                                          disabled={busy || Boolean(displayedState)}
+                                          disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
                                           aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
                                           onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
                                         ><span aria-hidden="true" /><small>{stateLabel}</small></button>

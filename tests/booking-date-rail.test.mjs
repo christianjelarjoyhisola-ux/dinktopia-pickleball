@@ -10,9 +10,17 @@ test("booking starts on the tenant's current date and keeps elapsed slots unavai
 
   assert.match(booking, /timeZone: activeTenant\.identity\.timezone[\s\S]*?return new Date\(Date\.UTC/);
   assert.match(booking, /useState\(dates\[0\]\?\.iso \?\? ""\)/);
-  assert.match(booking, /dates\.slice\(0, 6\)\.map/);
+  assert.match(booking, /const dateRailDates = useMemo\(\(\) => dates, \[dates\]\)/);
+  assert.match(booking, /dateRailDates\.map/);
   assert.match(booking, /date\.isToday \? "Today" : date\.day/);
   assert.doesNotMatch(booking, /dates\.slice\(1, 7\)|index === 0 \? "Tomorrow"/);
+  assert.match(booking, /className="mobile-sticky-date"/);
+  assert.match(booking, /aria-label="Previous booking date"/);
+  assert.match(booking, /aria-label="Next booking date"/);
+  assert.match(booking, /Return to all booking dates/);
+  assert.doesNotMatch(booking, /function chooseDate[\s\S]*?setSchedule\(\[\]\)[\s\S]*?setSelectedDate\(date\)/);
+  assert.match(booking, /visibleAvailabilityState === "loading" && schedule\.length === 0/);
+  assert.match(booking, /rally-availability-board\$\{visibleAvailabilityState === "loading" \? " is-refreshing" : ""\}/);
   assert.match(booking, /candidateStartsAt < Date\.now\(\) \+ minimumLeadMinutes \* 60 \* 1000/);
   assert.match(booking, /status: tooSoon \|\| overlapsBlock \|\| overlapsBooking \? "unavailable" : "available"/);
 });

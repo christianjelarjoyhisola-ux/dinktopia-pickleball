@@ -988,7 +988,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     publicCss,
     /@media \(max-width: 760px\)[\s\S]*?\.booking-route \.availability-scroll\s*\{\s*display:\s*none[^}]*\}[\s\S]*?\.booking-route \.availability-mobile\s*\{[^}]*display:\s*block/s,
   );
-  const matrixStart = booking.indexOf('<div className="rally-availability-board">');
+  const matrixStart = booking.indexOf('<div className={`rally-availability-board');
   const matrixEnd = booking.indexOf("{isLive && selectedSlots.length", matrixStart);
   assert.ok(matrixStart >= 0 && matrixEnd > matrixStart, "expected the RallyOS responsive availability board");
   const matrixSource = booking.slice(matrixStart, matrixEnd);
@@ -1017,7 +1017,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
   );
   assert.match(matrixSource, /aria-pressed=\{isSelected\}/);
-  assert.match(matrixSource, /disabled=\{busy \|\| Boolean\(displayedState\)\}/);
+  assert.match(matrixSource, /disabled=\{busy \|\| Boolean\(displayedState\) \|\| visibleAvailabilityState === "loading"\}/);
   assert.match(
     matrixSource,
     /onClick=\{\(\) => slot && !busy && !displayedState && chooseSlot\(court, slot\)\}/,
@@ -1150,8 +1150,9 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   assert.match(
     chooseDateSource,
-    /setSchedule\(\[\]\);\s*setScheduleDate\(""\);\s*setAvailabilityState\("loading"\);\s*setSelectedDate\(date\);/s,
+    /setScheduleDate\(""\);\s*setAvailabilityState\("loading"\);\s*setSelectedDate\(date\);/s,
   );
+  assert.doesNotMatch(chooseDateSource, /setSchedule\(\[\]\)/);
   assert.doesNotMatch(
     chooseDateSource,
     /selectedSlots\.length[\s\S]*?return;[\s\S]*?setSelectedDate/,

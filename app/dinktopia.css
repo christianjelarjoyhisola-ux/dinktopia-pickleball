@@ -7560,3 +7560,93 @@
   box-shadow: inset 3px 0 0 var(--tenant-citrus, #b8df4d);
   background: color-mix(in srgb, var(--tenant-citrus, #b8df4d) 12%, #fff);
 }
+.mobile-sticky-date { display: none; }
+
+.booking-route .rally-availability-board { position: relative; }
+.booking-route .rally-availability-board.is-refreshing .availability-scroll,
+.booking-route .rally-availability-board.is-refreshing .availability-mobile {
+  opacity: 0.72;
+  filter: saturate(0.72);
+  transition: opacity 180ms ease, filter 180ms ease;
+}
+.booking-route .availability-refreshing {
+  position: absolute;
+  z-index: 8;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid rgba(11, 41, 71, 0.14);
+  border-radius: 999px;
+  background: rgba(255, 254, 250, 0.96);
+  padding: 7px 10px;
+  color: #234f78;
+  font-size: 0.64rem;
+  font-weight: 750;
+  box-shadow: 0 8px 22px rgba(11, 41, 71, 0.12);
+  backdrop-filter: blur(12px);
+}
+.booking-route .availability-refreshing .spinner { width: 13px; height: 13px; border-width: 2px; }
+
+@media (max-width: 779.98px) {
+  .booking-route .booking-date-fieldset { scroll-margin-top: 92px; }
+  .booking-route .mobile-sticky-date {
+    position: sticky;
+    z-index: 18;
+    top: 75px;
+    display: grid;
+    min-height: 52px;
+    grid-template-columns: 38px minmax(0, 1fr) 38px;
+    align-items: center;
+    gap: 6px;
+    margin: 14px -7px -14px;
+    border: 1px solid rgba(11, 41, 71, 0.14);
+    border-radius: 15px;
+    background: rgba(255, 254, 250, 0.96);
+    padding: 6px;
+    box-shadow: 0 12px 30px rgba(11, 41, 71, 0.12), inset 0 1px rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px) saturate(1.12);
+  }
+  .booking-route .mobile-sticky-date-nav {
+    display: grid;
+    width: 38px;
+    height: 38px;
+    place-items: center;
+    border: 1px solid #d6dee5;
+    border-radius: 11px;
+    background: #fffefa;
+    color: #234f78;
+    cursor: pointer;
+  }
+  .booking-route .mobile-sticky-date-nav:disabled { opacity: 0.32; cursor: default; }
+  .booking-route .mobile-sticky-date-nav svg { width: 17px; height: 17px; stroke-width: 1.9; }
+  .booking-route .mobile-sticky-date-current {
+    display: grid;
+    min-width: 0;
+    min-height: 38px;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+    border: 0;
+    background: transparent;
+    padding: 0 3px;
+    color: #0b2947;
+    text-align: left;
+    cursor: pointer;
+  }
+  .booking-route .mobile-sticky-date-icon {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border-radius: 10px;
+    background: #e7f4ed;
+    color: #2f6f62;
+  }
+  .booking-route .mobile-sticky-date-icon svg { width: 16px; height: 16px; stroke-width: 1.8; }
+  .booking-route .mobile-sticky-date-current > span:nth-child(2) { display: grid; min-width: 0; gap: 1px; }
+  .booking-route .mobile-sticky-date-current small { color: #607184; font-size: 0.52rem; font-weight: 800; letter-spacing: 0.075em; text-transform: uppercase; }
+  .booking-route .mobile-sticky-date-current strong { overflow: hidden; font: 650 0.72rem/1.25 var(--font-display), sans-serif; text-overflow: ellipsis; white-space: nowrap; }
+  .booking-route .mobile-sticky-date-current em { border-radius: 999px; background: #eef2f4; padding: 5px 7px; color: #4c6072; font-size: 0.53rem; font-style: normal; font-weight: 750; white-space: nowrap; }
+}
