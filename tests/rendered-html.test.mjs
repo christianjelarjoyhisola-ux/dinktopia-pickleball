@@ -4731,6 +4731,28 @@ test("keeps the three-step checkout and confirmation compact, ordered, and compl
     /data-testid="hold-and-pay"[\s\S]*?type="submit"[\s\S]*?disabled=\{isSubmitting \|\| holdExpired \|\| !acceptedPolicy \|\| !liveSelectionSupported\}[\s\S]*?Saving details[\s\S]*?Review payment/,
   );
   assert.match(stepOne, /data-testid="booking-continue"[\s\S]*?createSelectionHold\(\)[\s\S]*?Hold &amp; continue/);
+  const createHoldStart = booking.indexOf("async function createSelectionHold()");
+  const completeDetailsStart = booking.indexOf("async function completeHeldBookingDetails()", createHoldStart);
+  const createHoldSource = booking.slice(createHoldStart, completeDetailsStart);
+  assert.match(
+    createHoldSource,
+    /adapter\.createHold\([\s\S]*?setPendingBooking\(booking\)[\s\S]*?setStep\(2\)[\s\S]*?setHoldIntroOpen\(true\)/,
+  );
+  assert.match(
+    booking,
+    /<dialog[\s\S]*?ref=\{holdIntroDialogRef\}[\s\S]*?aria-modal="true"[\s\S]*?Complete your details before the timer ends\.[\s\S]*?formatHoldCountdown\(holdRemainingSeconds\)[\s\S]*?Continue to details[\s\S]*?<\/dialog>/,
+  );
+  assert.match(
+    booking,
+    /function continueToHeldDetails\(\)[\s\S]*?dialog\.close\(\)[\s\S]*?holdBannerRef\.current\?\.scrollIntoView[\s\S]*?fullNameInputRef\.current\?\.focus/,
+  );
+  assert.match(
+    booking,
+    /onCancel=\{\(event\) => \{[\s\S]*?event\.preventDefault\(\);[\s\S]*?continueToHeldDetails\(\)/,
+  );
+  const restoreHoldStart = booking.indexOf("const restoreActiveHold = async () =>");
+  const restoreHoldEnd = booking.indexOf("void restoreActiveHold();", restoreHoldStart);
+  assert.doesNotMatch(booking.slice(restoreHoldStart, restoreHoldEnd), /setHoldIntroOpen\(true\)/);
   assert.match(stepTwo, /className="stage-footer form-footer">[\s\S]*?By continuing, you agree to the venue booking policy/);
   assert.match(
     booking,

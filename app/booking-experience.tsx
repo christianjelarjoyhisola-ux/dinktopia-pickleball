@@ -1766,6 +1766,9 @@ export function BookingExperience({
   const dateSelectorRef = useRef<HTMLFieldSetElement>(null);
   const dateRailRef = useRef<HTMLDivElement>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
+  const holdIntroDialogRef = useRef<HTMLDialogElement>(null);
+  const holdBannerRef = useRef<HTMLDivElement>(null);
+  const fullNameInputRef = useRef<HTMLInputElement>(null);
   const publicMenuButtonRef = useRef<HTMLButtonElement>(null);
   const bookingMenuButtonRef = useRef<HTMLButtonElement>(null);
   const primaryNavigationRef = useRef<HTMLElement>(null);
@@ -1884,6 +1887,7 @@ export function BookingExperience({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<BookingRecord | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
+  const [holdIntroOpen, setHoldIntroOpen] = useState(false);
   const [crossTabOwnershipHint, setCrossTabOwnershipHint] = useState<SlotOwnershipHint | null>(null);
   const [holdNow, setHoldNow] = useState(() => Date.now());
   const [liveMessage, setLiveMessage] = useState("");
@@ -2366,6 +2370,19 @@ export function BookingExperience({
   }, [pendingBooking?.expiresAt]);
 
   useEffect(() => {
+    const dialog = holdIntroDialogRef.current;
+    if (!dialog) return;
+
+    if (holdIntroOpen && !holdExpired) {
+      if (!dialog.open) dialog.showModal();
+      return;
+    }
+
+    if (dialog.open) dialog.close();
+    if (holdIntroOpen && holdExpired) queueMicrotask(() => setHoldIntroOpen(false));
+  }, [holdExpired, holdIntroOpen]);
+
+  useEffect(() => {
     if (!isBookingPage) return;
 
     const syncOwnershipHint = (rawValue?: string | null) => {
@@ -2563,6 +2580,20 @@ export function BookingExperience({
     );
   }
 
+  function continueToHeldDetails() {
+    const dialog = holdIntroDialogRef.current;
+    if (dialog?.open) dialog.close();
+    setHoldIntroOpen(false);
+    window.requestAnimationFrame(() => {
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      holdBannerRef.current?.scrollIntoView({
+        behavior: reduceMotion ? "auto" : "smooth",
+        block: "center",
+      });
+      fullNameInputRef.current?.focus({ preventScroll: true });
+    });
+  }
+
   function openBooking(courtId?: string) {
     if (courtId) chooseCourt(courtId);
     setMode("book");
@@ -2716,6 +2747,7 @@ export function BookingExperience({
       setPendingBooking(booking);
       setHoldNow(Date.now());
       setStep(2);
+      setHoldIntroOpen(true);
       setLiveMessage(
         isLive
           ? `Booking ${booking.reference} is held. Add player details before the timer expires.`
@@ -3948,7 +3980,7 @@ export function BookingExperience({
                         <div><p className="player-kicker">Player details</p><h3>Tell us who to expect</h3></div>
                       </div>
                       {pendingBooking && (
-                        <div className={`notice-banner ${holdExpired ? "" : "notice-success"}`} role={holdExpired ? "alert" : "status"}>
+                        <div ref={holdBannerRef} className={`notice-banner ${holdExpired ? "" : "notice-success"}`} role={holdExpired ? "alert" : "status"}>
                           <div>
                             <strong>{holdExpired ? "Hold expired or released" : `Slots held · ${pendingBooking.reference}`}</strong>
                             <span>{holdExpired ? "Return to the schedule and choose another time." : holdRemainingSeconds == null ? "The server controls this hold window." : `Complete these details within ${formatHoldCountdown(holdRemainingSeconds)}.`}</span>
@@ -3959,6 +3991,7 @@ export function BookingExperience({
                         <label className="player-field full">
                           <span>Full name</span>
                           <input
+                            ref={fullNameInputRef}
                             id={`${formId}-name`}
                             name="fullName"
                             required
@@ -4269,6 +4302,31 @@ export function BookingExperience({
         </section>}
 
       </main>
+
+      <dialog
+        ref={holdIntroDialogRef}
+        className="hold-intro-dialog"
+        aria-modal="true"
+        aria-labelledby={`${formId}-hold-intro-title`}
+        aria-describedby={`${formId}-hold-intro-description`}
+        onCancel={(event) => {
+          event.preventDefault();
+          continueToHeldDetails();
+        }}
+        onClose={() => setHoldIntroOpen(false)}
+      >
+        <div className="hold-intro-icon" aria-hidden="true"><Clock3 /></div>
+        <p className="player-kicker">Slots secured</p>
+        <h2 id={`${formId}-hold-intro-title`}>{selectedCourtCount === 1 ? "Your court is held" : "Your courts are held"}</h2>
+        <p id={`${formId}-hold-intro-description`}>Complete your details before the timer ends.</p>
+        <div className="hold-intro-countdown" aria-label="Time remaining on your booking hold">
+          <span>Time remaining</span>
+          <strong>{holdRemainingSeconds == null ? "Server timed" : formatHoldCountdown(holdRemainingSeconds)}</strong>
+        </div>
+        <button className="button button-blue" type="button" onClick={continueToHeldDetails}>
+          Continue to details <span aria-hidden="true">→</span>
+        </button>
+      </dialog>
 
       <footer className="site-footer">
         <div className="site-container footer-grid">

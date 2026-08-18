@@ -8055,3 +8055,99 @@
     content: "→";
   }
 }
+
+/* A newly-created hold gets one focused handoff before the player-details
+ * form. The native modal provides background inertness and focus containment. */
+.hold-intro-dialog {
+  width: min(430px, calc(100vw - 32px));
+  max-width: none;
+  margin: auto;
+  border: 1px solid rgba(23, 64, 108, 0.14);
+  border-radius: 24px;
+  background: #fffdf8;
+  box-shadow: 0 28px 80px rgba(8, 34, 61, 0.28);
+  color: #0d2d4d;
+  padding: 30px;
+  text-align: center;
+}
+
+.hold-intro-dialog[open] {
+  animation: hold-intro-enter 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.hold-intro-dialog::backdrop {
+  background: rgba(7, 23, 42, 0.62);
+  backdrop-filter: blur(5px);
+}
+
+.hold-intro-dialog .hold-intro-icon {
+  display: grid;
+  width: 58px;
+  height: 58px;
+  place-items: center;
+  margin: 0 auto 18px;
+  border: 1px solid rgba(45, 102, 158, 0.18);
+  border-radius: 18px;
+  background: linear-gradient(145deg, #e5f8ec, #eef4ff);
+  color: #1f6398;
+}
+
+.hold-intro-dialog .hold-intro-icon svg { width: 27px; height: 27px; }
+.hold-intro-dialog .player-kicker { color: #267454; }
+
+.hold-intro-dialog h2 {
+  margin-top: 6px;
+  font-size: clamp(1.55rem, 5vw, 2rem);
+  letter-spacing: -0.035em;
+}
+
+.hold-intro-dialog > p:last-of-type {
+  max-width: 32ch;
+  margin: 10px auto 0;
+  color: #496277;
+  line-height: 1.55;
+}
+
+.hold-intro-countdown {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 22px 0;
+  border: 1px solid rgba(35, 111, 74, 0.16);
+  border-radius: 14px;
+  background: #e9f7ed;
+  padding: 13px 16px;
+  color: #1f5c3e;
+  text-align: left;
+}
+
+.hold-intro-countdown span { font-size: 0.78rem; font-weight: 700; }
+.hold-intro-countdown strong {
+  min-width: 5ch;
+  font-variant-numeric: tabular-nums;
+  font-size: 1.1rem;
+}
+
+.hold-intro-dialog .button {
+  width: 100%;
+  min-height: 50px;
+  justify-content: center;
+}
+
+@keyframes hold-intro-enter {
+  from { opacity: 0; transform: translateY(12px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@media (max-width: 520px) {
+  .hold-intro-dialog {
+    width: calc(100vw - 24px);
+    border-radius: 20px;
+    padding: 24px 20px 20px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hold-intro-dialog[open] { animation: none; }
+}
