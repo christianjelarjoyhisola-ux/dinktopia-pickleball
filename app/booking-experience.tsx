@@ -1763,6 +1763,9 @@ export function BookingExperience({
   const dateSelectorRef = useRef<HTMLFieldSetElement>(null);
   const dateRailRef = useRef<HTMLDivElement>(null);
   const paymentHeadingRef = useRef<HTMLHeadingElement>(null);
+  const publicMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const bookingMenuButtonRef = useRef<HTMLButtonElement>(null);
+  const primaryNavigationRef = useRef<HTMLElement>(null);
   const bookingAttemptIdRef = useRef("");
   const bookingOwnsSelectionRef = useRef(false);
   const receiptSubmissionInFlightRef = useRef(false);
@@ -1780,6 +1783,79 @@ export function BookingExperience({
     announcement: "",
   });
   const selectedSlots = selectionState.items;
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+
+    const navigation = primaryNavigationRef.current;
+    const trigger = isBookingPage
+      ? bookingMenuButtonRef.current
+      : publicMenuButtonRef.current;
+    if (!navigation || !trigger) return;
+
+    const mobileMenuQuery = window.matchMedia(
+      isBookingPage ? "(max-width: 779.98px)" : "(max-width: 1179.98px)",
+    );
+    if (!mobileMenuQuery.matches) return;
+
+    const body = document.body;
+    const scrollPosition = window.scrollY;
+    const previousBodyPosition = body.style.position;
+    const previousBodyTop = body.style.top;
+    const previousBodyWidth = body.style.width;
+    const previousBodyOverflow = body.style.overflow;
+    const focusable = Array.from(
+      navigation.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ),
+    );
+
+    body.style.position = "fixed";
+    body.style.top = `-${scrollPosition}px`;
+    body.style.width = "100%";
+    body.style.overflow = "hidden";
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      focusable[0]?.focus();
+    });
+
+    function handleNavigationKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setMobileNavOpen(false);
+        return;
+      }
+      if (event.key !== "Tab" || focusable.length === 0) return;
+
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+
+    function closeNavigationAtDesktopWidth(event: MediaQueryListEvent) {
+      if (!event.matches) setMobileNavOpen(false);
+    }
+
+    document.addEventListener("keydown", handleNavigationKeyDown);
+    mobileMenuQuery.addEventListener("change", closeNavigationAtDesktopWidth);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", handleNavigationKeyDown);
+      mobileMenuQuery.removeEventListener("change", closeNavigationAtDesktopWidth);
+      body.style.position = previousBodyPosition;
+      body.style.top = previousBodyTop;
+      body.style.width = previousBodyWidth;
+      body.style.overflow = previousBodyOverflow;
+      window.scrollTo(0, scrollPosition);
+      if (document.contains(trigger)) trigger.focus();
+    };
+  }, [isBookingPage, mobileNavOpen]);
   const [schedule, setSchedule] = useState<CourtSchedule[]>([]);
   const [scheduleDate, setScheduleDate] = useState("");
   const [availabilityState, setAvailabilityState] = useState<
@@ -3087,27 +3163,19 @@ export function BookingExperience({
 
   return (
     <div
-      className={`dinktopia-site kl-court-site${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}
+      className={`dinktopia-site kl-court-site${!isBookingPage ? " public-route" : ""}${isHome ? " home-route" : ""}${isCourtsPage ? " courts-route" : ""}${isBookingPage ? " booking-route" : ""}${isBookingPage && mode === "book" ? " booking-new-route rallyos-player-shell player-mode" : ""}`}
       style={tenantBrandStyle}
     >
-      {isBookingPage ? (
-        <div className="preview-ribbon" role="status">
-          <strong>{checkingLiveSetup ? "Checking availability" : bookingSetupReady ? "Live booking" : "Booking unavailable"}</strong>
-          <span>{checkingLiveSetup ? "Loading verified court and payment details." : bookingSetupReady ? "Court availability and payments are connected." : "Online reservations are temporarily unavailable."}</span>
-        </div>
-      ) : checkingLiveSetup ? (
-        <div className="preview-ribbon" role="status">
-          <strong>Connecting to K&amp;L</strong><span>Loading verified venue and booking details.</span>
-        </div>
-      ) : !bookingSetupReady && (
+      {!checkingLiveSetup && !bookingSetupReady && (
         <div className="preview-ribbon" role="status">
           <strong>Booking unavailable</strong><span>Online reservations are temporarily unavailable.</span>
         </div>
       )}
       {isBookingPage && (
-        <header className={`booking-app-header ${!bookingSetupReady ? "has-preview-ribbon" : ""}`}>
+        <header className={`booking-app-header ${!checkingLiveSetup && !bookingSetupReady ? "has-preview-ribbon" : ""}`}>
           <div className="booking-app-mobile-bar">
             <button
+              ref={bookingMenuButtonRef}
               className="booking-app-menu-button"
               type="button"
               aria-expanded={mobileNavOpen}
@@ -3126,12 +3194,13 @@ export function BookingExperience({
             </div>
             <div className="booking-app-actions">
               <span className={`booking-app-status ${bookingSetupReady ? "is-live" : "is-setup"}`}>
-                <i aria-hidden="true" /> {checkingLiveSetup ? "Checking booking" : bookingSetupReady ? "Booking live" : "Booking unavailable"}
+                <i aria-hidden="true" /> {checkingLiveSetup ? "Checking availability" : bookingSetupReady ? "Booking live" : "Booking unavailable"}
               </span>
               <Link className="booking-app-manage-link" href="/book?mode=manage">Manage booking</Link>
             </div>
           </div>
           <nav
+            ref={primaryNavigationRef}
             id="primary-navigation"
             className={`primary-nav booking-app-navigation ${mobileNavOpen ? "is-open" : ""}`}
             aria-label="Primary navigation"
@@ -3143,10 +3212,11 @@ export function BookingExperience({
           </nav>
         </header>
       )}
-      {!isBookingPage && <header className={`site-header ${!bookingSetupReady ? "has-preview-ribbon" : ""}`}>
+      {!isBookingPage && <header className={`site-header ${!checkingLiveSetup && !bookingSetupReady ? "has-preview-ribbon" : ""}`}>
         <div className="site-container header-inner">
           <TenantWordmark priority />
           <button
+            ref={publicMenuButtonRef}
             className="menu-button"
             type="button"
             aria-expanded={mobileNavOpen}
@@ -3157,6 +3227,7 @@ export function BookingExperience({
             <span>{mobileNavOpen ? "Close" : "Menu"}</span>
           </button>
           <nav
+            ref={primaryNavigationRef}
             id="primary-navigation"
             className={`primary-nav ${mobileNavOpen ? "is-open" : ""}`}
             aria-label="Primary navigation"

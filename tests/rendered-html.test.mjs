@@ -1636,9 +1636,9 @@ test("uses a neutral connected-tenant state until readiness resolves", async () 
   const customerText = documentText(customerHtml);
   const managerText = documentText(managerHtml);
 
-  assert.match(customerHtml, /class="preview-ribbon"[^>]*role="status"/i);
-  assert.match(customerText, /Connecting to K&L/i);
-  assert.match(customerText, /Loading verified venue and booking details\./i);
+  assert.doesNotMatch(customerHtml, /class="preview-ribbon"[^>]*role="status"/i);
+  assert.doesNotMatch(customerText, /Connecting to K&L/i);
+  assert.doesNotMatch(customerText, /Loading verified venue and booking details\./i);
   assert.doesNotMatch(customerText, /Public reservations and payments remain disabled\./i);
   assert.match(customerHtml, /href="\/courts"/i);
   assert.doesNotMatch(customerHtml, /class="booking-zone section-pad"/i);
