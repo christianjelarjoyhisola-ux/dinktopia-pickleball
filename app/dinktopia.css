@@ -7535,3 +7535,16 @@
 ) {
   font-variant-numeric: tabular-nums;
 }
+
+/* Final booking-date state: readable on the premium light selected surface. */
+.kl-court-site.booking-route .date-rail .date-option.is-selected {
+  border-color: #285a87;
+  background: #e8eef4;
+  color: #0b2947;
+  box-shadow: inset 0 0 0 1px #285a87;
+}
+
+.kl-court-site.booking-route .date-rail .date-option.is-selected :is(span, small) {
+  color: #234f78;
+  font-weight: 700;
+}

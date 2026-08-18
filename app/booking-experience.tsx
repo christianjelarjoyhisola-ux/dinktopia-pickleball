@@ -1766,7 +1766,7 @@ export function BookingExperience({
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [mode, setMode] = useState<"book" | "manage">(initialMode);
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
-  const [selectedDate, setSelectedDate] = useState(dates[1]?.iso ?? "");
+  const [selectedDate, setSelectedDate] = useState(dates[0]?.iso ?? "");
   const [, setSelectedCourtId] = useState(() => {
     if (isLive) return "";
     return previewCourts.find((court) => court.slug === initialCourtSlug)?.id ?? previewCourts[0]?.id ?? "";
@@ -3464,9 +3464,9 @@ export function BookingExperience({
 
                       <fieldset className="booking-fieldset field-group">
                         <legend className="sr-only">Select a date</legend>
-                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Next 6 days</span></div>
+                        <div className="booking-field-label field-group-label"><strong>Select a date</strong><span>Today + next 5 days</span></div>
                         <div className="date-rail date-strip" role="radiogroup" aria-label="Select a booking date">
-                          {dates.slice(1, 7).map((date, index) => (
+                          {dates.slice(0, 6).map((date) => (
                             <button
                               type="button"
                               key={date.iso}
@@ -3476,7 +3476,7 @@ export function BookingExperience({
                               aria-label={date.long}
                               onClick={() => chooseDate(date.iso)}
                             >
-                              <span>{index === 0 ? "Tomorrow" : date.day}</span>
+                              <span>{date.isToday ? "Today" : date.day}</span>
                               <strong>{date.date}</strong>
                               <small>{date.month}</small>
                             </button>
