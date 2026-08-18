@@ -7481,7 +7481,7 @@
 .booking-route .availability-cell { padding: 5px 3px; display: grid; place-items: center; align-content: center; gap: 5px; background: white; color: var(--muted); cursor: pointer; transition: none; }
 .booking-route .availability-cell > span { width: 7px; height: 7px; border: 1px solid #a9b8b2; border-radius: 50%; background: #eff8f4; }
 .booking-route .availability-cell small { font-size: 0.6rem; font-weight: 750; }
-.booking-route .availability-cell-price { color: inherit; font-size: 0.51rem; font-style: normal; font-weight: 800; line-height: 1; white-space: nowrap; }
+.booking-route .availability-cell-price { color: inherit; font-size: 0.58rem; font-style: normal; font-weight: 800; line-height: 1; white-space: nowrap; }
 .booking-route .schedule-pricing-disclosure { margin: 10px 0 14px; padding: 12px 14px; display: grid; grid-template-columns: repeat(2, minmax(0, max-content)) minmax(0, 1fr); align-items: center; gap: 10px 24px; border: 1px solid #d8e5df; border-radius: 13px; background: #f3faf6; color: var(--ink); }
 .booking-route .schedule-pricing-disclosure > div { display: grid; gap: 2px; }
 .booking-route .schedule-pricing-disclosure span { color: var(--muted); font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; }
@@ -7523,7 +7523,7 @@
   .booking-route .mobile-time-label small { color: var(--muted); font-size: 0.54rem; }
   .booking-route .mobile-availability-cell { min-width: 0; padding: 4px 1px; }
   .booking-route .mobile-availability-cell small { max-width: 100%; overflow: hidden; font-size: 0.57rem; text-overflow: ellipsis; }
-  .booking-route .mobile-availability-cell .availability-cell-price { font-size: 0.47rem; }
+  .booking-route .mobile-availability-cell .availability-cell-price { font-size: 0.56rem; }
   .booking-route .mobile-availability-cell > span { width: 6px; height: 6px; }
   .booking-route .schedule-pricing-disclosure { grid-template-columns: 1fr; gap: 9px; margin-top: 8px; padding: 11px 12px; }
   .booking-route .schedule-pricing-disclosure > div { grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 10px; }

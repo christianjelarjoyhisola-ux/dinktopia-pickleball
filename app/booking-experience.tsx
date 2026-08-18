@@ -3777,7 +3777,7 @@ export function BookingExperience({
                               <span>Booking fee</span>
                               <strong>{scheduleBookingFeeDisclosure}</strong>
                             </div>
-                            {variableHourlyRates && <small>Exact rate shown in each open slot.</small>}
+                            <small>Exact rate shown in every open slot.</small>
                           </div>
                         )}
 
@@ -3903,7 +3903,7 @@ export function BookingExperience({
                                             disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
                                             aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && !displayedState && slot ? `, ${peso(slot.price)} per court-hour` : ""}`}
                                             onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
-                                          ><span aria-hidden="true" /><small>{stateLabel}</small>{variableHourlyRates && !busy && !displayedState && slot && <em className="availability-cell-price">{peso(slot.price)}</em>}</button>
+                                          ><span aria-hidden="true" /><small>{stateLabel}</small>{!busy && !displayedState && slot && <em className="availability-cell-price">{peso(slot.price)}</em>}</button>
                                         );
                                       })}
                                     </Fragment>
@@ -3956,7 +3956,7 @@ export function BookingExperience({
                                           disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
                                           aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}${!busy && !displayedState && slot ? `, ${peso(slot.price)} per court-hour` : ""}`}
                                           onClick={() => slot && !busy && !displayedState && chooseSlot(court, slot)}
-                                        ><span aria-hidden="true" /><small>{stateLabel}</small>{variableHourlyRates && !busy && !displayedState && slot && <em className="availability-cell-price">{peso(slot.price)}</em>}</button>
+                                        ><span aria-hidden="true" /><small>{stateLabel}</small>{!busy && !displayedState && slot && <em className="availability-cell-price">{peso(slot.price)}</em>}</button>
                                       );
                                     })}
                                   </Fragment>

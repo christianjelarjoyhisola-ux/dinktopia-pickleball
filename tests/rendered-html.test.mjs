@@ -1036,11 +1036,16 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   );
   assert.match(
     booking,
-    /className="schedule-pricing-disclosure"[\s\S]*?Hourly court rate[\s\S]*?hourlyRateDisclosure[\s\S]*?Booking fee[\s\S]*?scheduleBookingFeeDisclosure[\s\S]*?Exact rate shown in each open slot\./,
+    /className="schedule-pricing-disclosure"[\s\S]*?Hourly court rate[\s\S]*?hourlyRateDisclosure[\s\S]*?Booking fee[\s\S]*?scheduleBookingFeeDisclosure[\s\S]*?Exact rate shown in every open slot\./,
   );
   assert.ok(
     (matrixSource.match(/className="availability-cell-price">\{peso\(slot\.price\)\}/g) ?? []).length >= 2,
-    "expected variable-rate prices in both desktop and mobile open-slot cells",
+    "expected exact prices in both desktop and mobile open-slot cells",
+  );
+  assert.doesNotMatch(
+    matrixSource,
+    /variableHourlyRates && !busy && !displayedState/,
+    "expected every selectable slot to show its own price, even when the visible rates currently match",
   );
   assert.match(
     matrixSource,
