@@ -26,6 +26,9 @@ test("keeps the K&L public shell stable and readable on mobile", () => {
   assert.match(experience, /if \(document\.contains\(trigger\)\) trigger\.focus\(\)/);
   assert.match(experience, /!checkingLiveSetup && !bookingSetupReady && \(/);
   assert.doesNotMatch(experience, /<strong>Connecting to K&amp;L<\/strong>/);
+  assert.match(experience, /className="nav-admin-link" href="\/manage"/);
+  assert.match(experience, /className="footer-admin-link" href="\/manage"/);
+  assert.match(styles, /\.kl-court-site\.public-route \.primary-nav > \.nav-admin-link/);
   assert.match(styles, /\.mobile-sticky-date-nav[\s\S]*?width: 44px;[\s\S]*?height: 44px;/);
   assert.match(styles, /\.mobile-sticky-date-current[\s\S]*?min-height: 44px;/);
   assert.doesNotMatch(styles, /user-scalable\s*:\s*no|maximum-scale\s*:\s*1/);

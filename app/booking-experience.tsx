@@ -3255,6 +3255,9 @@ export function BookingExperience({
             >
               Manage booking
             </Link>
+            <Link className="nav-admin-link" href="/manage" onClick={() => setMobileNavOpen(false)}>
+              Admin login
+            </Link>
             <Link className="button button-small button-lime" href="/book" onClick={() => setMobileNavOpen(false)}>
               Reserve a court <span aria-hidden="true">↗</span>
             </Link>
@@ -4198,7 +4201,7 @@ export function BookingExperience({
           <div><TenantWordmark footer /><p>Local court time, made easy.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Reserve a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p><strong>{venueHoursLabel ?? "Check live court availability"}</strong></p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
-          <div><h2>Booking status</h2><p>{checkingLiveSetup ? <>Checking live courts.<br />Loading verified availability.</> : bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Online booking unavailable.<br />Please try again later.</>}</p></div>
+          <div><h2>Booking status</h2><p>{checkingLiveSetup ? <>Checking live courts.<br />Loading verified availability.</> : bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Online booking unavailable.<br />Please try again later.</>}</p><Link className="footer-admin-link" href="/manage">Admin login <span aria-hidden="true">→</span></Link></div>
         </div>
         <div className="site-container footer-bottom"><span>© 2026 {activeTenant.identity.name}</span><span>K&amp;L court booking</span></div>
       </footer>

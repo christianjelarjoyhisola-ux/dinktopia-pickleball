@@ -7916,3 +7916,42 @@
   .kl-court-site.home-route .hero-proof strong { font-size: 0.84rem; }
   .kl-court-site.home-route .hero-proof span { font-size: 0.58rem; }
 }
+
+/* Owner access stays discoverable on every guest page without competing with
+ * the primary reservation action. */
+.kl-court-site.public-route .nav-admin-link {
+  color: var(--home-forest, #0b2947) !important;
+  font-weight: 750 !important;
+}
+
+.kl-court-site.public-route .footer-admin-link {
+  display: inline-flex;
+  width: fit-content;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: #0b2947 !important;
+  font-weight: 750;
+}
+
+@media (min-width: 1180px) {
+  .kl-court-site.public-route .nav-admin-link {
+    min-height: 32px !important;
+    border-left: 1px solid rgba(16, 42, 67, 0.14) !important;
+    padding-left: 22px !important;
+  }
+}
+
+@media (max-width: 1179.98px) {
+  .kl-court-site.public-route .primary-nav > .nav-admin-link {
+    justify-content: space-between;
+    background: #edf3f0;
+    color: #0b2947 !important;
+  }
+
+  .kl-court-site.public-route .primary-nav > .nav-admin-link::after {
+    color: #16845b;
+    content: "→";
+  }
+}
