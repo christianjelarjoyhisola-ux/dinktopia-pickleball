@@ -28,6 +28,7 @@ test("keeps the K&L public shell stable and readable on mobile", () => {
   assert.doesNotMatch(experience, /<strong>Connecting to K&amp;L<\/strong>/);
   assert.match(experience, /className="nav-admin-link" href="\/manage"/);
   assert.match(experience, /className="footer-admin-link" href="\/manage"/);
+  assert.match(experience, /aria-label=\{mobileNavOpen \? "Close navigation" : "Open navigation"\}/);
   assert.match(styles, /\.kl-court-site\.public-route \.primary-nav > \.nav-admin-link/);
   assert.match(styles, /\.mobile-sticky-date-nav[\s\S]*?width: 44px;[\s\S]*?height: 44px;/);
   assert.match(styles, /\.mobile-sticky-date-current[\s\S]*?min-height: 44px;/);

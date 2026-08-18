@@ -3221,6 +3221,7 @@ export function BookingExperience({
             type="button"
             aria-expanded={mobileNavOpen}
             aria-controls="primary-navigation"
+            aria-label={mobileNavOpen ? "Close navigation" : "Open navigation"}
             onClick={() => setMobileNavOpen((open) => !open)}
           >
             <span className="menu-lines" aria-hidden="true" />
