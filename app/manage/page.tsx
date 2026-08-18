@@ -1656,7 +1656,7 @@ function BookingsView({
         <div className={styles.bookingToolbar}>
           <label className={styles.searchField}>
             <span className={styles.srOnly}>Search bookings</span>
-            <span aria-hidden="true">⌕</span>
+            <Search aria-hidden="true" size={16} />
             <input
               type="search"
               value={query}
@@ -1683,10 +1683,6 @@ function BookingsView({
         </div>
       </div>
 
-      <div className={styles.bookingColumnsHeader} aria-hidden="true">
-        <span>Player</span><span>Reservation</span><span>Payment</span><span>Status</span><span>Actions</span>
-      </div>
-
       {filtered.length ? (
         <ol className={styles.bookingRecordList} aria-label="Booking results">
           {filtered.map((booking, index) => {
@@ -1695,6 +1691,10 @@ function BookingsView({
             const canCancelBooking = !terminal && booking.status !== "checked_in";
             const canMoveBooking = !isPreview && booking.status === "confirmed" && booking.payment === "paid";
             const statusDetail = bookingStatusDetail(booking);
+            const sessions = booking.sessions ?? [];
+            const totalCourtHours = sessions.length
+              ? sessions.reduce((total, session) => total + session.durationHours, 0)
+              : null;
             return (
               <li key={booking.bookingId}>
                 <article className={styles.bookingRecord} aria-labelledby={`booking-${booking.bookingId}`}>
@@ -1702,17 +1702,40 @@ function BookingsView({
                     <Avatar initials={booking.initials} tone={index} />
                     <div>
                       <h3 id={`booking-${booking.bookingId}`}>{booking.customer}</h3>
-                      <span>{booking.reference}</span>
+                      <span><span className={styles.bookingReferenceLabel}>Reference</span>{booking.reference}</span>
                     </div>
                   </header>
 
                   <div className={styles.bookingRecordSession}>
-                    <span className={styles.bookingRecordLabel}>Session</span>
-                    <strong>
-                      {booking.bookingDate ? <time dateTime={booking.bookingDate}>{booking.date}</time> : booking.date}
-                      <span aria-hidden="true"> · </span>{booking.time}
-                    </strong>
-                    <span>{booking.court} · {booking.duration}</span>
+                    <div className={styles.bookingSessionHeading}>
+                      <span className={styles.bookingRecordLabel}>Reservation</span>
+                      <span className={styles.bookingSessionCount}>
+                        {sessions.length
+                          ? `${sessions.length} ${sessions.length === 1 ? "session" : "sessions"} · ${totalCourtHours?.toLocaleString("en-PH", { maximumFractionDigits: 1 })} court-${totalCourtHours === 1 ? "hour" : "hours"}`
+                          : booking.duration}
+                      </span>
+                    </div>
+                    <div className={styles.bookingSessionDate}>
+                      <CalendarDays aria-hidden="true" size={15} />
+                      <strong>{booking.bookingDate ? <time dateTime={booking.bookingDate}>{booking.date}</time> : booking.date}</strong>
+                    </div>
+                    {sessions.length ? (
+                      <ul className={styles.bookingSessionList} aria-label={`Court sessions for ${booking.reference}`}>
+                        {sessions.map((session) => (
+                          <li key={session.key}>
+                            <strong>{session.court}</strong>
+                            <span>{session.time}</span>
+                            <small>{session.duration}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className={styles.bookingSessionFallback}>
+                        <strong>{booking.court}</strong>
+                        <span>{booking.time}</span>
+                        <small>{booking.duration}</small>
+                      </div>
+                    )}
                   </div>
 
                   <div className={styles.bookingRecordPayment}>
@@ -1723,7 +1746,10 @@ function BookingsView({
                     </span>
                   </div>
 
-                  <div className={styles.bookingRecordStatus}><StatusPill status={booking.status} /></div>
+                  <div className={styles.bookingRecordStatus}>
+                    <span className={styles.bookingRecordLabel}>Workflow</span>
+                    <StatusPill status={booking.status} />
+                  </div>
 
                   <footer className={styles.bookingRecordFooter}>
                     <div className={styles.bookingRecordActions}>
@@ -1778,7 +1804,12 @@ function BookingsView({
                       )}
                     </div>
                   </footer>
-                  {statusDetail && <p className={styles.bookingRecordNotice}>{statusDetail}</p>}
+                  {statusDetail && (
+                    <p className={styles.bookingRecordNotice}>
+                      <span aria-hidden="true">i</span>
+                      <span>{statusDetail}</span>
+                    </p>
+                  )}
                 </article>
               </li>
             );

@@ -963,6 +963,7 @@
 .filterBar { display: flex; align-items: center; gap: 9px; margin-bottom: 18px; }
 .searchField { min-width: min(310px, 100%); min-height: 44px; display: flex; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--white); padding: 0 12px; }
 .searchField > span:not(.srOnly) { color: var(--muted); font-size: 1.05rem; }
+.searchField > svg { flex: 0 0 auto; color: var(--muted); }
 .searchField input { width: 100%; border: 0; outline: 0; background: transparent; padding: 9px 0; font-size: var(--text-meta); }
 .searchField:focus-within { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37,76,132,.11); }
 .selectField { display: flex; align-items: center; gap: 7px; }
@@ -1123,24 +1124,10 @@
 .bookingFilterActive:hover { background: var(--ink); color: var(--white); }
 .bookingFilterActive strong { background: var(--booking-mint); color: var(--ink); }
 
-.bookingColumnsHeader {
-  display: grid;
-  grid-template-columns: minmax(210px, 1.15fr) minmax(235px, 1.2fr) minmax(105px, .5fr) 105px minmax(150px, auto);
-  gap: 14px;
-  border-bottom: 1px solid var(--line);
-  padding: 7px 13px 9px;
-  color: var(--muted);
-  font-size: .58rem;
-  font-weight: 800;
-  letter-spacing: .09em;
-  text-transform: uppercase;
-}
-.bookingColumnsHeader span:last-child { text-align: right; }
-
 .bookingRecordList {
   min-width: 0;
   display: grid;
-  gap: 0;
+  gap: 12px;
   margin: 0;
   padding: 0;
   list-style: none;
@@ -1149,47 +1136,77 @@
 .bookingRecord {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(210px, 1.15fr) minmax(235px, 1.2fr) minmax(105px, .5fr) 105px minmax(150px, auto);
-  grid-template-areas: "identity session payment status footer";
-  align-items: center;
-  gap: 9px 14px;
-  border: 0;
-  border-bottom: 1px solid var(--line);
-  border-radius: 0;
-  background: var(--white);
-  padding: 13px;
-  box-shadow: none;
+  grid-template-columns: minmax(180px, .7fr) minmax(320px, 1.35fr) minmax(120px, .45fr) minmax(174px, .55fr);
+  grid-template-areas:
+    "identity session payment status"
+    "notice session footer footer";
+  align-items: start;
+  gap: 12px 22px;
+  border: 1px solid #dce4e7;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fff 0%, #fff 72%, #fbfcfa 100%);
+  padding: 18px;
+  box-shadow: 0 7px 20px rgba(16, 42, 67, .055);
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
-.bookingRecordList > li:last-child .bookingRecord { border-bottom: 0; }
-.bookingRecord:hover { background: #fbfaf7; box-shadow: none; }
+.bookingRecord:hover {
+  border-color: #c8d5d9;
+  background: linear-gradient(135deg, #fff 0%, #fff 72%, #f9fbf8 100%);
+  box-shadow: 0 12px 28px rgba(16, 42, 67, .085);
+  transform: translateY(-1px);
+}
 .bookingRecordIdentity {
   grid-area: identity;
   min-width: 0;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: center;
-  gap: 8px 11px;
+  gap: 10px 12px;
 }
-.bookingRecordIdentity .avatar { width: 38px; height: 38px; border-radius: 10px; }
+.bookingRecordIdentity .avatar { width: 42px; height: 42px; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(16, 42, 67, .05); }
 .bookingRecordIdentity > div { min-width: 0; }
 .bookingRecordIdentity h3 {
   margin: 0;
   overflow: hidden;
-  font-size: var(--text-body);
+  font: 700 var(--text-body)/1.25 var(--font-display), "Sora", sans-serif;
+  letter-spacing: -.02em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.bookingRecordIdentity > div > span { display: block; margin-top: 2px; color: var(--muted); font-size: var(--text-caption); overflow-wrap: anywhere; }
+.bookingRecordIdentity > div > span { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin-top: 4px; color: #596b72; font-size: var(--text-caption); overflow-wrap: anywhere; }
+.bookingReferenceLabel { color: #7a8a8f; font-size: var(--text-micro); font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
 .bookingRecordSession,
-.bookingRecordPayment { min-width: 0; display: grid; align-content: center; gap: 3px; }
+.bookingRecordPayment { min-width: 0; display: grid; align-content: start; }
 .bookingRecordSession { grid-area: session; }
 .bookingRecordPayment { grid-area: payment; }
-.bookingRecordSession strong,
-.bookingRecordPayment strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-meta); }
-.bookingRecordSession > span:last-child { color: var(--muted); font-size: var(--text-caption); }
+.bookingSessionHeading { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.bookingSessionCount { color: #6c7d83; font-size: var(--text-caption); font-weight: 700; text-align: right; }
+.bookingSessionDate { min-width: 0; display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: #214f72; }
+.bookingSessionDate svg { flex: 0 0 auto; }
+.bookingSessionDate strong { min-width: 0; overflow-wrap: anywhere; font-size: var(--text-meta); }
+.bookingSessionList { min-width: 0; display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+.bookingSessionList li,
+.bookingSessionFallback {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(82px, .55fr) minmax(135px, 1fr) auto;
+  align-items: baseline;
+  gap: 7px 12px;
+  border-top: 1px solid #edf0ed;
+  padding: 6px 0;
+}
+.bookingSessionList li:first-child { border-top: 0; }
+.bookingSessionList strong,
+.bookingSessionFallback strong { min-width: 0; overflow: hidden; color: var(--ink); font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.bookingSessionList span,
+.bookingSessionFallback span { min-width: 0; color: #405b69; font-size: var(--text-caption); font-weight: 650; }
+.bookingSessionList small,
+.bookingSessionFallback small { color: #7a8a8f; font-size: var(--text-micro); white-space: nowrap; }
+.bookingRecordPayment { gap: 4px; border-left: 1px solid #edf0ed; padding-left: 18px; }
+.bookingRecordPayment > strong { min-width: 0; margin-top: 2px; overflow-wrap: anywhere; font: 700 1.05rem/1.25 var(--font-display), "Sora", sans-serif; letter-spacing: -.03em; }
 .bookingRecordLabel { color: var(--muted); font-size: var(--text-micro); font-weight: 800; letter-spacing: var(--tracking-label); text-transform: uppercase; }
-.bookingRecordPayment .paymentLabel { margin: 0; }
-.bookingRecordStatus { grid-area: status; min-width: 0; }
+.bookingRecordPayment .paymentLabel { width: fit-content; margin: 0; }
+.bookingRecordStatus { grid-area: status; min-width: 0; display: grid; justify-items: end; gap: 7px; }
 .bookingRecordFooter {
   grid-area: footer;
   min-width: 0;
@@ -1198,11 +1215,12 @@
   justify-content: flex-end;
   gap: 10px;
 }
-.bookingRecordNotice { grid-column: 1 / -1; margin: 2px 0 -2px 49px; border-radius: 7px; background: var(--paper-deep); padding: 7px 10px; color: var(--muted); font-size: var(--text-caption); line-height: 1.4; overflow-wrap: anywhere; }
+.bookingRecordNotice { grid-area: notice; min-width: 0; display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 7px; margin: 0; border-radius: 9px; background: #f3f5ef; padding: 8px 9px; color: #5c6c66; font-size: var(--text-caption); line-height: 1.4; overflow-wrap: anywhere; }
+.bookingRecordNotice > span:first-child { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 50%; background: #dfe8d3; color: #315d4b; font-size: .65rem; font-weight: 800; }
 .bookingRecordActions { display: flex; flex: 0 0 auto; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 7px; }
-.bookingRecordActions .reviewPaymentButton { min-height: 34px; margin-top: 0; padding-inline: 11px; }
+.bookingRecordActions .reviewPaymentButton { min-height: 36px; margin-top: 0; padding-inline: 13px; border-radius: 9px; box-shadow: 0 5px 12px rgba(36, 92, 61, .12); }
 .bookingRecordActions .miniButton,
-.bookingRecordActions .moreButton { min-height: 34px; border-radius: 8px; padding-inline: 10px; font-size: var(--text-caption); }
+.bookingRecordActions .moreButton { min-height: 36px; border-radius: 9px; padding-inline: 11px; font-size: var(--text-caption); }
 .bookingRecordActions .moreButton { border-color: #e8bcb5; color: var(--danger); }
 .bookingRecordActions .moreButton:hover { border-color: var(--danger); background: #fcedea; }
 
@@ -2270,19 +2288,16 @@
   .bookingOverview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .bookingOverview article:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
   .bookingOverview article:nth-child(4) { border-top: 1px solid var(--line); }
-  .bookingColumnsHeader { display: none; }
   .bookingRecord {
-    grid-template-columns: minmax(190px, 1.1fr) minmax(220px, 1.2fr) minmax(100px, .55fr) auto;
+    grid-template-columns: minmax(170px, .65fr) minmax(270px, 1.2fr) minmax(155px, .55fr);
     grid-template-areas:
-      "identity session payment status"
-      "notice notice footer footer";
-    border: 1px solid var(--line);
-    border-radius: 12px;
-    margin-top: 8px;
+      "identity session status"
+      "notice session payment"
+      "footer footer footer";
   }
-  .bookingRecordList > li:last-child .bookingRecord { border-bottom: 1px solid var(--line); }
+  .bookingRecordPayment { justify-self: end; border-left: 0; padding-left: 0; text-align: right; }
+  .bookingRecordPayment .paymentLabel { justify-self: end; }
   .bookingRecordFooter { justify-content: flex-end; }
-  .bookingRecordNotice { grid-area: notice; margin: 0; }
 }
 
 @media (min-width: 901px) and (max-height: 820px) {
@@ -2356,18 +2371,21 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "identity"
+      "status"
       "session"
       "payment"
-      "status"
+      "notice"
       "footer";
     align-items: stretch;
-    gap: 13px;
+    gap: 12px;
   }
-  .bookingRecordSession,
-  .bookingRecordPayment { border-top: 1px solid var(--paper-deep); padding-top: 11px; }
+  .bookingRecordStatus { grid-template-columns: auto 1fr; align-items: center; justify-items: start; border-top: 1px solid var(--paper-deep); padding-top: 11px; }
+  .bookingRecordStatus .statusPill { justify-self: end; }
+  .bookingRecordSession { border-top: 1px solid var(--paper-deep); padding-top: 12px; }
+  .bookingRecordPayment { grid-template-columns: 1fr auto; align-items: center; justify-self: stretch; gap: 4px 12px; border-top: 1px solid var(--paper-deep); border-left: 0; padding-top: 12px; padding-left: 0; text-align: left; }
+  .bookingRecordPayment > strong { justify-self: end; }
+  .bookingRecordPayment .paymentLabel { grid-column: 2; justify-self: end; }
   .bookingRecordFooter { align-items: stretch; flex-direction: column; gap: 10px; }
-  .bookingRecordStatus { border-top: 1px solid var(--paper-deep); padding-top: 11px; }
-  .bookingRecordNotice { grid-area: auto; grid-column: 1; margin: 0; }
   .bookingRecordActions { width: 100%; justify-content: flex-start; }
   .bookingRecordActions > * { min-width: 0; flex: 1 1 108px; }
   .bookingRecordActions .reviewPaymentButton { flex-basis: 100%; }
@@ -2517,7 +2535,7 @@
   .paymentInboxClear .textButton { width: calc(100% - 45px); justify-content: flex-start; margin-left: 45px; }
   .panelHeading { align-items: flex-start; flex-direction: column; gap: 12px; }
   .bookingRegisterPanel .panelHeading .button { width: 100%; }
-  .bookingRecord { border-radius: 13px; padding: 13px; }
+  .bookingRecord { border-radius: 14px; padding: 15px; }
   .bookingRecordIdentity { grid-template-columns: 38px minmax(0, 1fr); }
   .bookingRecordIdentity .avatar { width: 38px; height: 38px; }
   .compactActionForm { margin-inline: -4px; padding: 14px; }

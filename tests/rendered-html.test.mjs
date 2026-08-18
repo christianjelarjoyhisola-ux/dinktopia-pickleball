@@ -3357,6 +3357,14 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     bookingsUi,
     /<ol className=\{styles\.bookingRecordList\} aria-label="Booking results">[\s\S]*?<article className=\{styles\.bookingRecord\}[\s\S]*?bookingRecordIdentity[\s\S]*?bookingRecordSession[\s\S]*?bookingRecordPayment[\s\S]*?bookingRecordFooter/,
   );
+  assert.match(
+    bookingsUi,
+    /const sessions = booking\.sessions \?\? \[\][\s\S]*?sessions\.reduce\(\(total, session\) => total \+ session\.durationHours, 0\)[\s\S]*?bookingSessionDate[\s\S]*?bookingSessionList[\s\S]*?sessions\.map\(\(session\) =>[\s\S]*?session\.court[\s\S]*?session\.time[\s\S]*?session\.duration/,
+  );
+  assert.match(
+    bookingsUi,
+    /bookingReferenceLabel[\s\S]*?Reference[\s\S]*?booking\.reference[\s\S]*?bookingRecordStatus[\s\S]*?Workflow/,
+  );
   assert.doesNotMatch(bookingsUi, /<table\b|role="table"|className=\{styles\.dataTable\}/i);
   assert.doesNotMatch(bookingsUi, /booking:check-in|>\s*Check in\s*</i);
   assert.match(
@@ -3575,7 +3583,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   );
   assert.match(
     manageCss,
-    /\.bookingRecord\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(210px,\s*1\.15fr\)/,
+    /\.bookingRecord\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(180px,\s*\.7fr\)[\s\S]*?grid-template-areas:[\s\S]*?"identity session payment status"/,
   );
   assert.match(
     cssBlock(manageCss, ".bookingFilterRail"),
@@ -3594,7 +3602,7 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
   const bookingCompactCss = compactCss;
   assert.match(
     bookingCompactCss,
-    /\.bookingRecord\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)[^}]*grid-template-areas:\s*"identity"\s*"session"\s*"payment"\s*"status"\s*"footer"/s,
+    /\.bookingRecord\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)[^}]*grid-template-areas:\s*"identity"\s*"status"\s*"session"\s*"payment"\s*"notice"\s*"footer"/s,
   );
   assert.match(
     bookingCompactCss,
@@ -3608,10 +3616,10 @@ test("shows truthful payment stages in a modern Overview inbox and refreshes onl
     phoneCss,
     /\.bookingRegisterPanel \.panelHeading \.button\s*\{[^}]*width:\s*100%/s,
   );
-  assert.match(phoneCss, /\.bookingRecord\s*\{[^}]*padding:\s*13px/s);
+  assert.match(phoneCss, /\.bookingRecord\s*\{[^}]*padding:\s*15px/s);
   assert.match(
     manageCss,
-    /\.bookingRecordActions \.reviewPaymentButton\s*\{[^}]*min-height:\s*34px[\s\S]*?\.bookingRecordActions \.miniButton,\s*\.bookingRecordActions \.moreButton\s*\{[^}]*min-height:\s*34px/s,
+    /\.bookingRecordActions \.reviewPaymentButton\s*\{[^}]*min-height:\s*36px[\s\S]*?\.bookingRecordActions \.miniButton,\s*\.bookingRecordActions \.moreButton\s*\{[^}]*min-height:\s*36px/s,
   );
   assert.ok(
     manageCss.includes("@media (max-width: 390px)"),
@@ -5241,11 +5249,11 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
   );
   assert.match(
     manageCss,
-    /@media\s*\(max-width:\s*680px\)[\s\S]*?\.bookingRecord\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-areas:\s*"identity"\s*"session"\s*"payment"\s*"status"\s*"footer"[^}]*\}[\s\S]*?\.bookingRecordFooter\s*\{[^}]*flex-direction:\s*column/s,
+    /@media\s*\(max-width:\s*680px\)[\s\S]*?\.bookingRecord\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)[^}]*grid-template-areas:\s*"identity"\s*"status"\s*"session"\s*"payment"\s*"notice"\s*"footer"[^}]*\}[\s\S]*?\.bookingRecordFooter\s*\{[^}]*flex-direction:\s*column/s,
   );
   assert.match(
     manageCss,
-    /\.bookingRecordActions \.reviewPaymentButton\s*\{[^}]*min-height:\s*34px[^}]*\}[\s\S]*?\.bookingRecordActions \.miniButton,[\s\S]*?\.bookingRecordActions \.moreButton\s*\{[^}]*min-height:\s*34px/s,
+    /\.bookingRecordActions \.reviewPaymentButton\s*\{[^}]*min-height:\s*36px[^}]*\}[\s\S]*?\.bookingRecordActions \.miniButton,[\s\S]*?\.bookingRecordActions \.moreButton\s*\{[^}]*min-height:\s*36px/s,
   );
   assert.match(
     manageCss,
