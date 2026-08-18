@@ -4322,7 +4322,10 @@ export function BookingExperience({
         <HoldIntroSelectionSummary
           selections={selectedSlotDetails}
           dateLabel={selectedBookingDateLabel}
+          subtotal={courtSubtotal}
           bookingFee={bookingFee ?? 0}
+          bookingFeeMode={bootstrap?.bookingFee?.feeMode}
+          bookingFeeAmount={bootstrap?.bookingFee?.feeAmount}
           total={total}
         />
         <div className="hold-intro-countdown" aria-label="Time remaining on your booking hold">
@@ -4352,14 +4355,20 @@ export function BookingExperience({
 type HoldIntroSelectionSummaryProps = {
   selections: SelectionDetail[];
   dateLabel: string;
+  subtotal: number;
   bookingFee: number;
+  bookingFeeMode?: string;
+  bookingFeeAmount?: number;
   total: number;
 };
 
 function HoldIntroSelectionSummary({
   selections,
   dateLabel,
+  subtotal,
   bookingFee,
+  bookingFeeMode,
+  bookingFeeAmount,
   total,
 }: HoldIntroSelectionSummaryProps) {
   const groups = groupSelectionDetails(selections);
@@ -4368,6 +4377,11 @@ function HoldIntroSelectionSummary({
   ).sort((left, right) => left.number.localeCompare(right.number));
   const slotLabel = `${selections.length} slot${selections.length === 1 ? "" : "s"}`;
   const courtLabel = `${courts.length} court${courts.length === 1 ? "" : "s"}`;
+  const bookingFeeLabel = bookingFeeMode === "fixed_per_hour" && bookingFeeAmount
+    ? `Booking fee (${peso(bookingFeeAmount)} × ${slotLabel})`
+    : bookingFeeMode === "percentage" && bookingFeeAmount
+      ? `Booking fee (${bookingFeeAmount}%)`
+      : "Booking fee";
 
   return (
     <section className="hold-intro-selection" aria-label="Your selected courts and times">
@@ -4389,9 +4403,13 @@ function HoldIntroSelectionSummary({
           );
         })}
       </ul>
+      <dl className="hold-intro-price-lines">
+        <div><dt>Court reservation</dt><dd>{peso(subtotal)}</dd></div>
+        {bookingFee > 0 && <div><dt>{bookingFeeLabel}</dt><dd>{peso(bookingFee)}</dd></div>}
+      </dl>
       <div className="hold-intro-selection-total">
         <span>{slotLabel} · {courtLabel}</span>
-        <strong><small>{bookingFee > 0 ? "Total incl. booking fee" : "Total"}</small>{peso(total)}</strong>
+        <strong><small>Total</small>{peso(total)}</strong>
       </div>
     </section>
   );

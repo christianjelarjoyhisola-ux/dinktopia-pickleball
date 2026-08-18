@@ -8161,6 +8161,31 @@
   text-align: right;
 }
 
+.hold-intro-price-lines {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 13px;
+  border-top: 1px solid rgba(23, 64, 108, 0.1);
+  background: #fffdf8;
+  font-size: 0.72rem;
+}
+
+.hold-intro-price-lines div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hold-intro-price-lines dt { color: #526a7d; }
+.hold-intro-price-lines dd {
+  margin: 0;
+  color: #173d60;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
 .hold-intro-selection-total {
   display: flex;
   align-items: center;
@@ -8233,7 +8258,6 @@
 
   .hold-intro-selection { margin-top: 14px; }
   .hold-intro-countdown { margin: 14px 0; }
-  .hold-intro-selection-total small { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
