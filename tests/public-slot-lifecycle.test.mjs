@@ -34,6 +34,6 @@ test("availability consumes only a whitelisted coarse lifecycle with a safe roll
   assert.match(client, /error\.code === "PGRST202"/);
   assert.match(client, /function validatedPublicSlotLifecycle[\s\S]*?value\.slice\(0, 1_000\)/);
   assert.match(booking, /\["held", "payment_review", "confirmed"\]\.includes\(lifecycle\.state\)/);
-  assert.match(booking, /const displayedState = ownedState \?\? slot\?\.publicState/);
+  assert.match(booking, /const displayedState = slot\?\.hasStarted \? undefined : ownedState \?\? slot\?\.publicState/);
   assert.doesNotMatch(booking, /slotLifecycle[\s\S]{0,200}(reference|customer|receipt|token)/i);
 });

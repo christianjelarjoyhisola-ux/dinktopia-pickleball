@@ -23,6 +23,8 @@ test("booking starts on the tenant's current date and keeps elapsed slots unavai
   assert.match(booking, /rally-availability-board\$\{visibleAvailabilityState === "loading" \? " is-refreshing" : ""\}/);
   assert.match(booking, /candidateStartsAt < Date\.now\(\) \+ minimumLeadMinutes \* 60 \* 1000/);
   assert.match(booking, /status: tooSoon \|\| overlapsBlock \|\| overlapsBooking \? "unavailable" : "available"/);
+  assert.match(booking, /const hasStarted = candidateStartsAt <= Date\.now\(\)/);
+  assert.match(booking, /slot\?\.hasStarted[\s\S]*?\? "Done"/);
 });
 
 test("selected booking date uses readable premium foreground colors", async () => {

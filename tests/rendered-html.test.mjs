@@ -1007,11 +1007,12 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
   assert.match(matrixSource, /const isSelected = selectedKeys\.has\(selectionKey\(court\.id, hour\)\)/);
   assert.match(matrixSource, /const busy = !slot \|\| slot\.status === "unavailable"/);
   assert.match(matrixSource, /const ownedState = ownedSlotStates\.get\(selectionKey\(court\.id, hour\)\)/);
-  assert.match(matrixSource, /const displayedState = ownedState \?\? slot\?\.publicState/);
+  assert.match(matrixSource, /const displayedState = slot\?\.hasStarted \? undefined : ownedState \?\? slot\?\.publicState/);
   assert.match(matrixSource, /displayedState === "held"[\s\S]*?"Held"/);
   assert.match(matrixSource, /displayedState === "payment_review"[\s\S]*?"Reviewing"/);
   assert.match(matrixSource, /displayedState === "confirmed"[\s\S]*?"Booked"/);
-  assert.match(matrixSource, /busy[\s\S]*?"Booked"/);
+  assert.match(matrixSource, /slot\?\.hasStarted[\s\S]*?"Done"/);
+  assert.match(matrixSource, /busy[\s\S]*?"Unavailable"/);
   assert.match(
     matrixSource,
     /aria-label=\{`All courts hourly availability for \$\{selectedBaseDateLabel\}\. Scroll horizontally to see later times\.`\}/,
@@ -1022,7 +1023,7 @@ test("uses atomic multi-court checkout with responsive desktop and mobile matric
     matrixSource,
     /onClick=\{\(\) => slot && !busy && !displayedState && chooseSlot\(court, slot\)\}/,
   );
-  assert.match(matrixSource, /availability-cell\$\{displayedState \? ` owned-state owned-\$\{displayedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}/);
+  assert.match(matrixSource, /availability-cell\$\{slot\?\.hasStarted \? " busy done" : displayedState \? ` owned-state owned-\$\{displayedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}/);
   assert.doesNotMatch(matrixSource, /isLimitBlocked|is-limit-blocked|selection limit/i);
   assert.doesNotMatch(matrixSource, /aria-disabled=/);
 
@@ -5144,7 +5145,7 @@ test("keeps customer and management layouts adaptive from phones to desktop", as
 
   assert.match(
     booking,
-    /className=\{`availability-cell mobile-availability-cell\$\{displayedState \? ` owned-state owned-\$\{displayedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
+    /className=\{`availability-cell mobile-availability-cell\$\{slot\?\.hasStarted \? " busy done" : displayedState \? ` owned-state owned-\$\{displayedState\}` : busy \? " busy" : isSelected \? " selected" : ""\}`\}/,
   );
   const publicTextCss = publicCss.replace(
     /\.schedule-cell\.is-selected \.schedule-cell-mark\s*\{[^}]*\}/gs,

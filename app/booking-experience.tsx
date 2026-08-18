@@ -92,6 +92,7 @@ export type AvailabilitySlot = {
   promotionId?: string;
   promotionName?: string;
   status: SlotStatus;
+  hasStarted?: boolean;
   publicState?: OwnedSlotState;
 };
 
@@ -1232,6 +1233,7 @@ const platformAdapter: BookingAdapter = {
         const candidateStartsAt = new Date(
           `${slotDate}T${String(hour % 24).padStart(2, "0")}:00:00+08:00`,
         ).getTime();
+        const hasStarted = candidateStartsAt <= Date.now();
         const tooSoon =
           candidateStartsAt < Date.now() + minimumLeadMinutes * 60 * 1000;
         const basePrice = getConfiguredPrice(publicCourt, hour, 1);
@@ -1248,6 +1250,7 @@ const platformAdapter: BookingAdapter = {
           endsAt: formatClockLabel(hour + 1),
           ...promoted,
           status: tooSoon || overlapsBlock || overlapsBooking ? "unavailable" : "available",
+          hasStarted,
           publicState,
         };
       });
@@ -3753,8 +3756,10 @@ export function BookingExperience({
                                         const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                         const busy = !slot || slot.status === "unavailable";
                                         const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
-                                        const displayedState = ownedState ?? slot?.publicState;
-                                        const stateLabel = displayedState === "held"
+                                        const displayedState = slot?.hasStarted ? undefined : ownedState ?? slot?.publicState;
+                                        const stateLabel = slot?.hasStarted
+                                          ? "Done"
+                                          : displayedState === "held"
                                           ? "Held"
                                           : displayedState === "payment_review"
                                             ? "Reviewing"
@@ -3769,7 +3774,7 @@ export function BookingExperience({
                                           <button
                                             type="button"
                                             key={`${court.id}-${hour}`}
-                                            className={`availability-cell${displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
+                                            className={`availability-cell${slot?.hasStarted ? " busy done" : displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                             aria-pressed={isSelected}
                                             disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
                                             aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
@@ -3804,8 +3809,10 @@ export function BookingExperience({
                                       const isSelected = selectedKeys.has(selectionKey(court.id, hour));
                                       const busy = !slot || slot.status === "unavailable";
                                       const ownedState = ownedSlotStates.get(selectionKey(court.id, hour));
-                                      const displayedState = ownedState ?? slot?.publicState;
-                                      const stateLabel = displayedState === "held"
+                                      const displayedState = slot?.hasStarted ? undefined : ownedState ?? slot?.publicState;
+                                      const stateLabel = slot?.hasStarted
+                                        ? "Done"
+                                        : displayedState === "held"
                                         ? "Held"
                                         : displayedState === "payment_review"
                                           ? "Reviewing"
@@ -3820,7 +3827,7 @@ export function BookingExperience({
                                         <button
                                           type="button"
                                           key={`${court.id}-${hour}`}
-                                          className={`availability-cell mobile-availability-cell${displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
+                                          className={`availability-cell mobile-availability-cell${slot?.hasStarted ? " busy done" : displayedState ? ` owned-state owned-${displayedState}` : busy ? " busy" : isSelected ? " selected" : ""}`}
                                           aria-pressed={isSelected}
                                           disabled={busy || Boolean(displayedState) || visibleAvailabilityState === "loading"}
                                           aria-label={`${court.name}, ${formatHourWithDay(hour)} to ${formatHourWithDay(hour + 1)}, ${displayedState ? stateLabel : busy ? stateLabel : isSelected ? "Selected, click to remove" : "Open, click to select"}`}
