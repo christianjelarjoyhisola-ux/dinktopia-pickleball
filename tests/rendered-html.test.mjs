@@ -2387,6 +2387,11 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   assert.match(bookingUi, /nextManualSlotSelection\(courtSlots, manualSelectedKeys, slotKey\)/);
   assert.match(bookingUi, /Select an independent consecutive range on each court/);
   assert.match(bookingUi, /Select one or more courts/);
+  assert.match(bookingUi, /availableManualSlotsByCourt/);
+  assert.match(bookingUi, /slots\.filter\(\(slot\) => slot\.state === "open"\)/);
+  assert.match(bookingUi, /No available hours remain\./);
+  assert.match(bookingUi, /No available hours/);
+  assert.doesNotMatch(bookingUi, /manualUnavailableDot/);
   assert.match(bookingUi, /sessions:\s*manualSessions\.map/);
   assert.match(bookingUi, /estimateManualBookingPrice\(selectedManualSlots/);
   assert.match(bookingUi, />Court charges<\/span>/);

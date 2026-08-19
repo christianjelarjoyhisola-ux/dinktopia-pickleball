@@ -1388,6 +1388,12 @@ function BookingsView({
     court.id,
     buildManualBookingSlots(court, manual.bookingDate, manualAvailability),
   ])), [manual.bookingDate, manualAvailability, selectedManualCourts]);
+  const availableManualSlotsByCourt = useMemo(() => new Map(
+    Array.from(manualSlotsByCourt, ([courtId, slots]) => [
+      courtId,
+      slots.filter((slot) => slot.state === "open"),
+    ]),
+  ), [manualSlotsByCourt]);
   const selectedManualSlots = Array.from(manualSlotsByCourt.values())
     .flat()
     .filter((slot) => manualSelectedKeys.includes(slot.key));
@@ -1636,22 +1642,23 @@ function BookingsView({
 
           <fieldset className={styles.manualBookingSection}>
             <legend className={styles.manualSectionTitle}><span>02</span><div><strong>Choose time slots</strong><small>Select an independent consecutive range on each court.</small></div></legend>
-            <div className={styles.manualSlotLegend} aria-label="Time slot legend"><span><i className={styles.manualOpenDot} /> Open</span><span><i className={styles.manualSelectedDot} /> Selected</span><span><i className={styles.manualUnavailableDot} /> Unavailable</span></div>
+            <div className={styles.manualSlotLegend} aria-label="Time slot legend"><span><i className={styles.manualOpenDot} /> Available</span><span><i className={styles.manualSelectedDot} /> Selected</span></div>
             {manualAvailabilityState === "loading" ? (
               <div className={styles.manualSlotLoading} role="status"><i /><i /><i /><i /><span>Checking live availability…</span></div>
             ) : manualAvailabilityState === "error" ? (
               <div className={styles.manualSlotError} role="alert"><strong>Availability could not be loaded.</strong><span>Change the date to retry. No booking can be created until the live schedule is verified.</span></div>
-            ) : Array.from(manualSlotsByCourt.values()).some((slots) => slots.length) ? (
+            ) : Array.from(availableManualSlotsByCourt.values()).some((slots) => slots.length) ? (
               <div className={styles.manualCourtSchedule} style={{ "--manual-court-count": Math.min(4, selectedManualCourts.length) } as CSSProperties}>
                 {selectedManualCourts.map((court) => <section key={court.id} aria-label={`${court.name} time slots`}><header><strong>{court.name}</strong><small>{court.surface || "Court"}</small></header><div>
-                  {(manualSlotsByCourt.get(court.id) ?? []).map((slot) => {
+                  {(availableManualSlotsByCourt.get(court.id) ?? []).map((slot) => {
                     const selected = manualSelectedKeys.includes(slot.key);
-                    return <button type="button" key={slot.key} className={cx(styles.manualSlot, selected && styles.manualSlotSelected, slot.state !== "open" && styles.manualSlotUnavailable)} disabled={slot.state !== "open"} aria-pressed={selected} aria-label={`${court.name}, ${wholeHourLabel(slot.startTime)} to ${wholeHourLabel(slot.endTime)}, ${selected ? "selected" : slot.statusLabel}`} onClick={() => chooseManualSlot(court.id, slot.key)}><strong>{wholeHourLabel(slot.startTime)}</strong><span>to {wholeHourLabel(slot.endTime)}</span><small>{selected ? "Selected" : slot.statusLabel}</small></button>;
+                    return <button type="button" key={slot.key} className={cx(styles.manualSlot, selected && styles.manualSlotSelected)} aria-pressed={selected} aria-label={`${court.name}, ${wholeHourLabel(slot.startTime)} to ${wholeHourLabel(slot.endTime)}, ${selected ? "selected" : "available"}`} onClick={() => chooseManualSlot(court.id, slot.key)}><strong>{wholeHourLabel(slot.startTime)}</strong><span>to {wholeHourLabel(slot.endTime)}</span><small>{selected ? "Selected" : "Available"}</small></button>;
                   })}
+                  {!availableManualSlotsByCourt.get(court.id)?.length && <p className={styles.manualCourtSoldOut}>No available hours</p>}
                 </div></section>)}
               </div>
             ) : manualAvailabilityState === "ready" ? (
-              <div className={styles.manualSlotError} role="status"><strong>No bookable hours returned.</strong><span>Choose another active court or date.</span></div>
+              <div className={styles.manualSlotError} role="status"><strong>No available hours remain.</strong><span>Choose another court or booking date.</span></div>
             ) : null}
             {firstManualSession && <>
               <div className={styles.manualSelectionSummary} role="status"><Clock3 /><div><span>Selected reservation</span>{manualSessions.map((session) => <strong key={session.court.id}>{session.court.name} · {wholeHourLabel(session.first.startTime)}–{wholeHourLabel(session.last.endTime)}</strong>)}</div><b>{selectedManualSlots.length} court-{selectedManualSlots.length === 1 ? "hour" : "hours"}</b></div>
