@@ -8,6 +8,7 @@ import {
   Clock3,
   LayoutGrid,
   List,
+  Plus,
   RefreshCw,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -26,7 +27,9 @@ export type CalendarViewProps = {
   initialCourtId?: string;
   loadDay: (date: string) => Promise<CalendarDayData>;
   canBlock: boolean;
+  canCreateBooking: boolean;
   onOpenBlocks: () => void;
+  onNewBooking: () => void;
   timezone?: string;
   currency?: string;
 };
@@ -443,7 +446,9 @@ export function CalendarView({
   initialCourtId = "all",
   loadDay,
   canBlock,
+  canCreateBooking,
   onOpenBlocks,
+  onNewBooking,
   timezone = "Asia/Manila",
   currency = "PHP",
 }: CalendarViewProps) {
@@ -657,6 +662,15 @@ export function CalendarView({
         </div>
 
         <div className={styles.toolbarActions}>
+          <button
+            type="button"
+            className={styles.newBookingButton}
+            onClick={onNewBooking}
+            disabled={!canCreateBooking}
+          >
+            <Plus aria-hidden="true" size={18} />
+            New booking
+          </button>
           <div className={styles.segmented} aria-label="Schedule view">
             <button type="button" className={viewMode === "courts" ? styles.active : undefined} onClick={() => setViewMode("courts")} aria-pressed={viewMode === "courts"}><LayoutGrid aria-hidden="true" size={15} /> Timeline</button>
             <button type="button" className={viewMode === "agenda" ? styles.active : undefined} onClick={() => setViewMode("agenda")} aria-pressed={viewMode === "agenda"}><List aria-hidden="true" size={15} /> Agenda</button>

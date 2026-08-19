@@ -2331,10 +2331,11 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
 });
 
 test("connects create, reschedule, and cancel without exposing check-in or confusing booking identifiers", async () => {
-  const [client, manage, managementAdapter] = await Promise.all([
+  const [client, manage, managementAdapter, calendarView] = await Promise.all([
     readFile(files.client, "utf8"),
     readFile(files.manage, "utf8"),
     readFile(files.managementAdapter, "utf8"),
+    readFile(files.calendarView, "utf8"),
   ]);
 
   assert.match(
@@ -2379,7 +2380,23 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   const createFormEnd = manage.indexOf("function ScheduleView(", createFormStart);
   assert.ok(createFormStart >= 0 && createFormEnd > createFormStart);
   const bookingUi = manage.slice(createFormStart, createFormEnd);
-  assert.match(bookingUi, /<h3>New paid booking<\/h3>/);
+  assert.match(bookingUi, /<h3>Book for a customer<\/h3>/);
+  assert.match(bookingUi, /buildManualBookingSlots\(selectedManualCourt, manual\.bookingDate, manualAvailability\)/);
+  assert.match(bookingUi, /nextManualSlotSelection\(manualSlots, manualSelectedKeys, slotKey\)/);
+  assert.match(bookingUi, /Select consecutive hours for one court reservation/);
+  assert.match(bookingUi, /disabled=\{!firstManualSlot \|\| manualAvailabilityState !== "ready"\}/);
+  assert.doesNotMatch(bookingUi, /<span>Starts<\/span><select/);
+  assert.doesNotMatch(bookingUi, /<span>Hours<\/span><select/);
+  const overviewUi = manage.slice(
+    manage.indexOf("function RallyOverview("),
+    manage.indexOf("function OverviewView("),
+  );
+  assert.equal(
+    [...overviewUi.matchAll(/onClick=\{openNewBooking\}/g)].length,
+    2,
+    "dashboard New booking entry points must open the owner-assisted workflow",
+  );
+  assert.match(calendarView, /onClick=\{onNewBooking\}[\s\S]*?New booking/);
   assert.match(
     bookingUi,
     /actionType:\s*"booking:create",[\s\S]*?courtId:\s*manual\.courtId,[\s\S]*?clientRequestId:\s*crypto\.randomUUID\(\)/,

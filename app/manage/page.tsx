@@ -60,14 +60,17 @@ import {
   type TenantRole,
 } from "./management-adapter";
 import { upcomingReservationArrivals } from "./arrival-projection";
+import { buildManualBookingSlots, nextManualSlotSelection } from "./manual-booking-slots";
 import {
   PlatformRequestError,
+  getAvailability,
   platformMode,
   signInOwner,
   signOutOwner,
   type VenueGalleryCategory,
   type VenueGalleryItem,
 } from "../lib/platform/client";
+import type { AvailabilityResponse } from "../lib/platform/types";
 import {
   boundaryOptionsFor,
   buildTwoBandSchedule,
@@ -639,12 +642,14 @@ function RallyOverview({
   snapshot,
   can,
   goTo,
+  openNewBooking,
   openCourtSchedule,
   openNeedsReview,
 }: {
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   goTo: (view: View) => void;
+  openNewBooking: () => void;
   openCourtSchedule: (courtId: string) => void;
   openNeedsReview: () => void;
 }) {
@@ -725,7 +730,7 @@ function RallyOverview({
         </div>
         <div className={styles.rallyHeroActions}>
           <button type="button" onClick={() => goTo("blocks")} disabled={!can("schedule:block")}><Settings2 /> Court issue</button>
-          <button type="button" className={styles.rallyPrimary} onClick={() => goTo("schedule")} disabled={!can("booking:create")}><Plus /> New booking</button>
+          <button type="button" className={styles.rallyPrimary} onClick={openNewBooking} disabled={!can("booking:create")}><Plus /> New booking</button>
         </div>
       </section>
 
@@ -793,7 +798,7 @@ function RallyOverview({
         <section className={styles.rallyQuickCard}>
           <div><span>Front desk shortcuts</span><h2>Keep the queue moving.</h2><p>Common actions stay synchronized across the team.</p></div>
           <div className={styles.rallyQuickActions}>
-            <button type="button" onClick={() => goTo("schedule")} disabled={!can("booking:create")}><Plus /><span><strong>Add booking</strong><small>Walk-in or phone</small></span></button>
+            <button type="button" onClick={openNewBooking} disabled={!can("booking:create")}><Plus /><span><strong>New booking</strong><small>Walk-in or phone</small></span></button>
             <button type="button" onClick={() => goTo("customers")} disabled={!can("customer:view")}><Users /><span><strong>Find player</strong><small>Visits and notes</small></span></button>
             <button type="button" onClick={() => goTo("finance")} disabled={!can("finance:view")}><WalletCards /><span><strong>Review payments</strong><small>{paymentReviews.length} waiting</small></span></button>
           </div>
@@ -807,6 +812,7 @@ function OverviewView({
   snapshot,
   can,
   goTo,
+  openNewBooking,
   openCourtSchedule,
   openNeedsReview,
   request,
@@ -815,12 +821,13 @@ function OverviewView({
   snapshot: ManagementSnapshot;
   can: (capability: ManagementCapability) => boolean;
   goTo: (view: View) => void;
+  openNewBooking: () => void;
   openCourtSchedule: (courtId: string) => void;
   openNeedsReview: () => void;
   request: (action: ConfirmAction) => void;
   loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
 }) {
-  return <RallyOverview snapshot={snapshot} can={can} goTo={goTo} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} />;
+  return <RallyOverview snapshot={snapshot} can={can} goTo={goTo} openNewBooking={openNewBooking} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} />;
   /* Legacy dashboard markup is retained below temporarily while the remaining
      management views continue to share its payment-review workspace. */
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
@@ -1288,6 +1295,7 @@ function BookingsView({
   goTo,
   isPreview,
   initialStatus,
+  openCreateRequest,
   loadPaymentReceipt,
   loadReschedulePreview,
 }: {
@@ -1298,16 +1306,21 @@ function BookingsView({
   goTo: (view: View) => void;
   isPreview: boolean;
   initialStatus: BookingFilter;
+  openCreateRequest: number;
   loadPaymentReceipt: (verificationId: string) => Promise<PaymentReceiptView>;
   loadReschedulePreview: (bookingReference: string, date: string) => Promise<ManagementBookingReschedulePreview>;
 }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<BookingFilter>(initialStatus);
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(() => openCreateRequest > 0 && !isPreview);
+  const [manualAvailability, setManualAvailability] = useState<AvailabilityResponse | null>(null);
+  const [manualAvailabilityState, setManualAvailabilityState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [manualSelectedKeys, setManualSelectedKeys] = useState<string[]>([]);
   const [rescheduling, setRescheduling] = useState<Booking | null>(null);
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
   const reviewReturnRef = useRef<HTMLButtonElement | null>(null);
   const bookingListHeadingRef = useRef<HTMLHeadingElement>(null);
+  const manualFormRef = useRef<HTMLFormElement>(null);
   const rescheduleDialogRef = useRef<HTMLFormElement>(null);
   const rescheduleReturnRef = useRef<HTMLButtonElement | null>(null);
   const canReviewPayments = can("payment:review");
@@ -1360,6 +1373,56 @@ function BookingsView({
   const todayCount = bookings.filter((booking) => booking.bookingDate === today).length;
   const activeCount = bookings.filter((booking) => !["cancelled", "expired", "completed"].includes(booking.status)).length;
   const reviewCount = bookings.filter((booking) => booking.paymentEvidence?.reviewable === true).length;
+  const canCreateBooking = can("booking:create");
+  const selectedManualCourt = courts.find((court) => court.id === manual.courtId) ?? null;
+  const manualSlots = useMemo(
+    () => buildManualBookingSlots(selectedManualCourt, manual.bookingDate, manualAvailability),
+    [manual.bookingDate, manualAvailability, selectedManualCourt],
+  );
+  const selectedManualSlots = manualSlots.filter((slot) => manualSelectedKeys.includes(slot.key));
+  const firstManualSlot = selectedManualSlots[0] ?? null;
+  const lastManualSlot = selectedManualSlots[selectedManualSlots.length - 1] ?? null;
+
+  useEffect(() => {
+    if (!openCreateRequest || isPreview || !canCreateBooking) return;
+    window.requestAnimationFrame(() => manualFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }, [canCreateBooking, isPreview, openCreateRequest]);
+
+  useEffect(() => {
+    if (!creating || isPreview || !manual.bookingDate) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return null;
+      setManualAvailabilityState("loading");
+      setManualAvailability(null);
+      setManualSelectedKeys([]);
+      setManual((current) => ({ ...current, startTime: "", durationHours: "1" }));
+      return getAvailability(manual.bookingDate);
+    })
+      .then((availability) => {
+        if (!active || !availability) return;
+        setManualAvailability(availability);
+        setManualAvailabilityState("ready");
+      })
+      .catch(() => {
+        if (!active) return;
+        setManualAvailabilityState("error");
+      });
+    return () => {
+      active = false;
+    };
+  }, [creating, isPreview, manual.bookingDate]);
+
+  const chooseManualSlot = (slotKey: string) => {
+    const nextKeys = nextManualSlotSelection(manualSlots, manualSelectedKeys, slotKey);
+    const nextSlots = manualSlots.filter((slot) => nextKeys.includes(slot.key));
+    setManualSelectedKeys(nextKeys);
+    setManual((current) => ({
+      ...current,
+      startTime: nextSlots[0]?.startTime ?? "",
+      durationHours: String(Math.max(1, nextSlots.length)),
+    }));
+  };
 
   const closePaymentReview = () => {
     const returnTarget = reviewReturnRef.current;
@@ -1475,7 +1538,7 @@ function BookingsView({
           <p>Search reservations, review payment state, and handle changes from one organized workspace.</p>
         </div>
         <ActionButton
-          disabled={!can("booking:create") || (!isPreview && !courts.length)}
+          disabled={!canCreateBooking || (!isPreview && !courts.length)}
           onClick={() => isPreview ? goTo("schedule") : setCreating((value) => !value)}
         >
           <span aria-hidden="true">＋</span> {creating ? "Close form" : "New booking"}
@@ -1489,18 +1552,19 @@ function BookingsView({
         <article><span>Payment review</span><strong>{reviewCount}</strong><small>{reviewCount ? "Receipt action needed" : "Everything reconciled"}</small></article>
       </div>
       {!isPreview && creating && (
-        <form className={styles.compactActionForm} onSubmit={(event) => {
+        <form ref={manualFormRef} className={styles.manualBookingForm} onSubmit={(event) => {
           event.preventDefault();
+          if (!firstManualSlot || !lastManualSlot) return;
           request({
             title: "Create this paid booking?",
-            detail: `${manual.customerName.trim()} · ${manual.bookingDate} at ${wholeHourLabel(manual.startTime)} · ${manual.durationHours} ${manual.durationHours === "1" ? "hour" : "hours"}. Availability and the total are recalculated by the server.`,
+            detail: `${manual.customerName.trim()} · ${selectedManualCourt?.name ?? "Selected court"} · ${firstManualSlot.bookingDate} from ${wholeHourLabel(firstManualSlot.startTime)} to ${wholeHourLabel(lastManualSlot.endTime)} · ${selectedManualSlots.length} ${selectedManualSlots.length === 1 ? "hour" : "hours"}. Availability and the total are recalculated by the server.`,
             confirmLabel: "Create paid booking",
             actionType: "booking:create",
             payload: {
               courtId: manual.courtId,
-              bookingDate: manual.bookingDate,
-              startTime: manual.startTime,
-              durationHours: Number(manual.durationHours),
+              bookingDate: firstManualSlot.bookingDate,
+              startTime: firstManualSlot.startTime,
+              durationHours: selectedManualSlots.length,
               customer: {
                 name: manual.customerName,
                 email: manual.customerEmail,
@@ -1512,25 +1576,66 @@ function BookingsView({
               },
               clientRequestId: crypto.randomUUID(),
             },
-            onSuccess: () => setCreating(false),
+            onSuccess: () => {
+              setCreating(false);
+              setManualSelectedKeys([]);
+            },
           });
         }}>
-          <div className={styles.compactFormHeading}>
-            <div><p className={styles.eyebrow}>Owner-assisted</p><h3>New paid booking</h3></div>
-            <span>Live quote at save</span>
+          <div className={styles.manualBookingHeading}>
+            <div><p className={styles.eyebrow}>Owner-assisted booking</p><h3>Book for a customer</h3><p>Choose an available court time, then add the player and payment details.</p></div>
+            <span><i /> Server checked</span>
           </div>
-          <div className={styles.compactFields}>
-            <label className={styles.field}><span>Court</span><select required value={manual.courtId} onChange={(event) => setManual({ ...manual, courtId: event.target.value })}>{courts.map((court) => <option key={court.id} value={court.id}>{court.name}</option>)}</select></label>
-            <label className={styles.field}><span>Date</span><input required type="date" min={manilaCalendarDate()} value={manual.bookingDate} onChange={(event) => setManual({ ...manual, bookingDate: event.target.value })} /></label>
-            <label className={styles.field}><span>Starts</span><select required value={manual.startTime} onChange={(event) => setManual({ ...manual, startTime: event.target.value })}><option value="" disabled>Select start time</option>{wholeHourOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>
-            <label className={styles.field}><span>Hours</span><select value={manual.durationHours} onChange={(event) => setManual({ ...manual, durationHours: event.target.value })}>{Array.from({ length: 18 }, (_, index) => <option key={index + 1} value={index + 1}>{index + 1}</option>)}</select></label>
-            <label className={styles.field}><span>Player name</span><input required minLength={2} maxLength={100} value={manual.customerName} onChange={(event) => setManual({ ...manual, customerName: event.target.value })} /></label>
-            <label className={styles.field}><span>Phone</span><input required minLength={7} maxLength={30} value={manual.customerPhone} onChange={(event) => setManual({ ...manual, customerPhone: event.target.value })} /></label>
-            <label className={styles.field}><span>Email <small>optional</small></span><input type="email" maxLength={254} value={manual.customerEmail} onChange={(event) => setManual({ ...manual, customerEmail: event.target.value })} /></label>
-            <label className={styles.field}><span>Paid through</span><select required value={manual.paymentMethod} onChange={(event) => setManual({ ...manual, paymentMethod: event.target.value })}><option value="" disabled>Select payment method</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
-            {manual.paymentMethod && manual.paymentMethod !== "cash" && <label className={styles.field}><span>Payment reference</span><input required minLength={4} maxLength={100} value={manual.paymentReference} onChange={(event) => setManual({ ...manual, paymentReference: event.target.value })} /></label>}
-          </div>
-          <div className={styles.compactFormActions}><span>Only a server-authorized owner can complete this write.</span><ActionButton type="submit">Review booking</ActionButton></div>
+          <section className={styles.manualBookingSection} aria-labelledby="manual-venue-heading">
+            <div className={styles.manualSectionTitle}><span>01</span><div><h4 id="manual-venue-heading">Court and date</h4><p>Availability refreshes whenever the date changes.</p></div></div>
+            <div className={styles.manualVenueFields}>
+              <label className={styles.field}><span>Court</span><select required value={manual.courtId} onChange={(event) => {
+                setManualSelectedKeys([]);
+                setManual({ ...manual, courtId: event.target.value, startTime: "", durationHours: "1" });
+              }}>{courts.map((court) => <option key={court.id} value={court.id}>{court.name}{court.surface ? ` · ${court.surface}` : ""}</option>)}</select></label>
+              <label className={styles.field}><span>Booking date</span><input required type="date" min={manilaCalendarDate()} value={manual.bookingDate} onChange={(event) => setManual({ ...manual, bookingDate: event.target.value })} /></label>
+            </div>
+          </section>
+
+          <fieldset className={styles.manualBookingSection}>
+            <legend className={styles.manualSectionTitle}><span>02</span><div><strong>Choose time slots</strong><small>Select consecutive hours for one court reservation.</small></div></legend>
+            <div className={styles.manualSlotLegend} aria-label="Time slot legend"><span><i className={styles.manualOpenDot} /> Open</span><span><i className={styles.manualSelectedDot} /> Selected</span><span><i className={styles.manualUnavailableDot} /> Unavailable</span></div>
+            {manualAvailabilityState === "loading" ? (
+              <div className={styles.manualSlotLoading} role="status"><i /><i /><i /><i /><span>Checking live availability…</span></div>
+            ) : manualAvailabilityState === "error" ? (
+              <div className={styles.manualSlotError} role="alert"><strong>Availability could not be loaded.</strong><span>Change the date to retry. No booking can be created until the live schedule is verified.</span></div>
+            ) : manualSlots.length ? (
+              <div className={styles.manualSlotGrid}>
+                {manualSlots.map((slot) => {
+                  const selected = manualSelectedKeys.includes(slot.key);
+                  return <button
+                    type="button"
+                    key={slot.key}
+                    className={cx(styles.manualSlot, selected && styles.manualSlotSelected, slot.state !== "open" && styles.manualSlotUnavailable)}
+                    disabled={slot.state !== "open"}
+                    aria-pressed={selected}
+                    aria-label={`${wholeHourLabel(slot.startTime)} to ${wholeHourLabel(slot.endTime)}, ${selected ? "selected" : slot.statusLabel}`}
+                    onClick={() => chooseManualSlot(slot.key)}
+                  ><strong>{wholeHourLabel(slot.startTime)}</strong><span>to {wholeHourLabel(slot.endTime)}</span><small>{selected ? "Selected" : slot.statusLabel}</small></button>;
+                })}
+              </div>
+            ) : manualAvailabilityState === "ready" ? (
+              <div className={styles.manualSlotError} role="status"><strong>No bookable hours returned.</strong><span>Choose another active court or date.</span></div>
+            ) : null}
+            {firstManualSlot && lastManualSlot && <div className={styles.manualSelectionSummary} role="status"><Clock3 /><div><span>Selected reservation</span><strong>{selectedManualCourt?.name} · {wholeHourLabel(firstManualSlot.startTime)}–{wholeHourLabel(lastManualSlot.endTime)}</strong></div><b>{selectedManualSlots.length} {selectedManualSlots.length === 1 ? "hour" : "hours"}</b></div>}
+          </fieldset>
+
+          <section className={styles.manualBookingSection} aria-labelledby="manual-customer-heading">
+            <div className={styles.manualSectionTitle}><span>03</span><div><h4 id="manual-customer-heading">Player and payment</h4><p>Record how the customer paid before creating the reservation.</p></div></div>
+            <div className={styles.manualCustomerFields}>
+              <label className={styles.field}><span>Player name</span><input required minLength={2} maxLength={100} autoComplete="name" value={manual.customerName} onChange={(event) => setManual({ ...manual, customerName: event.target.value })} /></label>
+              <label className={styles.field}><span>Phone</span><input required minLength={7} maxLength={30} type="tel" autoComplete="tel" value={manual.customerPhone} onChange={(event) => setManual({ ...manual, customerPhone: event.target.value })} /></label>
+              <label className={styles.field}><span>Email <small>optional</small></span><input type="email" maxLength={254} autoComplete="email" value={manual.customerEmail} onChange={(event) => setManual({ ...manual, customerEmail: event.target.value })} /></label>
+              <label className={styles.field}><span>Paid through</span><select required value={manual.paymentMethod} onChange={(event) => setManual({ ...manual, paymentMethod: event.target.value })}><option value="" disabled>Select payment method</option><option value="gcash">GCash</option><option value="maya">Maya</option><option value="bank_transfer">Bank transfer</option><option value="cash">Cash</option><option value="other">Other</option></select></label>
+              {manual.paymentMethod && manual.paymentMethod !== "cash" && <label className={styles.field}><span>Payment reference</span><input required minLength={4} maxLength={100} value={manual.paymentReference} onChange={(event) => setManual({ ...manual, paymentReference: event.target.value })} /></label>}
+            </div>
+          </section>
+          <div className={styles.manualBookingActions}><div><strong>Final check</strong><span>The server rechecks availability, authorization, and the exact total before saving.</span></div><ActionButton type="submit" disabled={!firstManualSlot || manualAvailabilityState !== "ready"}>Review booking <ArrowRight /></ActionButton></div>
         </form>
       )}
       {!isPreview && rescheduling && (
@@ -4017,6 +4122,7 @@ export default function ManagePage() {
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<"courts" | "gallery" | "schedule" | "business" | "rules">("courts");
   const [bookingFilter, setBookingFilter] = useState<BookingFilter>("all");
+  const [bookingCreateRequest, setBookingCreateRequest] = useState(0);
   const [scheduleCourtId, setScheduleCourtId] = useState("all");
   const [analyticsPeriod, setAnalyticsPeriod] = useState<AnalyticsPeriod>("7d");
   const [analyticsCourtId, setAnalyticsCourtId] = useState<string | null>(null);
@@ -4074,6 +4180,12 @@ export default function ManagePage() {
   const openNeedsReview = () => {
     setMobileMoreOpen(false);
     setBookingFilter("pending");
+    setView("bookings");
+  };
+  const openNewBooking = () => {
+    setMobileMoreOpen(false);
+    setBookingFilter("all");
+    setBookingCreateRequest((requestNumber) => requestNumber + 1);
     setView("bookings");
   };
 
@@ -4423,8 +4535,8 @@ export default function ManagePage() {
     if (!viewPermitted) return <PermissionPanel role={sessionRole} view={view} isPreview={isPreview} />;
     if (setupPreview) return <SetupRequiredPanel view={view} />;
     switch (view) {
-      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
-      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
+      case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNewBooking={openNewBooking} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
+      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} openCreateRequest={bookingCreateRequest} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
       case "schedule": return snapshot.tenant.mode === "live" ? (
         <CalendarView
           courts={snapshot.courts}
@@ -4433,7 +4545,9 @@ export default function ManagePage() {
           initialCourtId={scheduleCourtId}
           loadDay={loadCalendarDay}
           canBlock={can("schedule:block")}
+          canCreateBooking={can("booking:create")}
           onOpenBlocks={() => setView("blocks")}
+          onNewBooking={openNewBooking}
           timezone={snapshot.tenant.timezone}
           currency={snapshot.tenant.currency}
         />

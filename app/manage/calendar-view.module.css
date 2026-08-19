@@ -520,6 +520,8 @@
 .segmented button.active { background: #fffefa; color: #14231e; box-shadow: 0 1px 4px rgba(18, 33, 29, .08); }
 .toolbarActions .blockButton { min-height: 40px; border-radius: 11px; background: #fffefa; color: #14231e; box-shadow: none; }
 .toolbarActions .refreshButton { display: inline-flex; min-width: 40px; padding: 0 13px; }
+.newBookingButton { display: inline-flex; min-height: 42px; align-items: center; justify-content: center; gap: 7px; border: 1px solid #102f5c; border-radius: 11px; background: linear-gradient(135deg, #173f70, #102f5c); padding: 0 15px; color: #fffefa; font-size: 12px; font-weight: 760; cursor: pointer; box-shadow: 0 8px 18px rgba(16,47,92,.16); }
+.newBookingButton:hover:not(:disabled) { transform: translateY(-1px); background: #102f5c; }
 
 .scheduleBoard {
   overflow: hidden;
@@ -1207,6 +1209,7 @@
   .dateControl { width: 100%; }
   .dateLabel { min-width: 0; flex: 1; }
   .toolbarActions { display: grid; grid-template-columns: 1fr 1fr; width: 100%; }
+  .newBookingButton { grid-column: 1 / -1; width: 100%; min-height: 44px; }
   .segmented { grid-column: 1 / -1; order: 3; }
   .segmented button { flex: 1; justify-content: center; }
   .toolbarActions .blockButton,
