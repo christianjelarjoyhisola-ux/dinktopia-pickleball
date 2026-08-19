@@ -3001,6 +3001,26 @@ test("uses secure owner-managed QR image uploads instead of exposing asset URLs"
   );
 });
 
+test("renders the current tenant payment QR compactly in guest checkout", async () => {
+  const [booking, styles] = await Promise.all([
+    readFile(files.booking, "utf8"),
+    readFile(files.publicCss, "utf8"),
+  ]);
+
+  assert.match(
+    booking,
+    /trustedGallerySource\([\s\S]*?paymentMethod\?\.qrUrl \?\? paymentMethod\?\.qrImageUrl/,
+    "checkout should accept supported tenant QR fields only through the trusted public-asset allowlist",
+  );
+  assert.match(booking, /isLive && paymentQrUrl/);
+  assert.match(booking, /alt=\{`\$\{paymentLabel\} payment QR code for \$\{paymentAccountName\}`\}/);
+  assert.match(booking, /onLoad=\{\(\) => setPaymentQrState\("ready"\)\}/);
+  assert.match(booking, /onError=\{\(\) => setPaymentQrState\("error"\)\}/);
+  assert.match(booking, /Tap for full size/);
+  assert.match(styles, /\.booking-route \.checkout-payment-qr[\s\S]*?grid-template-columns: 104px minmax\(0, 1fr\)/);
+  assert.match(styles, /\.booking-route \.checkout-payment-qr img[\s\S]*?object-fit: contain/);
+});
+
 test("keeps payment review private, minimal, role-checked, and decision-safe", async () => {
   const [client, manage, managementAdapter, manageCss] = await Promise.all([
     readFile(files.client, "utf8"),

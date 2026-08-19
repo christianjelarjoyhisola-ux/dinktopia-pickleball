@@ -2010,6 +2010,7 @@ export function BookingExperience({
   >("idle");
   const [paymentError, setPaymentError] = useState("");
   const [paymentCopyState, setPaymentCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [paymentQrState, setPaymentQrState] = useState<"loading" | "ready" | "error">("loading");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pendingBooking, setPendingBooking] = useState<BookingRecord | null>(null);
   const [confirmedBooking, setConfirmedBooking] = useState<BookingRecord | null>(null);
@@ -2216,6 +2217,9 @@ export function BookingExperience({
     ? `+63${gcashLocalDigits}`
     : paymentAccountNumber;
   const paymentAccountReady = Boolean(paymentAccountName && paymentAccountNumber);
+  const paymentQrUrl = trustedGallerySource(
+    paymentMethod?.qrUrl ?? paymentMethod?.qrImageUrl,
+  );
   const rawPolicy = (bootstrap?.settings?.refund_reschedule_policy ??
     bootstrap?.refundReschedulePolicy ??
     null) as Record<string, unknown> | null;
@@ -4396,6 +4400,34 @@ export function BookingExperience({
                               <span>Recipient name</span>
                               <strong>{isLive ? paymentAccountName : "Court owner"}</strong>
                             </div>
+                            {isLive && paymentQrUrl && (
+                              <figure
+                                className={`checkout-payment-qr is-${paymentQrState}`}
+                                aria-busy={paymentQrState === "loading"}
+                              >
+                                <a
+                                  href={paymentQrUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  aria-label={`Open the ${paymentLabel} payment QR code at full size`}
+                                >
+                                  {/* The tenant bootstrap only exposes the current tenant's validated public QR asset. */}
+                                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                                  <img
+                                    src={paymentQrUrl}
+                                    alt={`${paymentLabel} payment QR code for ${paymentAccountName}`}
+                                    width={144}
+                                    height={144}
+                                    decoding="async"
+                                    onLoad={() => setPaymentQrState("ready")}
+                                    onError={() => setPaymentQrState("error")}
+                                  />
+                                  {paymentQrState === "loading" && <span className="checkout-payment-qr-loading">Loading QR…</span>}
+                                  {paymentQrState === "error" && <span className="checkout-payment-qr-error">QR unavailable</span>}
+                                </a>
+                                <figcaption><strong>Scan to pay</strong><small>Tap for full size</small></figcaption>
+                              </figure>
+                            )}
                             <div className="gcash-account-field">
                               <span>{isGcashPayment ? "Mobile number" : "Account number"}</span>
                               <div className="gcash-account-number">
