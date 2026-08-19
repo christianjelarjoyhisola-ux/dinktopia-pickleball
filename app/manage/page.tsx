@@ -126,7 +126,7 @@ const NAV_ITEMS: { id: View; label: string; short: string }[] = [
   { id: "bookings", label: "Bookings", short: "BK" },
   { id: "blocks", label: "Court blocks", short: "BL" },
   { id: "customers", label: "Customers", short: "CU" },
-  { id: "finance", label: "Money", short: "FN" },
+  { id: "finance", label: "Finance", short: "FN" },
   { id: "reports", label: "Insights", short: "AN" },
   { id: "settings", label: "Venue & settings", short: "ST" },
   { id: "launch", label: "Launch", short: "GO" },

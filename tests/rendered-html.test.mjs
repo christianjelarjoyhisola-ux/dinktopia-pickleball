@@ -3931,7 +3931,7 @@ test("keeps analytics and finance complete, server-authoritative, capability-gat
 
   assert.match(
     manage,
-    /\{ id: "finance", label: "Money", short: "FN" \}[\s\S]*?\{ id: "reports", label: "Insights", short: "AN" \}/,
+    /\{ id: "finance", label: "Finance", short: "FN" \}[\s\S]*?\{ id: "reports", label: "Insights", short: "AN" \}/,
   );
   assert.match(
     manage,
@@ -3988,11 +3988,23 @@ test("keeps analytics and finance complete, server-authoritative, capability-gat
   );
   assert.match(
     financeView,
-    /dashboard\.openRemittances\.map\(\(item\) => <RemittanceCard[\s\S]*?history\.map\(\(item\) =>/,
+    /dashboard\.openRemittances\.map\(\(item\) => <RemittanceCard item=\{item\} timezone=\{dashboard\.timezone\}[\s\S]*?history\.map\(\(item\) =>/,
   );
   assert.match(
     financeView,
-    /Open and settled values come from remittance records and accepted payments—not from the analytics chart or a browser-side fee estimate\./,
+    /Platform fees accrued[\s\S]*?Open balance[\s\S]*?Settled total[\s\S]*?Next due[\s\S]*?Customer revenue[\s\S]*?intentionally not estimated or mixed into this platform-fee ledger/,
+  );
+  assert.match(
+    financeView,
+    /financeHero[\s\S]*?Platform-fee ledger[\s\S]*?Updated \{localInstant\(dashboard\.serverNow, dashboard\.timezone\)\}[\s\S]*?cycleReason[\s\S]*?dashboard\.canPrepare\.reason/,
+  );
+  assert.match(
+    financeView,
+    /paymentMethodLabel\(destination\.method\)[\s\S]*?Recipient[\s\S]*?maskReference\(destination\.accountReference\)[\s\S]*?destination\.instructions/,
+  );
+  assert.match(
+    analyticsFinance,
+    /function RemittanceCard[\s\S]*?remittancePeriod\(item\)[\s\S]*?item\.remainingBalance[\s\S]*?item\.amountDue[\s\S]*?item\.amountSettled[\s\S]*?item\.bookingsCount[\s\S]*?item\.billableHours[\s\S]*?item\.cycleDueOn[\s\S]*?item\.preparedAt/,
   );
   assert.doesNotMatch(financeView, /snapshot\.bookings|platformBilling|feeMode|feeAmount/);
 
@@ -4003,6 +4015,18 @@ test("keeps analytics and finance complete, server-authoritative, capability-gat
   assert.match(
     cssBlock(analyticsCss, ".kpiGrid"),
     /grid-template-columns:\s*repeat\(4, minmax\(0, 1fr\)\)/,
+  );
+  assert.match(
+    analyticsCss,
+    /\.financeHero\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between[^}]*border-bottom:/s,
+  );
+  assert.match(
+    analyticsCss,
+    /\.financeWorkspace \.ledgerGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1\.25fr\) minmax\(330px, \.75fr\)/s,
+  );
+  assert.match(
+    analyticsCss,
+    /\.financeWorkspace \.remittanceFacts\s*\{[^}]*grid-template-columns:\s*repeat\(3, minmax\(0, 1fr\)/s,
   );
   assert.match(
     analyticsCss,
@@ -4021,6 +4045,10 @@ test("keeps analytics and finance complete, server-authoritative, capability-gat
   assert.match(
     phoneAnalyticsCss,
     /\.kpiGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/s,
+  );
+  assert.match(
+    analyticsCss,
+    /@media\s*\(max-width:\s*560px\)[\s\S]*?\.financeWorkspace \.remittanceFacts\s*\{[^}]*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)/s,
   );
   assert.match(
     phoneAnalyticsCss,

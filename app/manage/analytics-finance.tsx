@@ -1,5 +1,14 @@
 "use client";
 
+import {
+  CalendarClock,
+  CircleCheck,
+  CircleDollarSign,
+  Landmark,
+  ReceiptText,
+  ShieldCheck,
+  WalletCards,
+} from "lucide-react";
 import { useState } from "react";
 
 import type {
@@ -441,24 +450,54 @@ function maskReference(reference: string | null): string {
   return reference.length > 4 ? `•••• ${visible}` : visible;
 }
 
-function RemittanceCard({ item }: { item: RemittanceSummary }) {
+function paymentMethodLabel(method: "gcash" | "maya" | "bank_transfer" | "other"): string {
+  return {
+    gcash: "GCash",
+    maya: "Maya",
+    bank_transfer: "Bank transfer",
+    other: "Other method",
+  }[method];
+}
+
+function remittancePeriod(item: RemittanceSummary): string {
+  if (item.periodStart && item.periodEnd) {
+    return `${localDate(item.periodStart)} – ${localDate(item.periodEnd)}`;
+  }
+  return "Period not returned";
+}
+
+function RemittanceCard({ item, timezone }: { item: RemittanceSummary; timezone: string }) {
   return (
     <article className={styles.remittanceCard}>
       <div className={styles.remittanceTitle}>
-        <div>
-          <span>{item.reference}</span>
-          <strong>{money(item.remainingBalance, item.currency)} remaining</strong>
+        <div className={styles.remittanceIdentity}>
+          <span className={styles.ledgerIcon} aria-hidden="true"><ReceiptText size={17} /></span>
+          <div>
+            <strong>{item.reference}</strong>
+            <span>{remittancePeriod(item)}</span>
+          </div>
         </div>
         <span className={`${styles.statusBadge} ${styles[`remittance_${item.status}`]}`}>
           {remittanceStatusLabel(item.status)}
         </span>
       </div>
+      <div className={styles.remittanceBalance}>
+        <span>Outstanding balance</span>
+        <strong>{money(item.remainingBalance, item.currency)}</strong>
+      </div>
       <dl className={styles.remittanceFacts}>
         <div><dt>Amount due</dt><dd>{money(item.amountDue, item.currency)}</dd></div>
         <div><dt>Settled</dt><dd>{money(item.amountSettled, item.currency)}</dd></div>
         <div><dt>Bookings</dt><dd>{number(item.bookingsCount, 0)}</dd></div>
+        <div><dt>Billable hours</dt><dd>{number(item.billableHours)} hrs</dd></div>
         <div><dt>Due date</dt><dd>{item.cycleDueOn ? localDate(item.cycleDueOn) : "Not set"}</dd></div>
+        <div><dt>Prepared</dt><dd>{localInstant(item.preparedAt, timezone)}</dd></div>
       </dl>
+      {item.submittedAt && (
+        <p className={styles.remittanceProgress}>
+          <ShieldCheck aria-hidden="true" size={14} /> Submitted {localInstant(item.submittedAt, timezone)}
+        </p>
+      )}
     </article>
   );
 }
@@ -492,49 +531,67 @@ export function FinanceView({
   const destination = dashboard.paymentDestination;
 
   return (
-    <section className={styles.workspace} aria-labelledby="finance-title" aria-busy={loading}>
-      <header className={styles.sectionHeader}>
+    <section className={`${styles.workspace} ${styles.financeWorkspace}`} aria-labelledby="finance-title" aria-busy={loading}>
+      <header className={styles.financeHero}>
         <div>
-          <h2 id="finance-title">As of {localInstant(dashboard.serverNow, dashboard.timezone)}</h2>
-          <p>{dashboard.timezone}</p>
+          <span className={styles.eyebrow}>Finance &amp; remittance</span>
+          <h2 id="finance-title">Platform-fee ledger</h2>
+          <p>Track accrued platform fees, current remittance cycles, and verified settlements from the authoritative ledger.</p>
         </div>
-        <span className={dashboard.role === "system_owner" ? styles.monitorBadge : styles.ownerBadge}>
-          {dashboard.role === "system_owner" ? "Monitor access" : "Venue remittance"}
-        </span>
+        <div className={styles.financeHeroMeta}>
+          <span className={dashboard.role === "system_owner" ? styles.monitorBadge : styles.ownerBadge}>
+            {dashboard.role === "system_owner" ? "Monitor access" : "Venue remittance"}
+          </span>
+          <span>Updated {localInstant(dashboard.serverNow, dashboard.timezone)}</span>
+          <small>{dashboard.timezone}</small>
+        </div>
       </header>
 
       <div className={styles.kpiGrid} aria-label="Remittance summary">
         <article className={styles.kpiPrimary}>
-          <span>Accrued platform fees</span>
+          <span className={styles.financeMetricIcon} aria-hidden="true"><CircleDollarSign size={18} /></span>
+          <span>Platform fees accrued</span>
           <strong>{money(dashboard.accumulated.amountDue, currency)}</strong>
-          <small>{dashboard.accumulated.bookingsCount} eligible paid bookings not yet frozen</small>
+          <small>{number(dashboard.accumulated.bookingsCount, 0)} eligible paid bookings · {number(dashboard.accumulated.billableHours)} billable hours</small>
         </article>
         <article className={styles.kpiCard}>
-          <span>Open remaining</span>
+          <span className={styles.financeMetricIcon} aria-hidden="true"><WalletCards size={18} /></span>
+          <span>Open balance</span>
           <strong>{money(openRemaining, currency)}</strong>
-          <small>{dashboard.openRemittances.length} open remittance {dashboard.openRemittances.length === 1 ? "record" : "records"}</small>
+          <small>{dashboard.openRemittances.length} remittance {dashboard.openRemittances.length === 1 ? "cycle" : "cycles"} in progress</small>
         </article>
         <article className={styles.kpiCard}>
+          <span className={styles.financeMetricIcon} aria-hidden="true"><CircleCheck size={18} /></span>
           <span>Settled total</span>
           <strong>{money(dashboard.settledTotal, currency)}</strong>
-          <small>Accepted platform-fee remittances</small>
+          <small>Accepted platform-fee settlements</small>
         </article>
         <article className={styles.kpiCard}>
-          <span>Next due date</span>
+          <span className={styles.financeMetricIcon} aria-hidden="true"><CalendarClock size={18} /></span>
+          <span>Next due</span>
           <strong className={styles.dateValue}>{localDate(dashboard.nextDueOn)}</strong>
-          <small>Asia/Manila cycle date</small>
+          <small>Next platform-fee cycle date</small>
         </article>
       </div>
 
       <div className={styles.financeGrid}>
-        <article className={styles.panel}>
+        <article className={`${styles.panel} ${styles.cyclePanel}`}>
           <div className={styles.panelHeading}>
-            <div>
+            <div className={styles.panelTitleWithIcon}>
+              <span aria-hidden="true"><CalendarClock size={18} /></span>
+              <div>
               <span className={styles.eyebrow}>Action status</span>
               <h3>{dashboard.canPrepare.allowed ? "Ready to prepare" : "Current cycle"}</h3>
+              </div>
             </div>
+            <span className={dashboard.canPrepare.allowed ? styles.readyPill : styles.summaryPill}>
+              {dashboard.canPrepare.allowed ? "Action ready" : dashboard.role === "system_owner" ? "Read only" : "Current cycle"}
+            </span>
           </div>
-          <p className={styles.actionReason}>{dashboard.canPrepare.reason}</p>
+          <div className={styles.cycleReason}>
+            {dashboard.canPrepare.allowed ? <CircleCheck aria-hidden="true" size={18} /> : <ShieldCheck aria-hidden="true" size={18} />}
+            <p>{dashboard.canPrepare.reason}</p>
+          </div>
           {dashboard.role === "court_owner" && onPrepare ? (
             <button
               type="button"
@@ -555,26 +612,36 @@ export function FinanceView({
           )}
         </article>
 
-        <article className={styles.panel}>
+        <article className={`${styles.panel} ${styles.destinationPanel}`}>
           <div className={styles.panelHeading}>
-            <div>
+            <div className={styles.panelTitleWithIcon}>
+              <span aria-hidden="true"><Landmark size={18} /></span>
+              <div>
               <span className={styles.eyebrow}>Payment destination</span>
-              <h3>{destination?.configured ? destination.method.replaceAll("_", " ") : "Setup incomplete"}</h3>
+              <h3>{destination?.configured ? paymentMethodLabel(destination.method) : "Setup incomplete"}</h3>
+              </div>
             </div>
+            <span className={destination?.configured ? styles.readyPill : styles.attentionPill}>
+              {destination?.configured ? "Configured" : "Action needed"}
+            </span>
           </div>
           {destination ? (
             <dl className={styles.destinationFacts}>
-              <div><dt>Account</dt><dd>{destination.accountName || "Not configured"}</dd></div>
-              <div><dt>Reference</dt><dd>{maskReference(destination.accountReference)}</dd></div>
+              <div><dt>Recipient</dt><dd>{destination.accountName || "Not configured"}</dd></div>
+              <div><dt>Account reference</dt><dd>{maskReference(destination.accountReference)}</dd></div>
+              {destination.instructions && <div className={styles.destinationInstructions}><dt>Instructions</dt><dd>{destination.instructions}</dd></div>}
             </dl>
           ) : (
-            <p className={styles.emptyCopy}>No platform remittance destination is configured.</p>
+            <div className={styles.financeEmptyState}>
+              <Landmark aria-hidden="true" size={20} />
+              <div><strong>No destination configured</strong><p>A System Owner must configure the protected platform recipient before remittance can be completed.</p></div>
+            </div>
           )}
         </article>
       </div>
 
       <div className={styles.ledgerGrid}>
-        <article className={styles.panel}>
+        <article className={`${styles.panel} ${styles.openLedgerPanel}`}>
           <div className={styles.panelHeading}>
             <div>
               <span className={styles.eyebrow}>Open ledger</span>
@@ -584,14 +651,17 @@ export function FinanceView({
           </div>
           {dashboard.openRemittances.length ? (
             <div className={styles.remittanceGrid}>
-              {dashboard.openRemittances.map((item) => <RemittanceCard item={item} key={item.id} />)}
+              {dashboard.openRemittances.map((item) => <RemittanceCard item={item} timezone={dashboard.timezone} key={item.id} />)}
             </div>
           ) : (
-            <p className={styles.emptyCopy}>There are no prepared, submitted, or unresolved remittances.</p>
+            <div className={styles.financeEmptyState}>
+              <CircleCheck aria-hidden="true" size={20} />
+              <div><strong>No remittances in progress</strong><p>There are no prepared, submitted, rejected, or unresolved platform-fee cycles.</p></div>
+            </div>
           )}
         </article>
 
-        <article className={styles.panel}>
+        <article className={`${styles.panel} ${styles.historyPanel}`}>
           <div className={styles.panelHeading}>
             <div>
               <span className={styles.eyebrow}>Closed ledger</span>
@@ -603,20 +673,29 @@ export function FinanceView({
             <ol className={styles.historyList}>
               {history.map((item) => (
                 <li key={item.id}>
-                  <div><strong>{item.reference}</strong><span>{item.settledAt ? `Settled ${new Date(item.settledAt).toLocaleDateString("en-PH")}` : item.cancelledAt ? `Closed ${new Date(item.cancelledAt).toLocaleDateString("en-PH")}` : "Closed record"}</span></div>
-                  <div><strong>{money(item.amountSettled, item.currency)}</strong><span className={`${styles.statusBadge} ${styles[`remittance_${item.status}`]}`}>{remittanceStatusLabel(item.status)}</span></div>
+                  <div className={styles.historyIdentity}><span aria-hidden="true"><ReceiptText size={15} /></span><div><strong>{item.reference}</strong><small>{remittancePeriod(item)}</small></div></div>
+                  <div className={styles.historyAmount}><strong>{money(item.amountSettled, item.currency)}</strong><span>{number(item.bookingsCount, 0)} bookings · {number(item.billableHours)} hrs</span></div>
+                  <div className={styles.historyState}><span className={`${styles.statusBadge} ${styles[`remittance_${item.status}`]}`}>{remittanceStatusLabel(item.status)}</span><small>{item.settledAt ? `Settled ${new Date(item.settledAt).toLocaleDateString("en-PH")}` : item.cancelledAt ? `Closed ${new Date(item.cancelledAt).toLocaleDateString("en-PH")}` : "Closed record"}</small></div>
                 </li>
               ))}
             </ol>
           ) : (
-            <p className={styles.emptyCopy}>No settled or void remittance history is recorded yet.</p>
+            <div className={styles.financeEmptyState}>
+              <ReceiptText aria-hidden="true" size={20} />
+              <div><strong>No settlement history yet</strong><p>Settled and void remittance records will appear here after the first cycle is closed.</p></div>
+            </div>
           )}
         </article>
       </div>
 
       <details className={styles.boundaryNote}>
-        <summary>About the ledger</summary>
-        <p>Accrued fees are eligible paid booking fees not yet attached to a remittance. Open and settled values come from remittance records and accepted payments—not from the analytics chart or a browser-side fee estimate.</p>
+        <summary>How to read this ledger</summary>
+        <div className={styles.ledgerExplanation}>
+          <p><strong>Platform fees accrued</strong> are eligible paid booking fees not yet attached to a remittance.</p>
+          <p><strong>Open balance</strong> is the remaining amount across prepared, submitted, or unresolved remittance records.</p>
+          <p><strong>Settled total</strong> includes only accepted platform-fee remittances.</p>
+          <p><strong>Customer revenue</strong> belongs in Insights. It is intentionally not estimated or mixed into this platform-fee ledger.</p>
+        </div>
       </details>
     </section>
   );
