@@ -3548,9 +3548,10 @@ export function BookingExperience({
           <div className="hero-grid site-container">
             <div className="hero-copy">
               <p className="eyebrow hero-eyebrow"><span aria-hidden="true">●</span><span>{activeTenant.identity.name} · {checkingLiveSetup ? "Connecting" : bookingSetupReady ? "Live booking" : "Booking unavailable"}</span></p>
-              <h1>
-                Your court. Your crew.
-                <span>Your next rally.</span>
+              <h1 className="hero-title">
+                <span className="hero-title-line">Your court.</span>
+                <span className="hero-title-line">Your crew.</span>
+                <span className="hero-title-line hero-title-accent">Your next rally.</span>
               </h1>
               <p className="hero-lede">
                 {bookingSetupReady

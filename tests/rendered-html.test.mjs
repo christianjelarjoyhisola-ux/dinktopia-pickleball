@@ -957,10 +957,13 @@ test("server-renders named Home, Courts, Book, and Manage routes", async () => {
   assert.match(home, /class="hero-visual"[^>]*aria-hidden="true"/i);
   assert.match(homeText, /K&L Pickleball Court · Connecting/i);
   assert.match(homeText, /Your court\. Your crew\. Your next rally\./i);
+  const bookingSource = await readFile(files.booking, "utf8");
+  assert.match(bookingSource, /className="hero-title-line">Your court\.<\/span>/i);
+  assert.match(bookingSource, /className="hero-title-line hero-title-accent">Your next rally\.<\/span>/i);
   assert.match(homeText, /Rates soon per court-hour/i);
   assert.match(homeText, /Checking booking access/i);
   assert.match(
-    await readFile(files.booking, "utf8"),
+    bookingSource,
     /function getMinimumConfiguredHourlyRate\(courts: PublicCourt\[\]\)[\s\S]*?Math\.min\(\.\.\.rates\)/,
   );
   assert.match(
