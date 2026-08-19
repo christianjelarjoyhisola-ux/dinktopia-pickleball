@@ -49,6 +49,9 @@ export const dinktopiaConfig = {
     rescheduling:
       "Confirmed bookings are rescheduled by an owner or administrator using the platform's atomic rescheduling flow.",
   },
+  socialLinks: {
+    facebook: null,
+  },
   brand: {
     direction: "Modern court club led by the official Dinktopia mark",
     tagline: "Find your hour. Own the rally.",

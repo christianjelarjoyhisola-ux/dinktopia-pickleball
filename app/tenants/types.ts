@@ -56,6 +56,9 @@ export type TenantConfig<Slug extends string = string> = {
     cancellation: string | null;
     rescheduling: string | null;
   };
+  socialLinks: {
+    facebook: string | null;
+  };
   brand: {
     direction: string | null;
     tagline: string | null;

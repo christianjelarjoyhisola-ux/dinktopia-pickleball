@@ -46,6 +46,9 @@ export const klPickleballCourtConfig = {
     cancellation: null,
     rescheduling: null,
   },
+  socialLinks: {
+    facebook: "https://www.facebook.com/profile.php?id=61583037885610",
+  },
   brand: {
     direction: "Energetic neighborhood court culture led by the official blue, lime, coral, and cream badge",
     tagline: "Your local court. Your next rally.",

@@ -7445,6 +7445,24 @@
 .community-card-copy small { color: var(--on-dark-muted); font-size: var(--text-caption); }
 .community-card-copy strong { font-size: var(--text-small); }
 
+.community-card-link {
+  text-decoration: none;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.community-card-link:hover {
+  border-color: rgba(200, 238, 91, 0.68);
+  background-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+}
+
+.community-card-link:focus-visible {
+  outline: 3px solid #c8ee5b;
+  outline-offset: 3px;
+}
+
+.community-card-action { color: var(--lime); font-size: 1.1rem; font-weight: 800; }
+
 .how-section {
   background: var(--paper-deep);
   color: var(--ink);

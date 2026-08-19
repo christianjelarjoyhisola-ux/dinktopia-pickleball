@@ -3658,14 +3658,18 @@ export function BookingExperience({
             <div className="community-intro">
               <p className="eyebrow">Built for K&amp;L</p>
               <h2>More than a court. A club that feels local.</h2>
-              <p>Verified announcements and official community channels will appear after the {activeTenant.identity.shortName} team publishes them.</p>
+              <p>{activeTenant.socialLinks.facebook ? `Follow the official ${activeTenant.identity.shortName} Facebook page for court news, events, and community updates.` : `Verified announcements and official community channels will appear after the ${activeTenant.identity.shortName} team publishes them.`}</p>
             </div>
-            <div className="community-links" role="group" aria-label="Community channels setup status">
-              <article className="community-card community-card-featured">
+            <div className="community-links" role="group" aria-label="Official community channels">
+              {activeTenant.socialLinks.facebook ? <a className="community-card community-card-featured community-card-link" href={activeTenant.socialLinks.facebook} target="_blank" rel="noreferrer">
+                <span className="community-mark" aria-hidden="true">f</span>
+                <span className="community-card-copy"><small>Official Facebook</small><strong>Follow K&amp;L Pickleball Court</strong></span>
+                <span className="community-card-action" aria-hidden="true">↗</span>
+              </a> : <article className="community-card community-card-featured">
                 <span className="community-mark" aria-hidden="true">{activeTenant.identity.shortName}</span>
                 <span className="community-card-copy"><small>Launch status</small><strong>Official updates coming soon</strong></span>
                 <span className="community-status-dot" aria-hidden="true" />
-              </article>
+              </article>}
             </div>
           </div>
         </section>}
@@ -4634,7 +4638,7 @@ export function BookingExperience({
           <div><TenantWordmark footer /><p>Local court time, made easy.</p></div>
           <div><h2>Play</h2><Link href="/courts">Courts</Link>{isHome ? <a href="#gallery">Gallery</a> : <Link href="/#gallery">Gallery</Link>}<Link href="/book">Reserve a court</Link><Link href="/book?mode=manage">Manage booking</Link></div>
           <div><h2>Club hours</h2><p><strong>{venueHoursLabel ?? "Check live court availability"}</strong></p><small>{activeTenant.identity.timezone} · {activeTenant.identity.currency}</small></div>
-          <div><h2>Booking status</h2><p>{checkingLiveSetup ? <>Checking live courts.<br />Loading verified availability.</> : bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Online booking unavailable.<br />Please try again later.</>}</p><Link className="footer-admin-link" href="/manage">Admin login <span aria-hidden="true">→</span></Link></div>
+          <div><h2>Booking status</h2><p>{checkingLiveSetup ? <>Checking live courts.<br />Loading verified availability.</> : bookingSetupReady ? <>Live courts and availability.<br />Online reservations are open.</> : <>Online booking unavailable.<br />Please try again later.</>}</p>{activeTenant.socialLinks.facebook && <a href={activeTenant.socialLinks.facebook} target="_blank" rel="noreferrer">Facebook <span aria-hidden="true">↗</span></a>}<Link className="footer-admin-link" href="/manage">Admin login <span aria-hidden="true">→</span></Link></div>
         </div>
         <div className="site-container footer-bottom"><span>© 2026 {activeTenant.identity.name}</span><span>K&amp;L court booking</span></div>
       </footer>

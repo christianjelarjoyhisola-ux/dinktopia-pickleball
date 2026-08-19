@@ -4799,7 +4799,7 @@ test("renders accessible labels, control states, and announcements", async () =>
   assert.match(booking, /aria-label="Booking progress"/i);
   assert.match(booking, /aria-label="Availability legend"/i);
   assert.match(booking, /role="group" aria-label="Court gallery setup status"/i);
-  assert.match(booking, /role="group" aria-label="Community channels setup status"/i);
+  assert.match(booking, /role="group" aria-label="Official community channels"/i);
   assert.doesNotMatch(booking, /booking-venue-hero[^>]*aria-label=/i);
   assert.match(booking, /<legend className="sr-only">Select a date<\/legend>/i);
   assert.match(booking, /role="radio"[^>]*aria-checked=\{selectedDate === date\.iso\}/i);
