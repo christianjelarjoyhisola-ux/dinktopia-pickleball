@@ -399,16 +399,21 @@ function tenantCalendarUidDomain() {
 
 function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
   return publicCourts.map((court, index) => {
+    const configuredNumber = court.slug.match(/(?:^|[-_])(\d{1,3})$/)?.[1]
+      ?? court.name.match(/\bcourt\s+(\d{1,3})\b/i)?.[1]
+      ?? String(index + 1);
+    const normalizedNumber = String(Number(configuredNumber)).padStart(2, "0");
     const description = court.description?.replaceAll("\\", "/").trim();
     const publicConfig = (court.publicConfig ?? {}) as { photoUrl?: unknown; photoAlt?: unknown };
     const publishedPhoto = trustedGallerySource(publicConfig.photoUrl);
-    const localPhoto = activeTenant.identity.slug === "kl-pickleball-court" && index < 4
-      ? `/kl-court-${index + 1}.jpg`
+    const localPhotoNumber = Number(normalizedNumber);
+    const localPhoto = activeTenant.identity.slug === "kl-pickleball-court" && localPhotoNumber >= 1 && localPhotoNumber <= 4
+      ? `/kl-court-${localPhotoNumber}.jpg`
       : null;
     return {
       id: court.id,
       slug: court.slug,
-      number: String(index + 1).padStart(2, "0"),
+      number: normalizedNumber,
       name: court.name,
       descriptor: description || "Pickleball court",
       mood: description || `Configured for ${activeTenant.identity.shortName} play`,

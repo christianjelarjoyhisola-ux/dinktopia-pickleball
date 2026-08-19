@@ -3021,6 +3021,24 @@ test("renders the current tenant payment QR compactly in guest checkout", async 
   assert.match(styles, /\.booking-route \.checkout-payment-qr img[\s\S]*?object-fit: contain/);
 });
 
+test("preserves configured court identities when inactive courts are filtered out", async () => {
+  const booking = await readFile(files.booking, "utf8");
+  const mapperStart = booking.indexOf("function displayCourtsFromPlatform");
+  const mapperEnd = booking.indexOf("function compactCourtSurface", mapperStart);
+  assert.ok(mapperStart >= 0 && mapperEnd > mapperStart);
+  const mapper = booking.slice(mapperStart, mapperEnd);
+
+  assert.ok(mapper.includes("court.slug.match(/(?:^|[-_])(\\d{1,3})$/)"));
+  assert.ok(mapper.includes("court.name.match(/\\bcourt\\s+(\\d{1,3})\\b/i)"));
+  assert.match(mapper, /number:\s*normalizedNumber/);
+  assert.doesNotMatch(
+    mapper,
+    /number:\s*String\(index \+ 1\)\.padStart\(2, "0"\)/,
+    "active courts must not be renumbered by their filtered array position",
+  );
+  assert.ok(mapper.includes("`/kl-court-${localPhotoNumber}.jpg`"));
+});
+
 test("keeps payment review private, minimal, role-checked, and decision-safe", async () => {
   const [client, manage, managementAdapter, manageCss] = await Promise.all([
     readFile(files.client, "utf8"),
