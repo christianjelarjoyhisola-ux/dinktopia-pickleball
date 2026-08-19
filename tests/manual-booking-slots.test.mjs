@@ -70,6 +70,24 @@ test("manual slot selection only creates one contiguous range", () => {
   assert.deepEqual(nextManualSlotSelection(slots, extended, noon.key), [one.key]);
 });
 
+test("manual slot keys remain independent for the same hour on different courts", () => {
+  const secondCourt = { ...court, id: "court-2", slug: "court-2", name: "Court 2" };
+  const availability = {
+    date: "2026-08-20",
+    timezone: "Asia/Manila",
+    courts: [
+      { id: "court-1", name: "Court 1", unavailable: [] },
+      { id: "court-2", name: "Court 2", unavailable: [] },
+    ],
+  };
+  const first = buildManualBookingSlots(court, "2026-08-20", availability, 0).find((slot) => slot.startTime === "18:00");
+  const second = buildManualBookingSlots(secondCourt, "2026-08-20", availability, 0).find((slot) => slot.startTime === "18:00");
+  assert.ok(first && second);
+  assert.notEqual(first.key, second.key);
+  assert.match(first.key, /^court-1:/);
+  assert.match(second.key, /^court-2:/);
+});
+
 test("manual booking estimate includes time-band rates and the configured per-hour fee", () => {
   const slots = buildManualBookingSlots(
     court,

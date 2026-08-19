@@ -2584,7 +2584,7 @@ function validDate(candidate: unknown, errorCode: string): string {
 function manualBookingPayload(candidate: unknown) {
   const payload = payloadObject(candidate, "MANUAL_BOOKING_INPUT_INVALID");
   assertAllowedKeys(payload, new Set([
-    "courtId", "bookingDate", "startTime", "durationHours", "customer", "payment", "clientRequestId",
+    "sessions", "customer", "payment", "clientRequestId",
   ]), "MANUAL_BOOKING_INPUT_INVALID");
   const customer = payloadObject(payload.customer, "MANUAL_BOOKING_INPUT_INVALID");
   const payment = payloadObject(payload.payment, "MANUAL_BOOKING_INPUT_INVALID");
@@ -2602,17 +2602,30 @@ function manualBookingPayload(candidate: unknown) {
   if (method !== "cash" && (reference.length < 4 || reference.length > 100)) {
     throw new Error("MANUAL_PAYMENT_REFERENCE_REQUIRED");
   }
-  const durationHours = Number(payload.durationHours);
-  if (!Number.isSafeInteger(durationHours) || durationHours < 1 || durationHours > 18) {
+  if (!Array.isArray(payload.sessions) || payload.sessions.length < 1 || payload.sessions.length > 18) {
     throw new Error("MANUAL_BOOKING_INPUT_INVALID");
   }
-  const startTime = safeActionText(payload.startTime, 5, 5, "MANUAL_BOOKING_INPUT_INVALID");
-  if (!WHOLE_HOUR_PATTERN.test(startTime)) throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+  let totalCourtHours = 0;
+  const sessions = payload.sessions.map((candidateSession) => {
+    const session = payloadObject(candidateSession, "MANUAL_BOOKING_INPUT_INVALID");
+    assertAllowedKeys(session, new Set(["courtId", "bookingDate", "startTime", "durationHours"]), "MANUAL_BOOKING_INPUT_INVALID");
+    const durationHours = Number(session.durationHours);
+    if (!Number.isSafeInteger(durationHours) || durationHours < 1 || durationHours > 18) {
+      throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+    }
+    totalCourtHours += durationHours;
+    const startTime = safeActionText(session.startTime, 5, 5, "MANUAL_BOOKING_INPUT_INVALID");
+    if (!WHOLE_HOUR_PATTERN.test(startTime)) throw new Error("MANUAL_BOOKING_INPUT_INVALID");
+    return {
+      courtId: requiredUuid(session.courtId, "COURT_ID_INVALID"),
+      bookingDate: validDate(session.bookingDate, "MANUAL_BOOKING_INPUT_INVALID"),
+      startTime,
+      durationHours,
+    };
+  });
+  if (totalCourtHours > 18) throw new Error("MANUAL_BOOKING_INPUT_INVALID");
   return {
-    courtId: requiredUuid(payload.courtId, "COURT_ID_INVALID"),
-    bookingDate: validDate(payload.bookingDate, "MANUAL_BOOKING_INPUT_INVALID"),
-    startTime,
-    durationHours,
+    sessions,
     customer: {
       name: safeActionText(customer.name, 2, 100, "MANUAL_BOOKING_INPUT_INVALID"),
       email,

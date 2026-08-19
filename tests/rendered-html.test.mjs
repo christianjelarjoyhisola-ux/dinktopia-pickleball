@@ -2382,20 +2382,21 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   assert.ok(createFormStart >= 0 && createFormEnd > createFormStart);
   const bookingUi = manage.slice(createFormStart, createFormEnd);
   assert.match(bookingUi, /<h3>Book for a customer<\/h3>/);
-  assert.match(bookingUi, /buildManualBookingSlots\(selectedManualCourt, manual\.bookingDate, manualAvailability\)/);
-  assert.match(bookingUi, /nextManualSlotSelection\(manualSlots, manualSelectedKeys, slotKey\)/);
-  assert.match(bookingUi, /Select consecutive hours for one court reservation/);
+  assert.match(bookingUi, /manualCourtIds/);
+  assert.match(bookingUi, /buildManualBookingSlots\(court, manual\.bookingDate, manualAvailability\)/);
+  assert.match(bookingUi, /nextManualSlotSelection\(courtSlots, manualSelectedKeys, slotKey\)/);
+  assert.match(bookingUi, /Select an independent consecutive range on each court/);
+  assert.match(bookingUi, /Select one or more courts/);
+  assert.match(bookingUi, /sessions:\s*manualSessions\.map/);
   assert.match(bookingUi, /estimateManualBookingPrice\(selectedManualSlots/);
   assert.match(bookingUi, />Court charges<\/span>/);
   assert.match(bookingUi, />Booking fee <small>\{manualPriceEstimate\.feeLabel\}<\/small><\/span>/);
   assert.match(bookingUi, />Total to collect<\/span>/);
-  assert.match(bookingUi, /disabled=\{!firstManualSlot \|\| manualAvailabilityState !== "ready"\}/);
+  assert.match(bookingUi, /disabled=\{!firstManualSession \|\| manualAvailabilityState !== "ready"\}/);
   assert.doesNotMatch(bookingUi, /<span>Starts<\/span><select/);
   assert.doesNotMatch(bookingUi, /<span>Hours<\/span><select/);
-  assert.match(
-    manageCss,
-    /@media\s*\(width\s*<=\s*680px\)[\s\S]*?\.manualSlotGrid\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s,
-  );
+  assert.match(manageCss, /\.manualCourtSchedule\s*\{[^}]*grid-template-columns:\s*repeat\(var\(--manual-court-count,\s*1\),\s*minmax\(0,\s*1fr\)\)/s);
+  assert.match(manageCss, /@media\s*\(width\s*<=\s*680px\)[\s\S]*?\.manualCourtPicker\s*>\s*div\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s);
   const overviewUi = manage.slice(
     manage.indexOf("function RallyOverview("),
     manage.indexOf("function OverviewView("),
@@ -2408,7 +2409,7 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   assert.match(calendarView, /onClick=\{onNewBooking\}[\s\S]*?New booking/);
   assert.match(
     bookingUi,
-    /actionType:\s*"booking:create",[\s\S]*?courtId:\s*manual\.courtId,[\s\S]*?clientRequestId:\s*crypto\.randomUUID\(\)/,
+    /actionType:\s*"booking:create",[\s\S]*?sessions:\s*manualSessions\.map[\s\S]*?clientRequestId:\s*crypto\.randomUUID\(\)/,
   );
   assert.match(bookingUi, /confirmLabel:\s*"Create paid booking"/);
   assert.match(
@@ -2468,7 +2469,7 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   );
   assert.match(
     managementAdapter,
-    /function manualBookingPayload\([\s\S]*?assertAllowedKeys\(payload, new Set\(\[[\s\S]*?"courtId", "bookingDate", "startTime", "durationHours", "customer", "payment", "clientRequestId"[\s\S]*?requiredUuidV4\(payload\.clientRequestId, "MANUAL_BOOKING_REQUEST_ID_INVALID"\)/,
+    /function manualBookingPayload\([\s\S]*?assertAllowedKeys\(payload, new Set\(\[[\s\S]*?"sessions", "customer", "payment", "clientRequestId"[\s\S]*?requiredUuidV4\(payload\.clientRequestId, "MANUAL_BOOKING_REQUEST_ID_INVALID"\)/,
   );
   assert.match(
     managementAdapter,

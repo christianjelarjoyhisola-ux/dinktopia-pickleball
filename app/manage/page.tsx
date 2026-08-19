@@ -1317,6 +1317,10 @@ function BookingsView({
   const [creating, setCreating] = useState(() => openCreateRequest > 0 && !isPreview);
   const [manualAvailability, setManualAvailability] = useState<AvailabilityResponse | null>(null);
   const [manualAvailabilityState, setManualAvailabilityState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [manualCourtIds, setManualCourtIds] = useState<string[]>(() => {
+    const activeCourtIds = courts.filter((court) => court.status === "active").map((court) => court.id);
+    return activeCourtIds.length ? activeCourtIds : courts[0]?.id ? [courts[0].id] : [];
+  });
   const [manualSelectedKeys, setManualSelectedKeys] = useState<string[]>([]);
   const [rescheduling, setRescheduling] = useState<Booking | null>(null);
   const [reviewingBookingId, setReviewingBookingId] = useState<string | null>(null);
@@ -1376,14 +1380,22 @@ function BookingsView({
   const activeCount = bookings.filter((booking) => !["cancelled", "expired", "completed"].includes(booking.status)).length;
   const reviewCount = bookings.filter((booking) => booking.paymentEvidence?.reviewable === true).length;
   const canCreateBooking = can("booking:create");
-  const selectedManualCourt = courts.find((court) => court.id === manual.courtId) ?? null;
-  const manualSlots = useMemo(
-    () => buildManualBookingSlots(selectedManualCourt, manual.bookingDate, manualAvailability),
-    [manual.bookingDate, manualAvailability, selectedManualCourt],
+  const selectedManualCourts = useMemo(
+    () => courts.filter((court) => manualCourtIds.includes(court.id)),
+    [courts, manualCourtIds],
   );
-  const selectedManualSlots = manualSlots.filter((slot) => manualSelectedKeys.includes(slot.key));
-  const firstManualSlot = selectedManualSlots[0] ?? null;
-  const lastManualSlot = selectedManualSlots[selectedManualSlots.length - 1] ?? null;
+  const manualSlotsByCourt = useMemo(() => new Map(selectedManualCourts.map((court) => [
+    court.id,
+    buildManualBookingSlots(court, manual.bookingDate, manualAvailability),
+  ])), [manual.bookingDate, manualAvailability, selectedManualCourts]);
+  const selectedManualSlots = Array.from(manualSlotsByCourt.values())
+    .flat()
+    .filter((slot) => manualSelectedKeys.includes(slot.key));
+  const manualSessions = selectedManualCourts.flatMap((court) => {
+    const slots = (manualSlotsByCourt.get(court.id) ?? []).filter((slot) => manualSelectedKeys.includes(slot.key));
+    return slots.length ? [{ court, slots, first: slots[0], last: slots[slots.length - 1] }] : [];
+  });
+  const firstManualSession = manualSessions[0] ?? null;
   const manualPriceEstimate = estimateManualBookingPrice(selectedManualSlots, {
     sharedSchedule: pricing.sharedSchedule,
     platformBilling: pricing.businessPayments?.platformBilling ?? null,
@@ -1419,15 +1431,32 @@ function BookingsView({
     };
   }, [creating, isPreview, manual.bookingDate]);
 
-  const chooseManualSlot = (slotKey: string) => {
-    const nextKeys = nextManualSlotSelection(manualSlots, manualSelectedKeys, slotKey);
-    const nextSlots = manualSlots.filter((slot) => nextKeys.includes(slot.key));
+  const chooseManualSlot = (courtId: string, slotKey: string) => {
+    const courtSlots = manualSlotsByCourt.get(courtId) ?? [];
+    const courtKeySet = new Set(courtSlots.map((slot) => slot.key));
+    const otherCourtKeys = manualSelectedKeys.filter((key) => !courtKeySet.has(key));
+    const nextCourtKeys = nextManualSlotSelection(courtSlots, manualSelectedKeys, slotKey);
+    const nextKeys = [...otherCourtKeys, ...nextCourtKeys];
+    const nextSlots = courtSlots.filter((slot) => nextCourtKeys.includes(slot.key));
     setManualSelectedKeys(nextKeys);
     setManual((current) => ({
       ...current,
+      courtId,
       startTime: nextSlots[0]?.startTime ?? "",
       durationHours: String(Math.max(1, nextSlots.length)),
     }));
+  };
+
+  const toggleManualCourt = (courtId: string) => {
+    setManualCourtIds((current) => {
+      if (current.includes(courtId)) {
+        if (current.length === 1) return current;
+        const removedKeys = new Set((manualSlotsByCourt.get(courtId) ?? []).map((slot) => slot.key));
+        setManualSelectedKeys((keys) => keys.filter((key) => !removedKeys.has(key)));
+        return current.filter((id) => id !== courtId);
+      }
+      return [...current, courtId];
+    });
   };
 
   const closePaymentReview = () => {
@@ -1560,17 +1589,19 @@ function BookingsView({
       {!isPreview && creating && (
         <form ref={manualFormRef} className={styles.manualBookingForm} onSubmit={(event) => {
           event.preventDefault();
-          if (!firstManualSlot || !lastManualSlot) return;
+          if (!firstManualSession) return;
           request({
-            title: "Create this paid booking?",
-            detail: `${manual.customerName.trim()} · ${selectedManualCourt?.name ?? "Selected court"} · ${firstManualSlot.bookingDate} from ${wholeHourLabel(firstManualSlot.startTime)} to ${wholeHourLabel(lastManualSlot.endTime)} · ${selectedManualSlots.length} ${selectedManualSlots.length === 1 ? "hour" : "hours"}. Availability and the total are recalculated by the server.`,
+            title: `Create this ${manualSessions.length > 1 ? "multi-court " : ""}paid booking?`,
+            detail: `${manual.customerName.trim()} · ${manualSessions.map((session) => `${session.court.name} ${wholeHourLabel(session.first.startTime)}–${wholeHourLabel(session.last.endTime)}`).join(" · ")} · ${selectedManualSlots.length} court-${selectedManualSlots.length === 1 ? "hour" : "hours"}. Every court and the exact total are rechecked and saved atomically by the server.`,
             confirmLabel: "Create paid booking",
             actionType: "booking:create",
             payload: {
-              courtId: manual.courtId,
-              bookingDate: firstManualSlot.bookingDate,
-              startTime: firstManualSlot.startTime,
-              durationHours: selectedManualSlots.length,
+              sessions: manualSessions.map((session) => ({
+                courtId: session.court.id,
+                bookingDate: session.first.bookingDate,
+                startTime: session.first.startTime,
+                durationHours: session.slots.length,
+              })),
               customer: {
                 name: manual.customerName,
                 email: manual.customerEmail,
@@ -1595,41 +1626,35 @@ function BookingsView({
           <section className={styles.manualBookingSection} aria-labelledby="manual-venue-heading">
             <div className={styles.manualSectionTitle}><span>01</span><div><h4 id="manual-venue-heading">Court and date</h4><p>Availability refreshes whenever the date changes.</p></div></div>
             <div className={styles.manualVenueFields}>
-              <label className={styles.field}><span>Court</span><select required value={manual.courtId} onChange={(event) => {
-                setManualSelectedKeys([]);
-                setManual({ ...manual, courtId: event.target.value, startTime: "", durationHours: "1" });
-              }}>{courts.map((court) => <option key={court.id} value={court.id}>{court.name}{court.surface ? ` · ${court.surface}` : ""}</option>)}</select></label>
+              <fieldset className={styles.manualCourtPicker}><legend>Select one or more courts</legend><div>{courts.map((court) => {
+                const selected = manualCourtIds.includes(court.id);
+                return <label key={court.id} className={cx(styles.manualCourtChoice, selected && styles.manualCourtChoiceSelected)}><input type="checkbox" checked={selected} onChange={() => toggleManualCourt(court.id)} /><span><strong>{court.name}</strong><small>{court.surface || "Court"}</small></span><i aria-hidden="true">{selected ? "✓" : "+"}</i></label>;
+              })}</div></fieldset>
               <label className={styles.field}><span>Booking date</span><input required type="date" min={manilaCalendarDate()} value={manual.bookingDate} onChange={(event) => setManual({ ...manual, bookingDate: event.target.value })} /></label>
             </div>
           </section>
 
           <fieldset className={styles.manualBookingSection}>
-            <legend className={styles.manualSectionTitle}><span>02</span><div><strong>Choose time slots</strong><small>Select consecutive hours for one court reservation.</small></div></legend>
+            <legend className={styles.manualSectionTitle}><span>02</span><div><strong>Choose time slots</strong><small>Select an independent consecutive range on each court.</small></div></legend>
             <div className={styles.manualSlotLegend} aria-label="Time slot legend"><span><i className={styles.manualOpenDot} /> Open</span><span><i className={styles.manualSelectedDot} /> Selected</span><span><i className={styles.manualUnavailableDot} /> Unavailable</span></div>
             {manualAvailabilityState === "loading" ? (
               <div className={styles.manualSlotLoading} role="status"><i /><i /><i /><i /><span>Checking live availability…</span></div>
             ) : manualAvailabilityState === "error" ? (
               <div className={styles.manualSlotError} role="alert"><strong>Availability could not be loaded.</strong><span>Change the date to retry. No booking can be created until the live schedule is verified.</span></div>
-            ) : manualSlots.length ? (
-              <div className={styles.manualSlotGrid}>
-                {manualSlots.map((slot) => {
-                  const selected = manualSelectedKeys.includes(slot.key);
-                  return <button
-                    type="button"
-                    key={slot.key}
-                    className={cx(styles.manualSlot, selected && styles.manualSlotSelected, slot.state !== "open" && styles.manualSlotUnavailable)}
-                    disabled={slot.state !== "open"}
-                    aria-pressed={selected}
-                    aria-label={`${wholeHourLabel(slot.startTime)} to ${wholeHourLabel(slot.endTime)}, ${selected ? "selected" : slot.statusLabel}`}
-                    onClick={() => chooseManualSlot(slot.key)}
-                  ><strong>{wholeHourLabel(slot.startTime)}</strong><span>to {wholeHourLabel(slot.endTime)}</span><small>{selected ? "Selected" : slot.statusLabel}</small></button>;
-                })}
+            ) : Array.from(manualSlotsByCourt.values()).some((slots) => slots.length) ? (
+              <div className={styles.manualCourtSchedule} style={{ "--manual-court-count": Math.min(4, selectedManualCourts.length) } as CSSProperties}>
+                {selectedManualCourts.map((court) => <section key={court.id} aria-label={`${court.name} time slots`}><header><strong>{court.name}</strong><small>{court.surface || "Court"}</small></header><div>
+                  {(manualSlotsByCourt.get(court.id) ?? []).map((slot) => {
+                    const selected = manualSelectedKeys.includes(slot.key);
+                    return <button type="button" key={slot.key} className={cx(styles.manualSlot, selected && styles.manualSlotSelected, slot.state !== "open" && styles.manualSlotUnavailable)} disabled={slot.state !== "open"} aria-pressed={selected} aria-label={`${court.name}, ${wholeHourLabel(slot.startTime)} to ${wholeHourLabel(slot.endTime)}, ${selected ? "selected" : slot.statusLabel}`} onClick={() => chooseManualSlot(court.id, slot.key)}><strong>{wholeHourLabel(slot.startTime)}</strong><span>to {wholeHourLabel(slot.endTime)}</span><small>{selected ? "Selected" : slot.statusLabel}</small></button>;
+                  })}
+                </div></section>)}
               </div>
             ) : manualAvailabilityState === "ready" ? (
               <div className={styles.manualSlotError} role="status"><strong>No bookable hours returned.</strong><span>Choose another active court or date.</span></div>
             ) : null}
-            {firstManualSlot && lastManualSlot && <>
-              <div className={styles.manualSelectionSummary} role="status"><Clock3 /><div><span>Selected reservation</span><strong>{selectedManualCourt?.name} · {wholeHourLabel(firstManualSlot.startTime)}–{wholeHourLabel(lastManualSlot.endTime)}</strong></div><b>{selectedManualSlots.length} {selectedManualSlots.length === 1 ? "hour" : "hours"}</b></div>
+            {firstManualSession && <>
+              <div className={styles.manualSelectionSummary} role="status"><Clock3 /><div><span>Selected reservation</span>{manualSessions.map((session) => <strong key={session.court.id}>{session.court.name} · {wholeHourLabel(session.first.startTime)}–{wholeHourLabel(session.last.endTime)}</strong>)}</div><b>{selectedManualSlots.length} court-{selectedManualSlots.length === 1 ? "hour" : "hours"}</b></div>
               {manualPriceEstimate ? <div className={styles.manualPriceBreakdown} aria-label="Estimated booking total">
                 <div><span>Court charges</span><strong>{formatPeso(manualPriceEstimate.courtAmount)}</strong></div>
                 <div><span>Booking fee <small>{manualPriceEstimate.feeLabel}</small></span><strong>{formatPeso(manualPriceEstimate.bookingFee)}</strong></div>
@@ -1649,7 +1674,7 @@ function BookingsView({
               {manual.paymentMethod && manual.paymentMethod !== "cash" && <label className={styles.field}><span>Payment reference</span><input required minLength={4} maxLength={100} value={manual.paymentReference} onChange={(event) => setManual({ ...manual, paymentReference: event.target.value })} /></label>}
             </div>
           </section>
-          <div className={styles.manualBookingActions}><div><strong>Final check</strong><span>The server rechecks availability, authorization, and the exact total before saving.</span></div><ActionButton type="submit" disabled={!firstManualSlot || manualAvailabilityState !== "ready"}>Review booking <ArrowRight /></ActionButton></div>
+          <div className={styles.manualBookingActions}><div><strong>Final check</strong><span>The server rechecks every court, authorization, and the exact total, then saves all selected sessions or none.</span></div><ActionButton type="submit" disabled={!firstManualSession || manualAvailabilityState !== "ready"}>Review booking <ArrowRight /></ActionButton></div>
         </form>
       )}
       {!isPreview && rescheduling && (

@@ -1221,10 +1221,12 @@ export async function reviewPaymentReceipt(
 }
 
 export type ManualBookingInput = {
-  courtId: string;
-  bookingDate: string;
-  startTime: string;
-  durationHours: number;
+  sessions: readonly {
+    courtId: string;
+    bookingDate: string;
+    startTime: string;
+    durationHours: number;
+  }[];
   customer: { name: string; email?: string; phone: string };
   payment: { method: string; reference?: string | null };
   clientRequestId: string;

@@ -2224,7 +2224,20 @@
 .manualSectionTitle strong { display: block; margin: 0; font-size: 1rem; font-weight: 760; letter-spacing: -.025em; }
 .manualSectionTitle p,
 .manualSectionTitle small { display: block; margin: 3px 0 0; color: var(--muted); font-size: var(--text-micro); line-height: 1.45; }
-.manualVenueFields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(220px, .75fr); gap: 14px; }
+.manualVenueFields { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(220px, .75fr); align-items: end; gap: 14px; }
+.manualCourtPicker { min-width: 0; margin: 0; border: 0; padding: 0; }
+.manualCourtPicker legend { margin-bottom: 7px; color: var(--ink); font-size: var(--text-caption); font-weight: 700; }
+.manualCourtPicker > div { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.manualCourtChoice { display: grid; min-width: 0; min-height: 60px; grid-template-columns: 1fr auto; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 12px; background: #fff; padding: 10px 11px; cursor: pointer; transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease; }
+.manualCourtChoice input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; pointer-events: none; }
+.manualCourtChoice span { display: grid; min-width: 0; gap: 2px; }
+.manualCourtChoice strong,
+.manualCourtChoice small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manualCourtChoice strong { color: var(--ink); font-size: var(--text-caption); }
+.manualCourtChoice small { color: var(--muted); font-size: var(--text-micro); }
+.manualCourtChoice i { display: grid; width: 23px; height: 23px; place-items: center; border-radius: 8px; background: #eef1ed; color: #65706b; font-size: 12px; font-style: normal; font-weight: 800; }
+.manualCourtChoiceSelected { border-color: #174d7f; background: #eef5fb; box-shadow: inset 0 3px 0 #b8df4d; }
+.manualCourtChoiceSelected i { background: #174d7f; color: #fff; }
 .manualCustomerFields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .manualSlotLegend { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 13px; margin: -41px 0 17px auto; color: var(--muted); font-size: var(--text-micro); }
 .manualSlotLegend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -2233,6 +2246,14 @@
 .manualSelectedDot { background: #b8df4d; box-shadow: 0 0 0 2px #102f5c; }
 .manualUnavailableDot { background: #c8cdca; }
 .manualSlotGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 9px; }
+.manualCourtSchedule { display: grid; grid-template-columns: repeat(var(--manual-court-count, 1), minmax(0, 1fr)); overflow: hidden; border: 1px solid #cad6d1; border-radius: 15px; background: #edf1ee; gap: 1px; }
+.manualCourtSchedule > section { min-width: 0; background: #fffefa; }
+.manualCourtSchedule > section > header { display: grid; min-height: 55px; align-content: center; gap: 2px; background: #102f5c; padding: 9px 11px; color: #fff; text-align: center; }
+.manualCourtSchedule > section > header strong { overflow: hidden; font-size: var(--text-caption); text-overflow: ellipsis; white-space: nowrap; }
+.manualCourtSchedule > section > header small { color: rgba(255,255,255,.68); font-size: var(--text-micro); }
+.manualCourtSchedule > section > div { display: grid; gap: 1px; background: #e3e8e5; }
+.manualCourtSchedule .manualSlot { min-height: 73px; border: 0; border-radius: 0; padding: 9px 8px; text-align: center; }
+.manualCourtSchedule .manualSlot:hover:not(:disabled) { transform: none; box-shadow: inset 0 0 0 2px #236b58; }
 .manualSlot {
   min-width: 0;
   min-height: 88px;
@@ -2296,9 +2317,19 @@
   .manualBookingSection { padding: 19px 16px; }
   .manualVenueFields,
   .manualCustomerFields { grid-template-columns: minmax(0, 1fr); }
+  .manualCourtPicker > div { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .manualCourtChoice { min-height: 56px; grid-template-columns: minmax(0, 1fr); justify-items: center; gap: 4px; padding: 8px 3px; text-align: center; }
+  .manualCourtChoice i { display: none; }
+  .manualCourtChoice strong { font-size: 11px; }
+  .manualCourtChoice small { font-size: 9px; }
   .manualBookingForm :is(input, select, textarea) { font-size: 16px; }
   .manualSlotLegend { justify-content: flex-start; margin: 0 0 14px; }
   .manualSlotGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .manualCourtSchedule { grid-template-columns: repeat(var(--manual-court-count, 1), minmax(0, 1fr)); }
+  .manualCourtSchedule > section > header { min-height: 50px; padding: 7px 3px; }
+  .manualCourtSchedule > section > header strong { font-size: 11px; }
+  .manualCourtSchedule > section > header small { font-size: 9px; }
+  .manualCourtSchedule .manualSlot { min-height: 68px; padding: 8px 3px; }
   .manualSlot { min-height: 76px; padding: 9px 7px; text-align: center; }
   .manualSlot strong { font-size: 12px; }
   .manualSlot span,

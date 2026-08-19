@@ -86,7 +86,9 @@ export function buildManualBookingSlots(
     const isPast = endsAt <= now;
     const actualDate = shiftIsoDate(selectedDate, Math.floor(logicalHour / 24));
     return {
-      key: `${actualDate}:${clock(logicalHour)}`,
+      // Court identity is part of the key so one owner-assisted draft can
+      // safely hold the same hour on more than one court.
+      key: `${court.id}:${actualDate}:${clock(logicalHour)}`,
       bookingDate: actualDate,
       logicalHour,
       startTime: clock(logicalHour),
