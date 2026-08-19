@@ -2331,11 +2331,12 @@ test("keeps System Owner authority distinct from tool readiness and rechecks eve
 });
 
 test("connects create, reschedule, and cancel without exposing check-in or confusing booking identifiers", async () => {
-  const [client, manage, managementAdapter, calendarView] = await Promise.all([
+  const [client, manage, managementAdapter, calendarView, manageCss] = await Promise.all([
     readFile(files.client, "utf8"),
     readFile(files.manage, "utf8"),
     readFile(files.managementAdapter, "utf8"),
     readFile(files.calendarView, "utf8"),
+    readFile(files.manageCss, "utf8"),
   ]);
 
   assert.match(
@@ -2387,6 +2388,10 @@ test("connects create, reschedule, and cancel without exposing check-in or confu
   assert.match(bookingUi, /disabled=\{!firstManualSlot \|\| manualAvailabilityState !== "ready"\}/);
   assert.doesNotMatch(bookingUi, /<span>Starts<\/span><select/);
   assert.doesNotMatch(bookingUi, /<span>Hours<\/span><select/);
+  assert.match(
+    manageCss,
+    /@media\s*\(width\s*<=\s*680px\)[\s\S]*?\.manualSlotGrid\s*\{[^}]*grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/s,
+  );
   const overviewUi = manage.slice(
     manage.indexOf("function RallyOverview("),
     manage.indexOf("function OverviewView("),

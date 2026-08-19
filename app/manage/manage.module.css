@@ -2286,8 +2286,12 @@
   .manualCustomerFields { grid-template-columns: minmax(0, 1fr); }
   .manualBookingForm :is(input, select, textarea) { font-size: 16px; }
   .manualSlotLegend { justify-content: flex-start; margin: 0 0 14px; }
-  .manualSlotGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .manualSlot { min-height: 84px; }
+  .manualSlotGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+  .manualSlot { min-height: 76px; padding: 9px 7px; text-align: center; }
+  .manualSlot strong { font-size: 12px; }
+  .manualSlot span,
+  .manualSlot small { font-size: 10px; }
+  .manualSlot small { margin-top: 7px; }
   .manualSlotLoading { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .manualSelectionSummary { grid-template-columns: auto 1fr; }
   .manualSelectionSummary b { grid-column: 2; justify-self: start; }
