@@ -38,6 +38,7 @@ export type TenantConfig<Slug extends string = string> = {
   venue: {
     locationLabel: string | null;
     address: string | null;
+    mapsUrl: string | null;
     opensAt: string | null;
     closesAt: string | null;
   };

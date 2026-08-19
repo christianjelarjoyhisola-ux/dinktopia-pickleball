@@ -309,6 +309,19 @@
   margin: 15px 0;
 }
 
+.booking-route .rally-booking-summary .summary-location-link {
+  border-radius: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.booking-route .rally-booking-summary .summary-location-link:hover small { text-decoration: underline; }
+
+.booking-route .rally-booking-summary .summary-location-link:focus-visible {
+  outline: 3px solid var(--lime);
+  outline-offset: 3px;
+}
+
 .booking-route .rally-booking-summary .summary-detail > svg {
   width: 31px;
   height: 31px;
@@ -7188,6 +7201,22 @@
 }
 
 .hero-location-pending { border-style: dashed; }
+
+.hero-location-link {
+  text-decoration: none;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.hero-location-link:hover {
+  border-color: rgba(200, 238, 91, 0.6);
+  background-color: rgba(255, 255, 255, 0.11);
+  transform: translateY(-1px);
+}
+
+.hero-location-link:focus-visible {
+  outline: 3px solid #c8ee5b;
+  outline-offset: 3px;
+}
 
 .hero-location-icon {
   display: grid;

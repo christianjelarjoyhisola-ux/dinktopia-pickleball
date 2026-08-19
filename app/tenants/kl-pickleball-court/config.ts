@@ -5,9 +5,10 @@ export type KlPickleballCourtTenantConfig = TenantConfig<"kl-pickleball-court">;
 /**
  * K&L's tenant-owned configuration boundary.
  *
- * Operational details deliberately remain null until they are entered and
- * approved through the shared management system. The brand direction and
- * palette are derived from the approved K&L court badge supplied by the owner.
+ * Booking operations remain nullable until they are entered and approved
+ * through the shared management system. The venue location comes from the
+ * owner-provided Google Maps listing, and the palette comes from the approved
+ * K&L court badge.
  */
 export const klPickleballCourtConfig = {
   identity: {
@@ -25,8 +26,9 @@ export const klPickleballCourtConfig = {
     provisional: false,
   },
   venue: {
-    locationLabel: null,
-    address: null,
+    locationLabel: "5H57+77, Tubay, Agusan del Norte",
+    address: "5H57+77, Tubay, Agusan del Norte, Philippines",
+    mapsUrl: "https://www.google.com/maps/place/K%26L+Pickleball+Court/@9.1453667,125.5226545,12.78z/data=!4m6!3m5!1s0x3301a3001cef8a35:0x40327b700f960643!8m2!3d9.1577431!4d125.5637179!16s%2Fg%2F11n9spx3ft?entry=ttu",
     opensAt: null,
     closesAt: null,
   },

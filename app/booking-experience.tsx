@@ -2047,6 +2047,7 @@ export function BookingExperience({
     activeTenant.venue.locationLabel ||
     activeTenant.venue.address ||
     null;
+  const venueMapsUrl = activeTenant.venue.mapsUrl;
   const venueHoursLabel = useMemo(() => {
     if (!isLive) {
       return previewHours
@@ -3558,7 +3559,13 @@ export function BookingExperience({
                   ? `Choose your court, reserve your time, and bring the people you play with.`
                   : `A welcoming local court experience, built for good games, easy plans, and the people you play with. Verified venue and booking details will appear here as they’re published.`}
               </p>
-              {venueLocationLabel ? (
+              {venueLocationLabel && venueMapsUrl ? (
+                <a className="hero-location hero-location-link" href={venueMapsUrl} target="_blank" rel="noreferrer">
+                  <span className="hero-location-icon" aria-hidden="true">⌖</span>
+                  <span className="hero-location-copy"><small>Open in Google Maps</small><strong>{venueLocationLabel}</strong></span>
+                  <span className="hero-location-action" aria-hidden="true">↗</span>
+                </a>
+              ) : venueLocationLabel ? (
                 <div className="hero-location">
                   <span className="hero-location-icon" aria-hidden="true">⌖</span>
                   <span className="hero-location-copy"><small>Find the venue</small><strong>{venueLocationLabel}</strong></span>
@@ -4321,6 +4328,7 @@ export function BookingExperience({
                       total={total}
                       policyTitle={policyVersion ? policyTitle : null}
                       locationLabel={venueLocationLabel}
+                      mapsUrl={venueMapsUrl}
                     />
                   </div>
                   )
@@ -4685,6 +4693,7 @@ type BookingSummaryProps = {
   total: number;
   policyTitle: string | null;
   locationLabel: string | null;
+  mapsUrl: string | null;
 };
 
 function RallyBookingSummary({
@@ -4695,6 +4704,7 @@ function RallyBookingSummary({
   total,
   policyTitle,
   locationLabel,
+  mapsUrl,
 }: BookingSummaryProps) {
   const [mobileExpanded, setMobileExpanded] = useState(false);
   const summaryDetailsId = useId();
@@ -4747,10 +4757,13 @@ function RallyBookingSummary({
           <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></svg>
           <span><strong>{courts.map((court) => court.name).join(", ")}</strong><small>{courtSchedule}</small></span>
         </div>
-        <div className="summary-detail">
+        {mapsUrl ? <a className="summary-detail summary-location-link" href={mapsUrl} target="_blank" rel="noreferrer">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
+          <span><strong>{activeTenant.identity.name}</strong><small>{locationLabel || "Location details coming soon"} · Open map</small></span>
+        </a> : <div className="summary-detail">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z" /><circle cx="12" cy="10" r="2.5" /></svg>
           <span><strong>{activeTenant.identity.name}</strong><small>{locationLabel || "Location details coming soon"}</small></span>
-        </div>
+        </div>}
         <div className="summary-price-lines">
           <span><small>Court reservation · {slotLabel}</small><strong>{peso(subtotal)}</strong></span>
           {bookingFee > 0 && <span><small>Booking fee</small><strong>{peso(bookingFee)}</strong></span>}

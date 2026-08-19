@@ -29,6 +29,7 @@ export const dinktopiaConfig = {
   venue: {
     locationLabel: "Philippines · exact venue coming soon",
     address: null,
+    mapsUrl: null,
     opensAt: "06:00",
     closesAt: "22:00",
   },

@@ -1988,8 +1988,11 @@ test("pins K&L active scope while preserving Dinktopia's registered config", asy
     config,
     /activation:\s*\{\s*status:\s*"active",\s*publicBookingEnabled:\s*true,\s*provisional:\s*false/s,
   );
+  assert.match(config, /locationLabel:\s*"5H57\+77, Tubay, Agusan del Norte"/);
+  assert.match(config, /address:\s*"5H57\+77, Tubay, Agusan del Norte, Philippines"/);
+  assert.match(config, /mapsUrl:\s*"https:\/\/www\.google\.com\/maps\/place\/K%26L\+Pickleball\+Court/);
   for (const field of [
-    "locationLabel", "address", "opensAt", "closesAt", "minimumHours",
+    "opensAt", "closesAt", "minimumHours",
     "maximumHours", "minimumLeadMinutes", "maximumAdvanceDays", "slotMinutes",
     "holdMinutes", "offPeakEndsAt", "offPeakHourlyRate", "peakHourlyRate",
     "paymentFlow", "cancellation", "rescheduling",
@@ -1999,7 +2002,7 @@ test("pins K&L active scope while preserving Dinktopia's registered config", asy
   assert.match(config, /socialImagePath:\s*"\/og\.webp"/);
   assert.match(config, /previewCourts:\s*\[\]/);
   assert.match(config, /kind:\s*"image"[\s\S]*?src:\s*"\/kllogo\.jpg"[\s\S]*?temporary:\s*false/);
-  assert.doesNotMatch(config, /dinktopia|@|\+63|GCash/i);
+  assert.doesNotMatch(config, /dinktopia|\+63|GCash/i);
 
   assert.match(dinktopiaConfig, /slug:\s*"dinktopia"/);
   assert.match(dinktopiaConfig, /productionDomain:\s*"dinktopia\.pages\.dev"/);
