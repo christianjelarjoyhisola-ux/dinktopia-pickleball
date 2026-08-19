@@ -17,6 +17,10 @@ test("keeps the K&L public shell stable and readable on mobile", () => {
     /input:not\(\[type="checkbox"\]\):not\(\[type="radio"\]\), select, textarea\)[\s\S]*?font-size: 16px !important;/,
   );
   assert.match(styles, /\.kl-court-site\.public-route \.primary-nav\.is-open[\s\S]*?max-height: calc\(100dvh - 88px\)/);
+  assert.match(
+    styles,
+    /\.kl-court-site\.home-route \.hero-grid\.site-container\s*\{[\s\S]*?width: 100%;[\s\S]*?overflow: visible;[\s\S]*?padding-inline: 16px;/,
+  );
   assert.match(styles, /\.kl-court-site\.home-route \.gallery-grid[\s\S]*?grid-template-columns: 1fr;[\s\S]*?overflow: visible;/);
   assert.match(experience, /body\.style\.position = "fixed"/);
   assert.match(experience, /event\.key === "Escape"/);

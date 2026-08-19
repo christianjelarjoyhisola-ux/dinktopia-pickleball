@@ -8140,6 +8140,15 @@
 }
 
 @media (max-width: 779.98px) {
+  /* Let the hero artwork bleed to the section edge while keeping copy on a
+   * deliberate reading gutter. Clipping the artwork to .site-container made
+   * the mobile hero look like a second dark card inside the page. */
+  .kl-court-site.home-route .hero-grid.site-container {
+    width: 100%;
+    overflow: visible;
+    padding-inline: 16px;
+  }
+
   .kl-court-site.public-route .site-header {
     border-bottom: 1px solid rgba(11, 41, 71, 0.1);
   }
