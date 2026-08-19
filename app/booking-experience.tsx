@@ -66,6 +66,8 @@ type Court = {
   descriptor: string;
   mood: string;
   color: "blue" | "coral";
+  photoSrc?: string;
+  photoAlt?: string;
 };
 
 type GalleryPhoto = {
@@ -398,6 +400,11 @@ function tenantCalendarUidDomain() {
 function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
   return publicCourts.map((court, index) => {
     const description = court.description?.replaceAll("\\", "/").trim();
+    const publicConfig = (court.publicConfig ?? {}) as { photoUrl?: unknown; photoAlt?: unknown };
+    const publishedPhoto = trustedGallerySource(publicConfig.photoUrl);
+    const localPhoto = activeTenant.identity.slug === "kl-pickleball-court" && index < 4
+      ? `/kl-court-${index + 1}.jpg`
+      : null;
     return {
       id: court.id,
       slug: court.slug,
@@ -406,6 +413,8 @@ function displayCourtsFromPlatform(publicCourts: PublicCourt[]): Court[] {
       descriptor: description || "Pickleball court",
       mood: description || `Configured for ${activeTenant.identity.shortName} play`,
       color: index % 2 === 0 ? "blue" : "coral",
+      photoSrc: publishedPhoto || localPhoto || undefined,
+      photoAlt: galleryText(publicConfig.photoAlt, `${court.name} at ${activeTenant.identity.name}`, 180),
     };
   });
 }
@@ -3711,12 +3720,25 @@ export function BookingExperience({
                       <span>COURT {court.number}</span>
                       <span className="court-status"><i aria-hidden="true" /> {isLive ? "Published court" : "Booking preview"}</span>
                     </div>
-                    <div className="mini-court" aria-hidden="true">
-                      <span className="mini-court-number">{court.number}</span>
-                      <i className="mini-court-line-one" />
-                      <i className="mini-court-line-two" />
-                      <i className="mini-court-net" />
-                    </div>
+                    {court.photoSrc ? (
+                      <div className="court-card-photo">
+                        <Image
+                          src={court.photoSrc}
+                          alt={court.photoAlt || `${court.name} at ${activeTenant.identity.name}`}
+                          width={1200}
+                          height={675}
+                          sizes="(max-width: 779px) calc(100vw - 44px), (max-width: 1100px) 45vw, 520px"
+                        />
+                        <span aria-hidden="true">{court.number}</span>
+                      </div>
+                    ) : (
+                      <div className="mini-court" aria-hidden="true">
+                        <span className="mini-court-number">{court.number}</span>
+                        <i className="mini-court-line-one" />
+                        <i className="mini-court-line-two" />
+                        <i className="mini-court-net" />
+                      </div>
+                    )}
                     <div className="court-card-copy">
                       <p>{court.descriptor}</p>
                       <h2>{court.name}</h2>
