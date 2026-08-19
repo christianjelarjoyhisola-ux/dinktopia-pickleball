@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   buildManualBookingSlots,
+  estimateManualBookingPrice,
   nextManualSlotSelection,
 } from "../app/manage/manual-booking-slots.ts";
 
@@ -67,4 +68,30 @@ test("manual slot selection only creates one contiguous range", () => {
   assert.deepEqual(extended, [noon.key, one.key]);
   assert.deepEqual(nextManualSlotSelection(slots, extended, three.key), [three.key]);
   assert.deepEqual(nextManualSlotSelection(slots, extended, noon.key), [one.key]);
+});
+
+test("manual booking estimate includes time-band rates and the configured per-hour fee", () => {
+  const slots = buildManualBookingSlots(
+    court,
+    "2026-08-20",
+    { date: "2026-08-20", timezone: "Asia/Manila", courts: [{ id: "court-1", name: "Court 1", unavailable: [] }] },
+    Date.parse("2026-08-19T00:00:00+08:00"),
+  ).filter((slot) => ["16:00", "17:00", "18:00", "19:00"].includes(slot.startTime));
+  const estimate = estimateManualBookingPrice(slots, {
+    sharedSchedule: {
+      opensAt: "08:00",
+      closesAt: "00:00",
+      bands: [
+        { start: "08:00", end: "18:00", hourlyRate: 300 },
+        { start: "18:00", end: "00:00", hourlyRate: 400 },
+      ],
+    },
+    platformBilling: { feeMode: "fixed_per_hour", feeAmount: 15, isConfigured: true },
+  });
+  assert.deepEqual(estimate, {
+    courtAmount: 1_400,
+    bookingFee: 60,
+    totalAmount: 1_460,
+    feeLabel: "₱15 × 4 booked hours",
+  });
 });

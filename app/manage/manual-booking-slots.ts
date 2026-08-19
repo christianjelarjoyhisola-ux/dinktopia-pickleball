@@ -15,6 +15,26 @@ export type ManualBookingSlot = {
   statusLabel: string;
 };
 
+export type ManualBookingPriceEstimate = {
+  courtAmount: number;
+  bookingFee: number;
+  totalAmount: number;
+  feeLabel: string;
+};
+
+type PricingConfiguration = {
+  sharedSchedule: {
+    opensAt: string;
+    closesAt: string;
+    bands: Array<{ start: string; end: string; hourlyRate: number }>;
+  } | null;
+  platformBilling: {
+    feeMode: "fixed_per_booking" | "fixed_per_hour" | "percentage";
+    feeAmount: number;
+    isConfigured: boolean;
+  } | null;
+};
+
 function shiftIsoDate(value: string, days: number): string {
   const date = new Date(`${value}T12:00:00Z`);
   if (!Number.isFinite(date.getTime())) return value;
@@ -100,4 +120,61 @@ export function nextManualSlotSelection(
   if (clickedIndex === first - 1) return [clickedKey, ...selectedIndexes.map((index) => slots[index].key)];
   if (clickedIndex === last + 1) return [...selectedIndexes.map((index) => slots[index].key), clickedKey];
   return [clickedKey];
+}
+
+function wholeHour(value: string): number | null {
+  const match = /^(\d{2}):00$/.exec(value);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  return hour >= 0 && hour <= 23 ? hour : null;
+}
+
+export function estimateManualBookingPrice(
+  slots: readonly ManualBookingSlot[],
+  configuration: PricingConfiguration,
+): ManualBookingPriceEstimate | null {
+  const schedule = configuration.sharedSchedule;
+  if (!slots.length || !schedule?.bands.length) return null;
+  const opens = wholeHour(schedule.opensAt);
+  if (opens === null) return null;
+  const bands = schedule.bands.map((band) => {
+    const startClock = wholeHour(band.start);
+    const endClock = wholeHour(band.end);
+    if (startClock === null || endClock === null || !Number.isFinite(band.hourlyRate) || band.hourlyRate < 0) return null;
+    const start = startClock < opens ? startClock + 24 : startClock;
+    let end = endClock <= opens ? endClock + 24 : endClock;
+    if (end <= start) end += 24;
+    return { start, end, hourlyRate: band.hourlyRate };
+  });
+  if (bands.some((band) => band === null)) return null;
+  let courtAmount = 0;
+  for (const slot of slots) {
+    const band = bands.find((candidate) => candidate && slot.logicalHour >= candidate.start && slot.logicalHour < candidate.end);
+    if (!band) return null;
+    courtAmount += band.hourlyRate;
+  }
+
+  const billing = configuration.platformBilling;
+  let bookingFee = 0;
+  let feeLabel = "No booking fee";
+  if (billing?.isConfigured) {
+    if (billing.feeMode === "fixed_per_hour") {
+      bookingFee = billing.feeAmount * slots.length;
+      feeLabel = `${billing.feeAmount.toLocaleString("en-PH", { style: "currency", currency: "PHP", minimumFractionDigits: 0, maximumFractionDigits: 2 })} × ${slots.length} booked ${slots.length === 1 ? "hour" : "hours"}`;
+    } else if (billing.feeMode === "fixed_per_booking") {
+      bookingFee = billing.feeAmount;
+      feeLabel = "Fixed per booking";
+    } else {
+      bookingFee = courtAmount * billing.feeAmount / 100;
+      feeLabel = `${billing.feeAmount}% of court charges`;
+    }
+  }
+  courtAmount = Math.round(courtAmount * 100) / 100;
+  bookingFee = Math.round(bookingFee * 100) / 100;
+  return {
+    courtAmount,
+    bookingFee,
+    totalAmount: Math.round((courtAmount + bookingFee) * 100) / 100,
+    feeLabel,
+  };
 }

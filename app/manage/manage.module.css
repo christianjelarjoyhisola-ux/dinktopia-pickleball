@@ -2270,6 +2270,18 @@
 .manualSelectionSummary span { color: #5a746b; font-size: var(--text-micro); }
 .manualSelectionSummary strong { margin-top: 3px; font-size: var(--text-caption); }
 .manualSelectionSummary b { border-radius: 999px; background: #d9ed89; padding: 7px 10px; color: #173d31; font-size: var(--text-micro); }
+.manualPriceBreakdown { display: grid; grid-template-columns: 1fr 1fr 1.1fr; overflow: hidden; margin-top: 10px; border: 1px solid rgba(16,47,92,.18); border-radius: 14px; background: #fff; }
+.manualPriceBreakdown > div { display: grid; gap: 4px; border-right: 1px solid var(--line); padding: 13px 15px; }
+.manualPriceBreakdown > div:last-of-type { border-right: 0; background: #102f5c; color: #fff; }
+.manualPriceBreakdown span { color: var(--muted); font-size: var(--text-micro); font-weight: 720; }
+.manualPriceBreakdown span small { display: block; margin-top: 3px; color: #72807a; font-size: 10px; font-weight: 560; }
+.manualPriceBreakdown strong { color: #102f5c; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.manualPriceBreakdown > div:last-of-type span { color: rgba(255,255,255,.72); }
+.manualPriceBreakdown > div:last-of-type strong { color: #d9f28a; font-size: 1.15rem; }
+.manualPriceBreakdown > p { grid-column: 1 / -1; margin: 0; border-top: 1px solid var(--line); background: #f6f4ee; padding: 9px 14px; color: var(--muted); font-size: var(--text-micro); line-height: 1.45; }
+.manualPriceUnavailable { display: grid; gap: 4px; margin-top: 10px; border: 1px solid #e4d4b6; border-radius: 13px; background: #fff9ec; padding: 13px 15px; }
+.manualPriceUnavailable strong { color: #6d531c; font-size: var(--text-caption); }
+.manualPriceUnavailable span { color: #776b54; font-size: var(--text-micro); }
 .manualBookingActions { display: flex; align-items: center; justify-content: space-between; gap: 18px; background: #f2f0e9; padding: 17px 26px; }
 .manualBookingActions > div { display: grid; gap: 3px; }
 .manualBookingActions strong { font-size: var(--text-caption); }
@@ -2295,6 +2307,9 @@
   .manualSlotLoading { grid-template-columns: repeat(2, minmax(0,1fr)); }
   .manualSelectionSummary { grid-template-columns: auto 1fr; }
   .manualSelectionSummary b { grid-column: 2; justify-self: start; }
+  .manualPriceBreakdown { grid-template-columns: 1fr 1fr; }
+  .manualPriceBreakdown > div:nth-child(2) { border-right: 0; }
+  .manualPriceBreakdown > div:last-of-type { grid-column: 1 / -1; border-top: 1px solid var(--line); }
   .manualBookingActions { align-items: stretch; flex-direction: column; padding: 16px; }
   .manualBookingActions .button { width: 100%; min-width: 0; min-height: 48px; }
 }

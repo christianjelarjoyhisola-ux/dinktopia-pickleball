@@ -60,7 +60,7 @@ import {
   type TenantRole,
 } from "./management-adapter";
 import { upcomingReservationArrivals } from "./arrival-projection";
-import { buildManualBookingSlots, nextManualSlotSelection } from "./manual-booking-slots";
+import { buildManualBookingSlots, estimateManualBookingPrice, nextManualSlotSelection } from "./manual-booking-slots";
 import {
   PlatformRequestError,
   getAvailability,
@@ -1290,6 +1290,7 @@ function PaymentReviewWorkspace({
 function BookingsView({
   bookings,
   courts,
+  pricing,
   can,
   request,
   goTo,
@@ -1301,6 +1302,7 @@ function BookingsView({
 }: {
   bookings: Booking[];
   courts: ManagementSnapshot["courts"];
+  pricing: Pick<ManagementSnapshot["configuration"], "sharedSchedule" | "businessPayments">;
   can: (capability: ManagementCapability) => boolean;
   request: (action: ConfirmAction) => void;
   goTo: (view: View) => void;
@@ -1382,6 +1384,10 @@ function BookingsView({
   const selectedManualSlots = manualSlots.filter((slot) => manualSelectedKeys.includes(slot.key));
   const firstManualSlot = selectedManualSlots[0] ?? null;
   const lastManualSlot = selectedManualSlots[selectedManualSlots.length - 1] ?? null;
+  const manualPriceEstimate = estimateManualBookingPrice(selectedManualSlots, {
+    sharedSchedule: pricing.sharedSchedule,
+    platformBilling: pricing.businessPayments?.platformBilling ?? null,
+  });
 
   useEffect(() => {
     if (!openCreateRequest || isPreview || !canCreateBooking) return;
@@ -1622,7 +1628,15 @@ function BookingsView({
             ) : manualAvailabilityState === "ready" ? (
               <div className={styles.manualSlotError} role="status"><strong>No bookable hours returned.</strong><span>Choose another active court or date.</span></div>
             ) : null}
-            {firstManualSlot && lastManualSlot && <div className={styles.manualSelectionSummary} role="status"><Clock3 /><div><span>Selected reservation</span><strong>{selectedManualCourt?.name} · {wholeHourLabel(firstManualSlot.startTime)}–{wholeHourLabel(lastManualSlot.endTime)}</strong></div><b>{selectedManualSlots.length} {selectedManualSlots.length === 1 ? "hour" : "hours"}</b></div>}
+            {firstManualSlot && lastManualSlot && <>
+              <div className={styles.manualSelectionSummary} role="status"><Clock3 /><div><span>Selected reservation</span><strong>{selectedManualCourt?.name} · {wholeHourLabel(firstManualSlot.startTime)}–{wholeHourLabel(lastManualSlot.endTime)}</strong></div><b>{selectedManualSlots.length} {selectedManualSlots.length === 1 ? "hour" : "hours"}</b></div>
+              {manualPriceEstimate ? <div className={styles.manualPriceBreakdown} aria-label="Estimated booking total">
+                <div><span>Court charges</span><strong>{formatPeso(manualPriceEstimate.courtAmount)}</strong></div>
+                <div><span>Booking fee <small>{manualPriceEstimate.feeLabel}</small></span><strong>{formatPeso(manualPriceEstimate.bookingFee)}</strong></div>
+                <div><span>Total to collect</span><strong>{formatPeso(manualPriceEstimate.totalAmount)}</strong></div>
+                <p>Estimate from the selected time rates. The server confirms the exact amount before the booking is created.</p>
+              </div> : <div className={styles.manualPriceUnavailable} role="status"><strong>Final amount calculated at review</strong><span>Pricing details were not returned to this session. The server will show the exact court charge and booking fee before saving.</span></div>}
+            </>}
           </fieldset>
 
           <section className={styles.manualBookingSection} aria-labelledby="manual-customer-heading">
@@ -4536,7 +4550,7 @@ export default function ManagePage() {
     if (setupPreview) return <SetupRequiredPanel view={view} />;
     switch (view) {
       case "overview": return <OverviewView snapshot={snapshot} can={can} goTo={navigateTo} openNewBooking={openNewBooking} openCourtSchedule={openCourtSchedule} openNeedsReview={openNeedsReview} request={request} loadPaymentReceipt={loadPaymentReceipt} />;
-      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} openCreateRequest={bookingCreateRequest} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
+      case "bookings": return <BookingsView key={`bookings-${bookingFilter}`} bookings={snapshot.bookings} courts={snapshot.courts} pricing={snapshot.configuration} can={can} request={request} goTo={setView} isPreview={isPreview} initialStatus={bookingFilter} openCreateRequest={bookingCreateRequest} loadPaymentReceipt={loadPaymentReceipt} loadReschedulePreview={loadReschedulePreview} />;
       case "schedule": return snapshot.tenant.mode === "live" ? (
         <CalendarView
           courts={snapshot.courts}
