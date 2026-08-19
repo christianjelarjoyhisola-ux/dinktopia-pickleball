@@ -30,6 +30,10 @@ const files = {
     "../app/manage/analytics-finance.module.css",
     import.meta.url,
   ),
+  arrivalProjection: new URL(
+    "../app/manage/arrival-projection.ts",
+    import.meta.url,
+  ),
   atomicBookingMigration: new URL(
     "../operations/2026-08-11-atomic-multi-session-booking.sql",
     import.meta.url,
@@ -441,6 +445,102 @@ test("normalizes atomic booking sessions without collapsing distinct court-hours
     (error) =>
       error instanceof PlatformRequestError && error.status === 400 &&
       error.code === "BOOKING_SESSION_HOURS_EXCEEDED",
+  );
+});
+
+test("projects reservation arrivals without inventing a primary court or inflating same-time bookings", async () => {
+  const { reservationArrivalGroups, upcomingReservationArrivals } = await import(
+    files.arrivalProjection.href
+  );
+  const session = (court, startTime, endTime, amount = 300) => ({
+    key: `${court}-${startTime}`,
+    courtId: `court-${court}`,
+    court,
+    bookingDate: "2026-08-19",
+    date: "Aug 19, 2026",
+    startTime,
+    endTime,
+    time: `${Number(startTime.slice(0, 2)) > 12 ? Number(startTime.slice(0, 2)) - 12 : Number(startTime.slice(0, 2))}:${startTime.slice(3)} ${Number(startTime.slice(0, 2)) >= 12 ? "PM" : "AM"}–${Number(endTime.slice(0, 2)) > 12 ? Number(endTime.slice(0, 2)) - 12 : Number(endTime.slice(0, 2))}:${endTime.slice(3)} ${Number(endTime.slice(0, 2)) >= 12 ? "PM" : "AM"}`,
+    duration: "1 hr",
+    durationHours: 1,
+    startsAt: `2026-08-19T${startTime}:00+08:00`,
+    endsAt: `2026-08-19T${endTime}:00+08:00`,
+    amount,
+  });
+  const booking = (overrides = {}) => ({
+    bookingId: "booking-1",
+    bookingType: "regular",
+    reference: "PB-ARRIVAL-1",
+    id: "PB-ARRIVAL-1",
+    customer: "Danica Castor",
+    initials: "DC",
+    phone: "09170000000",
+    court: "Court 1, Court 2, Court 3, Court 4",
+    date: "Aug 19, 2026",
+    time: "Court 1: 11:00 AM–12:00 PM · Court 2: 11:00 AM–12:00 PM",
+    duration: "4 court-hours",
+    amount: 1_200,
+    status: "confirmed",
+    payment: "paid",
+    courtId: "court-Court 1",
+    bookingDate: "2026-08-19",
+    startTime: "11:00",
+    sessions: [],
+    ...overrides,
+  });
+
+  const fourCourtBooking = booking({
+    sessions: ["Court 1", "Court 2", "Court 3", "Court 4"].map((court) =>
+      session(court, "11:00", "12:00")
+    ),
+  });
+  const sameTime = reservationArrivalGroups(fourCourtBooking);
+  assert.equal(sameTime.length, 1);
+  assert.equal(sameTime[0].startTime, "11:00 AM");
+  assert.equal(sameTime[0].courtScope, "4 courts");
+  assert.equal(sameTime[0].sessionDetails, "Court 1 · Court 2 · Court 3 · Court 4");
+  assert.doesNotMatch(sameTime[0].startTime, /Court 1/);
+  assert.equal(upcomingReservationArrivals([fourCourtBooking], "2026-08-19", 10 * 60).length, 1);
+
+  const multiTime = reservationArrivalGroups(booking({
+    sessions: [
+      session("Court 1", "11:00", "12:00"),
+      session("Court 2", "13:00", "14:00"),
+    ],
+  }));
+  assert.deepEqual(multiTime.map((arrival) => arrival.startTime), ["11:00 AM", "1:00 PM"]);
+  assert.deepEqual(multiTime.map((arrival) => arrival.courtScope), ["Court 1", "Court 2"]);
+
+  const fallback = reservationArrivalGroups(booking({
+    court: "Court 4",
+    time: "7:00 PM–8:00 PM",
+    duration: "1 hr",
+    startTime: "19:00",
+    sessions: undefined,
+  }));
+  assert.equal(fallback.length, 1);
+  assert.equal(fallback[0].startTime, "7:00 PM");
+  assert.equal(fallback[0].courtScope, "Court 4");
+  assert.equal(fallback[0].sessionDetails, "Court 4 · 7:00 PM–8:00 PM");
+
+  const manage = await readFile(files.manage, "utf8");
+  const manageCss = await readFile(files.manageCss, "utf8");
+  const rallyStart = manage.indexOf("function RallyOverview(");
+  const rallyEnd = manage.indexOf("function OverviewView(", rallyStart);
+  const rally = manage.slice(rallyStart, rallyEnd);
+  assert.match(rally, /const todayBookings = activeBookings\.filter[\s\S]*?const paidSales = todayBookings[\s\S]*?todayBookings\.length/);
+  assert.match(
+    rally,
+    /upcomingReservationArrivals\(activeBookings, today, currentMinutes\)[\s\S]*?<ol className=\{styles\.rallyArrivalList\} aria-label="Upcoming reservation arrivals">[\s\S]*?<time dateTime=[\s\S]*?arrival\.courtScope[\s\S]*?arrival\.sessionSummary[\s\S]*?arrival\.sessionDetails/,
+  );
+  assert.doesNotMatch(rally, /booking\.time\.split\(\/\[–-\]\//);
+  assert.match(
+    manageCss,
+    /\.rallyArrival\s*\{[^}]*grid-template-columns:\s*78px minmax\(0, 1fr\) auto[^}]*min-height:\s*88px/s,
+  );
+  assert.match(
+    manageCss,
+    /\.rallyArrivalHeadline\s*\{[^}]*display:\s*flex[^}]*justify-content:\s*space-between/s,
   );
 });
 

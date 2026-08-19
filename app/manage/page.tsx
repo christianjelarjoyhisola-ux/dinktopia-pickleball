@@ -59,6 +59,7 @@ import {
   type RemittanceDestination,
   type TenantRole,
 } from "./management-adapter";
+import { upcomingReservationArrivals } from "./arrival-projection";
 import {
   PlatformRequestError,
   platformMode,
@@ -685,7 +686,7 @@ function RallyOverview({
     .map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))
     .filter((entry) => entry.minutes === null || entry.minutes + 60 >= currentMinutes)
     .sort((left, right) => (left.minutes ?? 10_000) - (right.minutes ?? 10_000));
-  const arrivals = (upcoming.length ? upcoming : activeBookings.map((booking) => ({ booking, minutes: clockMinutes(booking.startTime) }))).slice(0, 4);
+  const arrivals = upcomingReservationArrivals(activeBookings, today, currentMinutes);
   const courtStatus = snapshot.courts.map((court) => {
     const courtBookings = upcoming.filter((entry) => entry.booking.courtId === court.id);
     const next = courtBookings[0]?.booking ?? null;
@@ -756,16 +757,28 @@ function RallyOverview({
         </section>
 
         <aside className={cx(styles.rallySurface, styles.rallyArrivalsPanel)}>
-          <div className={styles.rallySectionHeading}><div><h2>Next arrivals</h2><p>The next 150 minutes</p></div><span className={styles.rallyLive}><i /> Live</span></div>
-          <div className={styles.rallyArrivalList}>
-            {arrivals.length ? arrivals.map(({ booking }, index) => (
-              <div className={styles.rallyArrival} key={booking.bookingId}>
-                <div className={styles.rallyTimeRail}><strong>{booking.time.split(/[–-]/)[0].trim()}</strong><i className={index % 2 ? styles.railMint : styles.railBlue} />{index < arrivals.length - 1 && <span />}</div>
-                <div><strong>{booking.customer}</strong><p>{booking.court}</p></div>
-                <StatusPill status={booking.status} />
-              </div>
-            )) : <div className={styles.rallyEmpty}><Clock3 /><strong>No upcoming arrivals</strong><span>New bookings will appear here.</span></div>}
-          </div>
+          <div className={styles.rallySectionHeading}><div><h2>Next arrivals</h2><p>Grouped by reservation start time</p></div><span className={styles.rallyLive}><i /> Live</span></div>
+          <ol className={styles.rallyArrivalList} aria-label="Upcoming reservation arrivals">
+            {arrivals.length ? arrivals.map((arrival, index) => (
+              <li className={styles.rallyArrival} key={arrival.key}>
+                <div className={styles.rallyTimeRail}>
+                  <strong><time dateTime={arrival.bookingDate ? `${arrival.bookingDate}T${arrival.startClock}` : undefined}>{arrival.startTime}</time></strong>
+                  <small>{arrival.bookingDate === today ? "Today" : arrival.dateLabel}</small>
+                  <i className={index % 2 ? styles.railMint : styles.railBlue} />
+                  {index < arrivals.length - 1 && <span className={styles.rallyRailLine} />}
+                </div>
+                <div className={styles.rallyArrivalInfo}>
+                  <div className={styles.rallyArrivalHeadline}>
+                    <strong>{arrival.booking.customer}</strong>
+                    <span>{arrival.courtScope}</span>
+                  </div>
+                  <p>{arrival.sessionSummary}</p>
+                  <small>{arrival.sessionDetails}</small>
+                </div>
+                <StatusPill status={arrival.booking.status} />
+              </li>
+            )) : <li className={styles.rallyEmpty}><Clock3 /><strong>No upcoming arrivals</strong><span>New bookings will appear here.</span></li>}
+          </ol>
           <button type="button" className={styles.rallyWideButton} onClick={() => goTo("schedule")}>Manage arrivals</button>
         </aside>
       </div>
