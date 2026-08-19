@@ -4000,8 +4000,13 @@ test("keeps analytics and finance complete, server-authoritative, capability-gat
   );
   assert.match(
     financeView,
-    /paymentMethodLabel\(destination\.method\)[\s\S]*?Recipient[\s\S]*?maskReference\(destination\.accountReference\)[\s\S]*?destination\.instructions/,
+    /paymentMethodLabel\(destination\.method\)[\s\S]*?Recipient[\s\S]*?Send remittance to[\s\S]*?destination\.accountReference[\s\S]*?copyDestinationReference[\s\S]*?destination\.instructions/,
   );
+  assert.match(
+    financeView,
+    /navigator\.clipboard\.writeText\(destination\.accountReference\)[\s\S]*?Full remittance account reference[\s\S]*?aria-label="Copy full remittance account reference"[\s\S]*?Full account reference copied/,
+  );
+  assert.doesNotMatch(financeView, /maskReference|••••/);
   assert.match(
     analyticsFinance,
     /function RemittanceCard[\s\S]*?remittancePeriod\(item\)[\s\S]*?item\.remainingBalance[\s\S]*?item\.amountDue[\s\S]*?item\.amountSettled[\s\S]*?item\.bookingsCount[\s\S]*?item\.billableHours[\s\S]*?item\.cycleDueOn[\s\S]*?item\.preparedAt/,

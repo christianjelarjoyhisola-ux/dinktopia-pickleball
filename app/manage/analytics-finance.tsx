@@ -2,8 +2,10 @@
 
 import {
   CalendarClock,
+  Check,
   CircleCheck,
   CircleDollarSign,
+  Copy,
   Landmark,
   ReceiptText,
   ShieldCheck,
@@ -444,12 +446,6 @@ function remittanceStatusLabel(status: RemittanceSummary["status"]): string {
   }[status];
 }
 
-function maskReference(reference: string | null): string {
-  if (!reference) return "Not configured";
-  const visible = reference.slice(-4);
-  return reference.length > 4 ? `•••• ${visible}` : visible;
-}
-
 function paymentMethodLabel(method: "gcash" | "maya" | "bank_transfer" | "other"): string {
   return {
     gcash: "GCash",
@@ -510,6 +506,8 @@ export function FinanceView({
   onPrepare,
   preparing = false,
 }: FinanceViewProps) {
+  const [destinationCopyState, setDestinationCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
   if (loading && !finance) return <LoadingPanel label="finance" />;
   if (error || !finance) {
     return (
@@ -529,6 +527,16 @@ export function FinanceView({
   );
   const currency = dashboard.openRemittances[0]?.currency || history[0]?.currency || "PHP";
   const destination = dashboard.paymentDestination;
+
+  async function copyDestinationReference() {
+    if (!destination?.accountReference) return;
+    try {
+      await navigator.clipboard.writeText(destination.accountReference);
+      setDestinationCopyState("copied");
+    } catch {
+      setDestinationCopyState("failed");
+    }
+  }
 
   return (
     <section className={`${styles.workspace} ${styles.financeWorkspace}`} aria-labelledby="finance-title" aria-busy={loading}>
@@ -628,7 +636,21 @@ export function FinanceView({
           {destination ? (
             <dl className={styles.destinationFacts}>
               <div><dt>Recipient</dt><dd>{destination.accountName || "Not configured"}</dd></div>
-              <div><dt>Account reference</dt><dd>{maskReference(destination.accountReference)}</dd></div>
+              <div>
+                <dt>Send remittance to</dt>
+                <dd className={styles.destinationReference}>
+                  <output aria-label="Full remittance account reference">{destination.accountReference || "Not configured"}</output>
+                  {destination.accountReference && (
+                    <button type="button" onClick={copyDestinationReference} aria-label="Copy full remittance account reference">
+                      {destinationCopyState === "copied" ? <Check aria-hidden="true" size={15} /> : <Copy aria-hidden="true" size={15} />}
+                      {destinationCopyState === "copied" ? "Copied" : "Copy"}
+                    </button>
+                  )}
+                </dd>
+                <span className={styles.copyStatus} role="status" aria-live="polite">
+                  {destinationCopyState === "failed" ? "Copy failed. Select and copy the complete reference shown above." : destinationCopyState === "copied" ? "Full account reference copied." : "Use the complete reference shown here when sending the remittance."}
+                </span>
+              </div>
               {destination.instructions && <div className={styles.destinationInstructions}><dt>Instructions</dt><dd>{destination.instructions}</dd></div>}
             </dl>
           ) : (

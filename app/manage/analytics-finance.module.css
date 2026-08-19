@@ -1332,6 +1332,40 @@
 .financeWorkspace .destinationFacts > div:nth-child(-n+2) { border-top: 0; }
 .financeWorkspace .destinationFacts .destinationInstructions { grid-column: 1 / -1; }
 .destinationInstructions dd { color: #4f625c; font-weight: 600; line-height: 1.45; }
+.destinationReference {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.destinationReference output {
+  min-width: 0;
+  color: #102f5c;
+  font: 750 .95rem/1.35 var(--font-mono), monospace;
+  letter-spacing: .02em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.destinationReference button {
+  min-width: 78px;
+  min-height: 44px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid #b8cbe0;
+  border-radius: 10px;
+  background: #f7fbff;
+  color: #174f87;
+  padding: 8px 11px;
+  font: 800 .75rem/1 var(--font-body), sans-serif;
+  cursor: pointer;
+}
+.destinationReference button:hover { border-color: #245a9b; background: #eaf3fb; }
+.destinationReference button:focus-visible { outline: 3px solid #bfff68; outline-offset: 2px; }
+.copyStatus { display: block; margin-top: 4px; color: #687a82; font-size: .7rem; line-height: 1.4; }
 
 .financeWorkspace .remittanceGrid { gap: 10px; }
 .financeWorkspace .remittanceCard {
@@ -1452,6 +1486,8 @@
   .financeWorkspace .destinationFacts { grid-template-columns: minmax(0, 1fr); }
   .financeWorkspace .destinationFacts > div:nth-child(2) { border-top: 1px solid rgba(16, 47, 92, .1); }
   .financeWorkspace .destinationFacts .destinationInstructions { grid-column: auto; }
+  .destinationReference { align-items: flex-start; flex-direction: column; }
+  .destinationReference button { width: 100%; }
   .financeWorkspace .remittanceFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .financeWorkspace .historyList li { grid-template-columns: minmax(0, 1fr) auto; }
   .historyAmount { grid-column: 1; }
